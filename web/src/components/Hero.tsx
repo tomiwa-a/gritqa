@@ -1,13 +1,21 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowRight, Search, FileText, Play, Eye, Check } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
-const phases = [
-  { icon: Search, label: 'Index', desc: 'AST parse' },
-  { icon: FileText, label: 'Plan', desc: 'AI + You' },
-  { icon: Play, label: 'Run', desc: 'Mocked deps' },
-  { icon: Eye, label: 'Review', desc: 'Approve' },
+const terminalLines = [
+  { color: 'text-lavender-grey', text: '$ gritqa' },
+  { color: 'text-green-600', text: '✓  Indexing codebase...  (1,247 files)' },
+  { color: 'text-green-600', text: '✓  Detected 3 changed files' },
+  { color: 'text-green-600', text: '✓  Generating test plan...' },
+  { color: '', text: '' },
+  { color: 'text-lavender-grey font-semibold', text: 'Test Plan: E2E Order Flow' },
+  { color: '', text: '  ├── Step 1: Login           (POST /auth/login)     ✓ PASS  245ms' },
+  { color: '', text: '  ├── Step 2: Create Order    (POST /orders)        ✓ PASS  512ms' },
+  { color: '', text: '  ├── Step 3: Verify          (GET  /orders/:id)     ✓ PASS  189ms' },
+  { color: '', text: '  └── Step 4: Cleanup         (DELETE /orders/:id)   ✓ PASS   67ms' },
+  { color: '', text: '' },
+  { color: 'text-lavender-grey', text: '  4/4 passed  ·  1.2s  ·  0 failed' },
 ];
 
 export default function Hero() {
@@ -32,7 +40,7 @@ export default function Hero() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
             >
-              Backend QA that{' '}
+              QA that{' '}
               <span className="text-punch-red">reads your codebase</span>.
             </motion.h1>
 
@@ -72,47 +80,36 @@ export default function Hero() {
             </motion.div>
           </div>
 
-          {/* Right — Boxy phase layout */}
+          {/* Right — Terminal */}
           <motion.div
-            className="relative mx-auto lg:mx-0 w-full max-w-md lg:max-w-none"
+            className="relative mx-auto lg:mx-0 w-full max-w-lg lg:max-w-none"
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
           >
             <div className="rounded-2xl border border-lavender-grey/30 bg-white overflow-hidden shadow-lg shadow-space-indigo/5">
-              {/* Window bar */}
               <div className="px-4 py-3 border-b border-lavender-grey/20 bg-platinum flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
                 <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
                 <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-                <span className="ml-2 text-xs text-lavender-grey font-mono font-medium">GritQA</span>
+                <span className="ml-2 text-xs text-lavender-grey font-mono">bash</span>
               </div>
-
-              {/* Phase grid */}
-              <div className="p-6 md:p-8 grid grid-cols-2 gap-4">
-                {phases.map((phase, i) => (
+              <div className="px-5 py-5 font-mono text-sm leading-relaxed">
+                {terminalLines.map((line, i) => (
                   <motion.div
-                    key={phase.label}
-                    className="flex flex-col items-center gap-2 p-5 rounded-xl border border-lavender-grey/20 bg-platinum hover:border-punch-red/30 hover:bg-white transition-all cursor-default"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.4, delay: 0.4 + i * 0.1 }}
-                    whileHover={{ y: -2, boxShadow: '0 4px 12px rgba(43,45,66,0.06)' }}
+                    key={i}
+                    className={line.color || 'text-space-indigo'}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3, delay: 0.5 + i * 0.08 }}
                   >
-                    <phase.icon className="h-6 w-6 text-space-indigo" />
-                    <span className="text-sm font-bold text-space-indigo">{phase.label}</span>
-                    <span className="text-xs text-lavender-grey font-mono">{phase.desc}</span>
+                    {line.text || '\u00A0'}
                   </motion.div>
                 ))}
               </div>
-
-              {/* Bottom bar */}
-              <div className="px-6 py-3 border-t border-lavender-grey/20 flex items-center justify-between text-xs font-mono text-lavender-grey">
-                <span className="flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-green-600" />
-                  4 phases · 1 pipeline
-                </span>
-                <span>v0.1.0</span>
+              <div className="px-4 py-2 border-t border-lavender-grey/20 bg-platinum flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-xs text-lavender-grey font-mono">gritqa v0.1.0</span>
               </div>
             </div>
           </motion.div>
