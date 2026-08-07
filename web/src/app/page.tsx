@@ -4,8 +4,7 @@ import TrustBlock from "@/components/TrustBlock";
 import HowItWorks from "@/components/HowItWorks";
 import Features from "@/components/Features";
 import CodePreview from "@/components/CodePreview";
-import Comparison from "@/components/Comparison";
-import Testimonials from "@/components/Testimonials";
+import LogoCloud from "@/components/LogoCloud";
 import FinalCTA from "@/components/FinalCTA";
 import Footer from "@/components/Footer";
 
@@ -19,8 +18,7 @@ export default function Home() {
         <HowItWorks />
         <Features />
         <CodePreview />
-        <Comparison />
-        <Testimonials />
+        <LogoCloud />
         <FinalCTA />
       </main>
       <Footer />
