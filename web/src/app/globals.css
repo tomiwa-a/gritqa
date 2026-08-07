@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-onyx: #0c120c;
-  --color-brick-ember: #c20114;
-  --color-dim-grey: #6d7275;
-  --color-ash-grey: #c7d6d5;
-  --color-ghost-white: #ecebf3;
+  --color-space-indigo: #2b2d42;
+  --color-punch-red: #ef233c;
+  --color-lavender-grey: #8d99ae;
+  --color-classic-crimson: #d80032;
+  --color-platinum: #edf2f4;
 
-  --color-background: #ecebf3;
-  --color-foreground: #0c120c;
+  --color-background: #edf2f4;
+  --color-foreground: #2b2d42;
 
   --font-heading: var(--font-heading);
   --font-body: var(--font-body);
@@ -30,11 +30,10 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::selection {
-  background-color: rgba(194, 1, 20, 0.2);
-  color: #0c120c;
+  background-color: rgba(239, 35, 60, 0.2);
+  color: #2b2d42;
 }
 
-/* Code block base styling */
 pre, code {
   font-family: var(--font-mono), ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
 }
