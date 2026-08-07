@@ -1,24 +1,26 @@
 export default function TrustBlock() {
   const metrics = [
-    { value: "500+", label: "Projects Indexed" },
-    { value: "98%", label: "Accuracy" },
-    { value: "10K+", label: "Tests Run Locally" },
-    { value: "4.8/5", label: "GitHub Rating" },
+    { value: "< 5 min", label: "Push to results" },
+    { value: "> 80%", label: "AI accuracy on first attempt" },
+    { value: "100%", label: "Local execution" },
+    { value: "0", label: "Lines of test code you write" },
   ];
 
   return (
-    <section className="border-b border-ash-grey/30 bg-ghost-white py-16">
-      <div className="mx-auto max-w-6xl px-6">
-        <p className="mb-10 text-center text-sm font-medium text-dim-grey">
-          Trusted by backend developers worldwide
-        </p>
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+    <section className="bg-onyx py-20 relative overflow-hidden">
+      {/* Subtle background glow for depth */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[300px] bg-brick-ember/10 blur-[100px] rounded-full pointer-events-none" />
+      
+      <div className="mx-auto max-w-7xl px-6 relative z-10">
+        <div className="grid grid-cols-2 gap-10 md:gap-8 md:grid-cols-4">
           {metrics.map((m) => (
-            <div key={m.label} className="text-center">
-              <p className="text-3xl font-extrabold text-brick-ember md:text-4xl">
+            <div key={m.label} className="text-center group">
+              <p className="text-3xl font-bold text-ghost-white md:text-5xl tracking-tight transition-transform group-hover:scale-105 duration-300">
                 {m.value}
               </p>
-              <p className="mt-1 text-sm text-dim-grey">{m.label}</p>
+              <p className="mt-3 text-sm font-medium tracking-wide text-ash-grey/70">
+                {m.label}
+              </p>
             </div>
           ))}
         </div>

@@ -1,69 +1,90 @@
 export default function HowItWorks() {
-  const steps = [
-    {
-      number: "1",
-      title: "Push Your Code",
-      description: "GritQA detects what changed via git diff.",
-      icon: (
-        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
-        </svg>
-      ),
-    },
-    {
-      number: "2",
-      title: "AI Generates Tests",
-      description: "Reads your actual source code, not just function names.",
-      icon: (
-        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-        </svg>
-      ),
-    },
-    {
-      number: "3",
-      title: "Run Against Real DBs",
-      description: "Docker containers with tmpfs. Full isolation.",
-      icon: (
-        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-        </svg>
-      ),
-    },
-  ];
-
   return (
-    <section id="how-it-works" className="bg-ghost-white py-20">
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-14 text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-onyx md:text-4xl">
-            How GritQA Works
+    <section id="how-it-works" className="bg-ghost-white py-24">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="text-center max-w-2xl mx-auto">
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-onyx">
+            How GritQA works
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-dim-grey">
+          <p className="text-dim-grey mt-4 text-lg">
             Three steps from code change to confident deployments.
           </p>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-3">
-          {steps.map((step, i) => (
-            <div key={step.number} className="relative">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brick-ember/10 text-brick-ember">
-                {step.icon}
-              </div>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-onyx text-xs font-bold text-ghost-white">
-                  {step.number}
+        <div className="grid lg:grid-cols-3 gap-8 mt-16">
+          {/* Step 1 */}
+          <div className="relative group rounded-3xl border border-ash-grey/30 bg-white p-8 md:p-10 transition-all hover:border-brick-ember/40 hover:shadow-xl hover:shadow-brick-ember/5 overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 rounded-full bg-brick-ember/5 blur-3xl transition-all group-hover:bg-brick-ember/10" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ghost-white font-mono text-lg font-bold text-brick-ember shadow-sm">
+                  01
                 </span>
-                <h3 className="text-lg font-bold text-onyx">{step.title}</h3>
+                <h3 className="text-xl font-bold text-onyx">Push your code</h3>
               </div>
-              <p className="text-sm leading-relaxed text-dim-grey">
-                {step.description}
+              <p className="text-base text-dim-grey leading-relaxed mt-5">
+                GritQA detects what changed via git diff and maps affected functions
+                using Tree-sitter AST parsing.
               </p>
-              {i < steps.length - 1 && (
-                <div className="absolute right-0 top-6 hidden h-px w-8 bg-ash-grey md:block" />
-              )}
+              <div className="mt-8 rounded-xl border border-ash-grey/20 bg-ghost-white/50 p-5 font-mono text-xs md:text-sm text-onyx leading-relaxed shadow-inner">
+                <span className="text-dim-grey">$</span> git push origin main{"\n"}
+                <span className="text-brick-ember/80">→</span> 3 files changed{"\n"}
+                <span className="text-brick-ember/80">→</span> order_controller.go (L84){"\n"}
+                <span className="text-brick-ember/80">→</span> payment_service.go (L112){"\n"}
+                <span className="text-brick-ember/80">→</span> models/order.go (L8)
+              </div>
             </div>
-          ))}
+          </div>
+
+          {/* Step 2 */}
+          <div className="relative group rounded-3xl border border-ash-grey/30 bg-white p-8 md:p-10 transition-all hover:border-brick-ember/40 hover:shadow-xl hover:shadow-brick-ember/5 overflow-hidden lg:mt-8">
+            <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 rounded-full bg-brick-ember/5 blur-3xl transition-all group-hover:bg-brick-ember/10" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ghost-white font-mono text-lg font-bold text-brick-ember shadow-sm">
+                  02
+                </span>
+                <h3 className="text-xl font-bold text-onyx">AI generates tests</h3>
+              </div>
+              <p className="text-base text-dim-grey leading-relaxed mt-5">
+                Readable test plans with HTTP requests, variable extraction, and
+                assertions — generated from your actual source code.
+              </p>
+              <div className="mt-8 rounded-xl border border-ash-grey/20 bg-ghost-white/50 p-5 font-mono text-xs md:text-sm text-onyx leading-relaxed shadow-inner">
+                <span className="text-brick-ember/80">steps:</span>{"\n"}
+                {"  "}- <span className="text-dim-grey">name:</span> &quot;Login&quot;{"\n"}
+                {"    "}POST /auth/login{"\n"}
+                {"    "}<span className="text-brick-ember/80">extract:</span> authToken{"\n"}
+                {"  "}- <span className="text-dim-grey">name:</span> &quot;Create Order&quot;{"\n"}
+                {"    "}POST /orders{"\n"}
+                {"    "}<span className="text-brick-ember/80">assert:</span> status == 201
+              </div>
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="relative group rounded-3xl border border-ash-grey/30 bg-white p-8 md:p-10 transition-all hover:border-brick-ember/40 hover:shadow-xl hover:shadow-brick-ember/5 overflow-hidden lg:mt-16">
+            <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 rounded-full bg-brick-ember/5 blur-3xl transition-all group-hover:bg-brick-ember/10" />
+            <div className="relative z-10">
+              <div className="flex items-center gap-4">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ghost-white font-mono text-lg font-bold text-brick-ember shadow-sm">
+                  03
+                </span>
+                <h3 className="text-xl font-bold text-onyx">Run tests locally</h3>
+              </div>
+              <p className="text-base text-dim-grey leading-relaxed mt-5">
+                Tests execute inside ephemeral Docker containers with real PostgreSQL.
+                Full isolation, instant teardown.
+              </p>
+              <div className="mt-8 rounded-xl border border-ash-grey/20 bg-ghost-white/50 p-5 font-mono text-xs md:text-sm text-onyx leading-relaxed shadow-inner">
+                <span className="text-[#16a34a]">✓</span> Container started (240ms){"\n"}
+                <span className="text-[#16a34a]">✓</span> Migrations applied{"\n"}
+                <span className="text-[#16a34a]">✓</span> 4/4 tests passed{"\n"}
+                <span className="text-[#16a34a]">✓</span> Container destroyed{"\n"}
+                <span className="text-dim-grey mt-2 block">Total: 1.18s</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
