@@ -1,194 +1,208 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const features = [
   {
+    id: 'index',
     num: '01',
     title: 'Codebase Indexing',
-    desc: 'Tree-sitter AST parsing maps your entire codebase — functions, classes, routes, and dependency chains. GritQA knows what changed and what depends on it.',
-    snippet: `CreateOrder()      → order_controller.go:45
-ProcessPayment()  → payment_service.go:12
-Order struct      → models/order.go:8
-
-Dependencies:  3 affected endpoints`,
-    accent: 'space-indigo',
-    accentText: 'text-space-indigo',
-    headerBg: 'bg-space-indigo',
-    snippetBg: 'bg-space-indigo',
-    snippetText: 'text-lavender-grey/70',
-    snippetAccent: 'text-punch-red',
-    border: 'border-space-indigo/20',
+    tagline: 'GritQA knows what changed and what depends on it.',
+    points: [
+      'Tree-sitter AST parsing for 100+ languages',
+      'Maps functions, classes, routes, and imports',
+      'Dependency graph across your codebase',
+      'Incremental re-indexing — only changed files',
+    ],
+    terminal: [
+      { text: '$ gritqa index', color: 'text-lavender-grey' },
+      { text: '✓  Scanning codebase...', color: 'text-green-400' },
+      { text: '✓  Indexed 1,247 files in 2.1s', color: 'text-green-400' },
+      { text: '✓  Built dependency graph', color: 'text-green-400' },
+      { text: '', color: '' },
+      { text: '  CreateOrder()      → order_controller.go:45', color: 'text-white' },
+      { text: '  ProcessPayment()  → payment_service.go:12', color: 'text-white' },
+      { text: '  Order struct      → models/order.go:8', color: 'text-white' },
+      { text: '', color: '' },
+      { text: '  Dependencies:  3 affected endpoints', color: 'text-lavender-grey' },
+    ],
   },
   {
+    id: 'plan',
     num: '02',
     title: 'Test Plan Generation',
-    desc: 'Structured test plans built from your actual code. Multi-step flows with variable extraction and assertions. Review every step before it runs.',
-    snippet: `name: "E2E Order Flow"
-steps:
-  - POST /auth/login   → extract token
-  - POST /orders       → assert 201
-  - GET  /orders/:id   → assert body.status
-  - DELETE /orders/:id → assert 204`,
-    accent: 'punch-red',
-    accentText: 'text-punch-red',
-    headerBg: 'bg-punch-red',
-    snippetBg: 'bg-punch-red',
-    snippetText: 'text-platinum/80',
-    snippetAccent: 'text-platinum',
-    border: 'border-punch-red/20',
+    tagline: 'Structured test plans from your actual code.',
+    points: [
+      'Multi-step flows with variable chaining',
+      'Extract tokens, IDs, and responses',
+      'Assert status codes, body fields, headers',
+      'Review every step before it runs',
+    ],
+    terminal: [
+      { text: '$ gritqa plan', color: 'text-lavender-grey' },
+      { text: '✓  Generating test plan...', color: 'text-green-400' },
+      { text: '✓  4 steps created', color: 'text-green-400' },
+      { text: '', color: '' },
+      { text: '  name: "E2E Order Flow"', color: 'text-white' },
+      { text: '  steps:', color: 'text-white' },
+      { text: '    - POST /auth/login   → extract token', color: 'text-punch-red' },
+      { text: '    - POST /orders       → assert 201', color: 'text-punch-red' },
+      { text: '    - GET  /orders/:id   → assert body.status', color: 'text-punch-red' },
+      { text: '    - DELETE /orders/:id → assert 204', color: 'text-punch-red' },
+    ],
   },
   {
+    id: 'run',
     num: '03',
     title: 'Isolated Test Runs',
-    desc: 'Every test plan runs in its own ephemeral container. Real databases with real constraints — then torn down instantly. No state leaks, no cleanup scripts.',
-    snippet: `Container:  postgres:16-alpine
-Storage:    tmpfs (RAM)
-Boot:       210ms
-Teardown:   instant
-Isolation:  per-test-plan`,
-    accent: 'classic-crimson',
-    accentText: 'text-classic-crimson',
-    headerBg: 'bg-classic-crimson',
-    snippetBg: 'bg-classic-crimson',
-    snippetText: 'text-platinum/80',
-    snippetAccent: 'text-platinum',
-    border: 'border-classic-crimson/20',
+    tagline: 'Real databases, real constraints, instant teardown.',
+    points: [
+      'Ephemeral containers per test plan',
+      'tmpfs RAM storage — no disk I/O',
+      'Real PostgreSQL with real constraints',
+      'Destroyed instantly after execution',
+    ],
+    terminal: [
+      { text: '$ gritqa run', color: 'text-lavender-grey' },
+      { text: '✓  Starting container (postgres:16-alpine)', color: 'text-green-400' },
+      { text: '✓  Container ready (210ms)', color: 'text-green-400' },
+      { text: '✓  Running E2E Order Flow...', color: 'text-green-400' },
+      { text: '', color: '' },
+      { text: '    Step 1: Login           ✓ PASS  245ms', color: 'text-white' },
+      { text: '    Step 2: Create Order    ✓ PASS  512ms', color: 'text-white' },
+      { text: '    Step 3: Verify          ✓ PASS  189ms', color: 'text-white' },
+      { text: '    Step 4: Cleanup         ✓ PASS   67ms', color: 'text-white' },
+      { text: '', color: '' },
+      { text: '  4/4 passed  ·  1.2s  ·  0 failed', color: 'text-green-400' },
+      { text: '✓  Container destroyed', color: 'text-green-400' },
+    ],
   },
   {
+    id: 'review',
     num: '04',
     title: 'Human Review',
-    desc: 'You stay in control. Review, edit, or reject every test plan step before execution. GritQA does the heavy lifting — you make the call.',
-    snippet: `Status:  DRAFT → REVIEW → APPROVED
-
-Step 1: Login        [✓ approved]
-Step 2: Create Order [✓ approved]
-Step 3: Verify       [✎ edited]
-Step 4: Cleanup      [✓ approved]`,
-    accent: 'lavender-grey',
-    accentText: 'text-lavender-grey',
-    headerBg: 'bg-lavender-grey',
-    snippetBg: 'bg-lavender-grey',
-    snippetText: 'text-platinum/80',
-    snippetAccent: 'text-white',
-    border: 'border-lavender-grey/20',
+    tagline: 'You approve every step before anything runs.',
+    points: [
+      'Edit, reject, or approve each step',
+      'Tweak payloads, assertions, headers',
+      'Full control over test plan execution',
+      'GritQA does the heavy lifting — you call the shots',
+    ],
+    terminal: [
+      { text: '$ gritqa review', color: 'text-lavender-grey' },
+      { text: '  Status:  DRAFT → REVIEW → APPROVED', color: 'text-white' },
+      { text: '', color: '' },
+      { text: '    Step 1: Login            [✓ approved]', color: 'text-green-400' },
+      { text: '    Step 2: Create Order     [✓ approved]', color: 'text-green-400' },
+      { text: '    Step 3: Verify           [✎ edited]', color: 'text-punch-red' },
+      { text: '    Step 4: Cleanup          [✓ approved]', color: 'text-green-400' },
+      { text: '', color: '' },
+      { text: '  ✓  Plan approved — ready to run', color: 'text-green-400' },
+    ],
   },
 ];
 
-function CurlyRight() {
-  return (
-    <svg width="80" height="44" viewBox="0 0 80 44" fill="none" className="text-punch-red/50">
-      <path
-        d="M 0,22 C 28,22 34,-8 52,12 C 60,20 64,24 74,22"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeDasharray="4 3"
-      />
-      <path d="M 66,18 L 76,22 L 66,26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CurlyDownLeft() {
-  return (
-    <svg width="60" height="76" viewBox="0 0 60 76" fill="none" className="text-punch-red/50">
-      <path
-        d="M 56,4 C 56,28 34,32 20,50 C 12,60 8,66 8,72"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeDasharray="4 3"
-      />
-      <path d="M 4,64 L 8,74 L 12,64" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CurlyRightBottom() {
-  return (
-    <svg width="60" height="44" viewBox="0 0 60 44" fill="none" className="text-punch-red/50">
-      <path
-        d="M 0,22 C 20,22 24,42 40,26 C 46,20 50,22 54,22"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeDasharray="4 3"
-      />
-      <path d="M 50,18 L 56,22 L 50,26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export default function Features() {
+  const [activeTab, setActiveTab] = useState('index');
+  const active = features.find((f) => f.id === activeTab) || features[0];
+
   return (
-    <section
-      id="features"
-      className="relative bg-space-indigo/[0.02] py-24 lg:py-32 border-t border-lavender-grey/10 overflow-hidden"
-    >
+    <section id="features" className="bg-white py-24 lg:py-32 border-t border-lavender-grey/10">
       <div className="mx-auto max-w-7xl px-6">
         <motion.div
-          className="text-center max-w-xl mx-auto mb-16"
+          className="text-center max-w-xl mx-auto mb-14"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
         >
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-space-indigo">
-            Four things GritQA does for your team
+            What GritQA does for your team
           </h2>
-          <p className="text-lavender-grey mt-4 text-lg">
-            No more guessing what broke. No more manual test scripts.
-          </p>
         </motion.div>
 
-        <div className="relative grid md:grid-cols-2 gap-6">
-          {features.map((f, i) => (
-            <motion.div
-              key={f.title}
-              className="group relative flex flex-col rounded-2xl border border-lavender-grey/15 bg-white overflow-hidden hover:shadow-lg transition-all"
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
+        {/* Tabs */}
+        <div className="flex justify-center gap-3 mb-12 flex-wrap">
+          {features.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setActiveTab(f.id)}
+              className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === f.id
+                  ? 'bg-space-indigo text-white shadow-md'
+                  : 'bg-platinum text-lavender-grey hover:bg-lavender-grey/20 hover:text-space-indigo'
+              }`}
             >
-              {/* Colored header strip */}
-              <div className={`${f.headerBg} px-6 py-5 flex items-center gap-4`}>
-                <span className="text-3xl font-bold text-white font-mono tracking-tight">{f.num}</span>
-                <h3 className="text-lg font-bold text-white">{f.title}</h3>
-              </div>
-
-              {/* Body */}
-              <div className="flex flex-col flex-1 p-6">
-                <p className="text-lavender-grey leading-relaxed">
-                  {f.desc}
-                </p>
-
-                {/* Dark terminal code box */}
-                <div className={`mt-6 rounded-xl ${f.snippetBg} p-5 font-mono text-sm leading-relaxed overflow-x-auto`}>
-                  <pre className={`whitespace-pre-wrap ${f.snippetText}`}>{f.snippet}</pre>
-                </div>
-              </div>
-
-              {/* Curly arrow connector */}
-              {i === 0 && (
-                <div className="absolute -right-6 top-1/2 -translate-y-1/2 z-10 hidden md:block">
-                  <CurlyRight />
-                </div>
-              )}
-              {i === 1 && (
-                <div className="absolute -right-4 -bottom-3 z-10 hidden md:block">
-                  <CurlyDownLeft />
-                </div>
-              )}
-              {i === 2 && (
-                <div className="absolute -right-6 top-1/3 -translate-y-1/2 z-10 hidden md:block">
-                  <CurlyRightBottom />
-                </div>
-              )}
-            </motion.div>
+              {f.num} {f.title}
+            </button>
           ))}
         </div>
+
+        {/* Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={active.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.35 }}
+            className="grid lg:grid-cols-2 gap-10 items-start"
+          >
+            {/* Left — text */}
+            <div className="pt-4">
+              <span className="inline-block text-5xl font-bold font-mono text-space-indigo/10 mb-2">
+                {active.num}
+              </span>
+              <h3 className="text-2xl md:text-3xl font-bold text-space-indigo mb-3">
+                {active.title}
+              </h3>
+              <p className="text-lavender-grey text-lg leading-relaxed mb-8">
+                {active.tagline}
+              </p>
+              <ul className="space-y-3">
+                {active.points.map((pt, i) => (
+                  <motion.li
+                    key={pt}
+                    className="flex items-start gap-3 text-space-indigo"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1 + i * 0.06 }}
+                  >
+                    <span className="mt-1 h-2 w-2 rounded-full bg-punch-red flex-shrink-0" />
+                    {pt}
+                  </motion.li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Right — terminal */}
+            <div className="rounded-2xl border border-lavender-grey/20 bg-space-indigo overflow-hidden shadow-xl shadow-space-indigo/10">
+              {/* Window bar */}
+              <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+                <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+                <span className="ml-2 text-xs text-lavender-grey font-mono">gritqa</span>
+              </div>
+
+              {/* Terminal body */}
+              <div className="p-6 font-mono text-sm leading-loose">
+                {active.terminal.map((line, i) => (
+                  <motion.div
+                    key={`${active.id}-${i}`}
+                    className={line.color || 'text-white'}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.15 + i * 0.05 }}
+                  >
+                    {line.text || '\u00A0'}
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
     </section>
   );
