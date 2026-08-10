@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Folder, FileText, Shield, Settings, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Folder, FileText, Shield, Settings, Menu, X, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -27,64 +27,81 @@ const sections = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    Workspace: true,
+    Configuration: true,
+  });
+
+  const toggleSection = (label: string) => {
+    setExpandedSections((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const nav = (
-    <div className="flex flex-col h-full bg-white border-r border-lavender-grey/15 w-64">
+    <div className="flex flex-col h-full bg-white border-r border-lavender-grey/10 w-60">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-lavender-grey/15">
-        <Link href="/" className="text-xl font-bold tracking-tight">
-          <span className="text-space-indigo">Grit</span>
-          <span className="text-punch-red">QA</span>
+      <div className="px-4 py-4 border-b border-lavender-grey/10">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-lg bg-space-indigo flex items-center justify-center">
+            <span className="text-white text-xs font-bold">G</span>
+          </div>
+          <span className="text-base font-bold text-space-indigo">GritQA</span>
         </Link>
       </div>
 
-      {/* Nav sections */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-3 overflow-y-auto">
         {sections.map((section) => (
-          <div key={section.label} className="mb-6">
-            <p className="px-3 mb-2 text-xs font-semibold text-lavender-grey uppercase tracking-wider">
+          <div key={section.label} className="mb-4">
+            <button
+              onClick={() => toggleSection(section.label)}
+              className="flex items-center justify-between w-full px-2 py-1.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider hover:text-space-indigo transition-colors"
+            >
               {section.label}
-            </p>
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const isActive = item.href === '/dashboard'
-                  ? pathname === '/dashboard'
-                  : pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-space-indigo/5 text-space-indigo'
-                        : 'text-lavender-grey hover:text-space-indigo hover:bg-platinum'
-                    }`}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    <span className="flex-1">{item.label}</span>
-                    {item.badge && (
-                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-punch-red/10 text-punch-red">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+              <ChevronDown className={`h-3 w-3 transition-transform ${
+                expandedSections[section.label] ? '' : '-rotate-90'
+              }`} />
+            </button>
+            {expandedSections[section.label] && (
+              <div className="mt-0.5 space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive = item.href === '/dashboard'
+                    ? pathname === '/dashboard'
+                    : pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors ${
+                        isActive
+                          ? 'bg-platinum text-space-indigo font-medium'
+                          : 'text-lavender-grey hover:text-space-indigo hover:bg-platinum/50'
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span className="flex-1">{item.label}</span>
+                      {item.badge && (
+                        <span className="text-[11px] font-medium text-lavender-grey">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
       </nav>
 
       {/* User */}
-      <div className="px-3 py-4 border-t border-lavender-grey/15">
-        <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-platinum transition-colors cursor-pointer">
-          <div className="h-8 w-8 rounded-full bg-space-indigo/10 flex items-center justify-center text-sm font-bold text-space-indigo">
+      <div className="px-2 py-3 border-t border-lavender-grey/10">
+        <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-platinum transition-colors cursor-pointer">
+          <div className="h-7 w-7 rounded-full bg-space-indigo/10 flex items-center justify-center text-xs font-bold text-space-indigo">
             D
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-space-indigo truncate">Demo User</p>
-            <p className="text-xs text-lavender-grey truncate">demo@gritqa.dev</p>
           </div>
         </div>
       </div>
@@ -96,9 +113,9 @@ export default function Sidebar() {
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden flex items-center justify-center h-10 w-10 rounded-lg bg-white border border-lavender-grey/20 text-space-indigo shadow-sm"
+        className="fixed top-3 left-3 z-50 lg:hidden flex items-center justify-center h-9 w-9 rounded-lg bg-white border border-lavender-grey/15 text-space-indigo"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-4 w-4" />
       </button>
 
       {/* Mobile overlay */}
@@ -109,22 +126,22 @@ export default function Sidebar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+              className="fixed inset-0 bg-black/40 z-40 lg:hidden"
               onClick={() => setMobileOpen(false)}
             />
             <motion.div
-              initial={{ x: -256 }}
+              initial={{ x: -240 }}
               animate={{ x: 0 }}
-              exit={{ x: -256 }}
+              exit={{ x: -240 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="fixed inset-y-0 left-0 z-50 lg:hidden"
             >
               {nav}
               <button
                 onClick={() => setMobileOpen(false)}
-                className="absolute top-4 right-4 text-lavender-grey hover:text-space-indigo"
+                className="absolute top-3 right-3 text-lavender-grey hover:text-space-indigo"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </motion.div>
           </>
