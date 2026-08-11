@@ -17,11 +17,15 @@ const button = cva(
         ghost: 'text-ink-muted hover:text-ink hover:bg-surface-sunken',
         onDark: 'bg-ink-inverse text-ink hover:bg-white',
         ghostDark: 'text-ink-dim border border-rule-dark hover:text-ink-inverse hover:border-ink-subtle',
+        danger: 'bg-app-panel text-fail border border-fail/30 hover:border-fail hover:bg-fail-soft',
       },
       size: {
+        xs: 'h-7 px-2.5 text-[12.5px]',
         sm: 'h-8 px-3 text-[13px]',
         md: 'h-10 px-4 text-sm',
         lg: 'h-12 px-6 text-[0.9375rem]',
+        icon: 'h-8 w-8',
+        iconSm: 'h-7 w-7',
       },
     },
     defaultVariants: { variant: 'primary', size: 'md' },
@@ -70,3 +74,5 @@ export function ButtonLink({ variant, size, trailing, children, className, ...re
     </a>
   );
 }
+
+export const buttonVariants = button;

@@ -20,8 +20,12 @@ const badge = cva(
         running: 'bg-info-soft text-info',
         archived: 'border border-rule bg-surface-sunken text-ink-subtle',
         error: 'bg-fail-soft text-fail',
+
+        count: 'bg-app-active text-ink-muted',
+        notice: 'bg-info text-white',
       },
       size: {
+        xs: 'h-[18px] min-w-[18px] justify-center px-1.5 text-[10.5px]',
         sm: 'h-5 px-2 text-[11px]',
         md: 'h-7 px-3 text-xs',
       },

@@ -39,6 +39,21 @@
   --color-term-warn: #fbbf24;
   --color-term-dim: #7b86a0;
 
+  --color-app: #f1f3f5;
+  --color-app-panel: #ffffff;
+  --color-app-hover: #f4f6f8;
+  --color-app-active: #eaeef2;
+  --color-rule-soft: #edf0f3;
+
+  --color-series-1: #3b5bdb;
+  --color-series-2: #0d9f6e;
+  --color-series-3: #d97706;
+  --color-series-4: #7c3aed;
+  --color-series-5: #e11d48;
+
+  --shadow-panel: 0 1px 2px rgba(27, 29, 46, 0.04);
+  --shadow-menu: 0 10px 28px -8px rgba(27, 29, 46, 0.16), 0 2px 6px rgba(27, 29, 46, 0.05);
+
   --text-display-xl: 5.25rem;
   --text-display-xl--line-height: 0.93;
   --text-display-xl--letter-spacing: -0.045em;
@@ -51,6 +66,16 @@
   --text-display-sm: 1.875rem;
   --text-display-sm--line-height: 1.16;
   --text-display-sm--letter-spacing: -0.022em;
+
+  --text-metric-lg: 2.5rem;
+  --text-metric-lg--line-height: 1;
+  --text-metric-lg--letter-spacing: -0.035em;
+  --text-metric: 1.875rem;
+  --text-metric--line-height: 1.05;
+  --text-metric--letter-spacing: -0.03em;
+  --text-metric-sm: 1.375rem;
+  --text-metric-sm--line-height: 1.1;
+  --text-metric-sm--letter-spacing: -0.022em;
 
   --font-heading: var(--font-heading);
   --font-body: var(--font-body);

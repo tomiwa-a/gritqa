@@ -1,174 +1,368 @@
-'use client';
+import Link from 'next/link';
+import { Topbar } from '@/components/app/topbar';
+import { PageBody } from '@/components/app/page-body';
+import { GenerateMenu } from '@/components/app/generate-menu';
+import { ActionCard } from '@/components/app/action-card';
+import { MetricRail, type MetricCell } from '@/components/app/metric-rail';
+import { Panel } from '@/components/app/panel';
+import { CoverageGrid } from '@/components/app/coverage-grid';
+import { RunMatrix } from '@/components/app/run-matrix';
+import { PlanRates } from '@/components/app/plan-rates';
+import { DataTable, type Column } from '@/components/app/data-table';
+import { Meter } from '@/components/app/meter';
+import { RunList } from '@/components/app/run-list';
+import { RulesSummary } from '@/components/app/rules-summary';
+import { EmptyState } from '@/components/app/empty-state';
+import { ViewFilter, type ViewKey } from '@/components/app/view-filter';
+import { Icon } from '@/components/ui/icon';
+import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+import {
+  coverageTotals,
+  currentProject,
+  period,
+  plansAwaitingReview,
+  recentRuns,
+  runStripStats,
+} from '@/lib/mock/data';
+import { cn } from '@/lib/cn';
 
-import { Folder, FileText, CheckCircle, Clock, ArrowUpRight, ArrowDownRight, ChevronRight } from 'lucide-react';
+export const metadata = { title: 'Overview · GritQA' };
 
-const stats = [
+type WorkItem = {
+  id: string;
+  kind: 'review' | 'failing';
+  name: string;
+  note: string;
+  covers: string;
+  signal: string;
+  run: { total: number; passed: number } | null;
+  cta: string;
+  href: string;
+};
+
+const failedRuns = recentRuns.filter((r) => r.status === 'failed');
+
+const failingWork: WorkItem[] = failedRuns.map((run) => {
+  const broke = run.steps.find((s) => s.status === 'failed');
+  return {
+    id: run.publicId,
+    kind: 'failing',
+    name: run.planName,
+    note: broke ? `Failed at "${broke.stepName}" · ${run.startedLabel}` : run.startedLabel,
+    covers: `${run.steps.length} steps · ${new Set(run.steps.map((s) => s.path)).size} endpoints`,
+    signal: broke ? `${broke.method} ${broke.responseStatus}` : '—',
+    run: { total: run.steps.length, passed: run.steps.filter((s) => s.status === 'passed').length },
+    cta: 'Inspect',
+    href: '/dashboard/runs',
+  };
+});
+
+const reviewWork: WorkItem[] = plansAwaitingReview.map((plan) => ({
+  id: plan.publicId,
+  kind: 'review',
+  name: plan.name,
+  note: `${plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'} · ${plan.createdLabel}`,
+  covers: `${plan.stepCount} steps · ${plan.endpointCount} endpoints`,
+  signal: `${plan.assertionCount} checks`,
+  run: plan.lastRun ? { total: plan.lastRun.total, passed: plan.lastRun.passed } : null,
+  cta: 'Review',
+  href: '/dashboard/queue',
+}));
+
+const WORK: Record<ViewKey, WorkItem[]> = {
+  all: [...failingWork, ...reviewWork],
+  review: reviewWork,
+  failing: failingWork,
+};
+
+const SUBTITLE: Record<ViewKey, string> = {
+  all: 'Failing runs first, then plans waiting on your approval',
+  review: 'Plans waiting on your approval',
+  failing: 'Runs that broke and have not been dealt with',
+};
+
+const columns: Column<WorkItem>[] = [
   {
-    label: 'Total Projects',
-    value: '6',
-    supporting: '3 indexed this week',
-    icon: Folder,
-    iconBg: 'bg-space-indigo/8',
-    iconColor: 'text-space-indigo',
-    trend: null,
+    key: 'name',
+    header: 'Item',
+    cell: (row) => (
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span
+          className={cn(
+            'mt-[5px] h-2 w-2 shrink-0 rounded-full',
+            row.kind === 'failing' ? 'bg-fail' : 'bg-warn',
+          )}
+        />
+        <span className="min-w-0">
+          <span className="block truncate text-[13px] font-medium text-ink">{row.name}</span>
+          <span className="block truncate text-[11.5px] text-ink-subtle">{row.note}</span>
+        </span>
+      </div>
+    ),
   },
   {
-    label: 'Test Plans',
-    value: '12',
-    supporting: '4 need review',
-    icon: FileText,
-    iconBg: 'bg-punch-red/8',
-    iconColor: 'text-punch-red',
-    trend: null,
-    badge: '4',
+    key: 'covers',
+    header: 'What it covers',
+    cell: (row) => <span className="nums text-[12.5px] text-ink-muted">{row.covers}</span>,
   },
   {
-    label: 'Pass Rate',
-    value: '94%',
-    supporting: 'vs 92% last week',
-    icon: CheckCircle,
-    iconBg: 'bg-emerald/8',
-    iconColor: 'text-emerald',
-    trend: { value: '+2%', positive: true },
+    key: 'signal',
+    header: 'Checks',
+    align: 'right',
+    cell: (row) => (
+      <span
+        className={cn(
+          'nums text-[12.5px]',
+          row.kind === 'failing' ? 'font-medium text-fail' : 'text-ink-muted',
+        )}
+      >
+        {row.signal}
+      </span>
+    ),
   },
   {
-    label: 'Last Run',
-    value: '2m ago',
-    supporting: 'E2E Order Flow — 4/4 passed',
-    icon: Clock,
-    iconBg: 'bg-lavender-grey/8',
-    iconColor: 'text-lavender-grey',
-    trend: null,
+    key: 'run',
+    header: 'Last run',
+    cell: (row) =>
+      row.run ? (
+        <Meter total={row.run.total} passed={row.run.passed} />
+      ) : (
+        <span className="text-[12.5px] text-ink-subtle">Never run</span>
+      ),
+  },
+  {
+    key: 'action',
+    header: 'Action',
+    align: 'right',
+    hideHeader: true,
+    cell: (row) => (
+      <Link href={row.href} className={buttonVariants({ variant: 'secondary', size: 'xs' })}>
+        {row.cta}
+      </Link>
+    ),
   },
 ];
 
-const recentExecutions = [
-  { plan: 'E2E Order Flow', status: 'passed', duration: '1.2s', date: '2 min ago', steps: '4/4' },
-  { plan: 'Auth Login', status: 'passed', duration: '0.8s', date: '5 min ago', steps: '3/3' },
-  { plan: 'Payment Processing', status: 'failed', duration: '2.1s', date: '12 min ago', steps: '2/4' },
-  { plan: 'User Registration', status: 'passed', duration: '0.6s', date: '1 hour ago', steps: '3/3' },
-  { plan: 'API Rate Limiting', status: 'passed', duration: '0.4s', date: '2 hours ago', steps: '2/2' },
+const passRateDelta = (
+  Number(runStripStats.passRate) - Number(period.passRatePrevious)
+).toFixed(1);
+
+const metrics: MetricCell[] = [
+  {
+    icon: 'check',
+    label: 'Pass rate',
+    value: `${runStripStats.passRate}%`,
+    direction: 'up',
+    delta: `+${passRateDelta}`,
+    tone: 'good',
+    comparison: `from ${period.passRatePrevious}%`,
+  },
+  {
+    icon: 'runs',
+    label: 'Runs',
+    value: String(period.runs),
+    direction: 'up',
+    delta: `+${period.runs - period.runsPrevious}`,
+    tone: 'good',
+    comparison: `from ${period.runsPrevious}`,
+  },
+  {
+    icon: 'clock',
+    label: 'Median run',
+    value: period.medianRun,
+    direction: 'down',
+    delta: '−0.4s',
+    tone: 'good',
+    comparison: `from ${period.medianRunPrevious}`,
+  },
+  {
+    icon: 'endpoint',
+    label: 'Endpoints covered',
+    value: String(coverageTotals.approved),
+    unit: `/ ${coverageTotals.total}`,
+    direction: 'up',
+    delta: `+${coverageTotals.approved - period.endpointsCoveredPrevious}`,
+    tone: 'good',
+    comparison: `from ${period.endpointsCoveredPrevious}`,
+  },
 ];
 
-export default function DashboardOverview() {
+const freshPush = plansAwaitingReview.filter((p) => p.createdLabel.endsWith('h ago')).length;
+const newestBreak = failedRuns[0]?.steps.find((s) => s.status === 'failed');
+const pad = (n: number) => String(n).padStart(2, '0');
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view } = await searchParams;
+  const active: ViewKey = view === 'review' || view === 'failing' ? view : 'all';
+  const rows = WORK[active];
+
   return (
-    <div className="max-w-6xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-space-indigo tracking-tight">Overview</h1>
-          <p className="text-sm text-lavender-grey mt-1">Your testing dashboard at a glance</p>
-        </div>
-        <button className="px-4 py-2 bg-punch-red text-white rounded-lg text-sm font-semibold hover:bg-classic-crimson transition-colors">
-          New Test Plan
-        </button>
-      </div>
+    <>
+      <Topbar icon="overview" title="Overview" action={<GenerateMenu />} />
 
-      {/* Filter pills */}
-      <div className="flex items-center gap-2 mb-8">
-        {['All Projects', 'Need Review', 'Failed', 'Recently Updated'].map((filter, i) => (
-          <button
-            key={filter}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              i === 0
-                ? 'bg-space-indigo text-white'
-                : 'text-lavender-grey hover:text-space-indigo hover:bg-platinum'
-            }`}
-          >
-            {filter}
-          </button>
-        ))}
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-white rounded-xl border border-lavender-grey/10 p-4 hover:border-lavender-grey/20 transition-colors"
-          >
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className={`h-8 w-8 rounded-lg ${stat.iconBg} flex items-center justify-center`}>
-                <stat.icon className={`h-4 w-4 ${stat.iconColor}`} />
-              </div>
-              <span className="text-xs font-medium text-lavender-grey">{stat.label}</span>
-              {stat.badge && (
-                <span className="ml-auto px-1.5 py-0.5 text-[10px] font-bold rounded bg-punch-red/10 text-punch-red">
-                  {stat.badge}
-                </span>
-              )}
-              {stat.trend && (
-                <span className={`ml-auto flex items-center gap-0.5 text-xs font-semibold ${
-                  stat.trend.positive ? 'text-emerald' : 'text-punch-red'
-                }`}>
-                  {stat.trend.positive ? (
-                    <ArrowUpRight className="h-3 w-3" />
-                  ) : (
-                    <ArrowDownRight className="h-3 w-3" />
-                  )}
-                  {stat.trend.value}
-                </span>
-              )}
-            </div>
-            <p className="text-4xl font-bold text-space-indigo tracking-tight">{stat.value}</p>
-            <p className="text-xs text-lavender-grey mt-1">{stat.supporting}</p>
+      <PageBody>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted">
+              <Icon name="calendar" size={13} className="text-ink-subtle" />
+              Last 30 days
+            </span>
+            <span className="hidden font-mono text-[11.5px] text-ink-subtle sm:inline">
+              {currentProject.name} · {currentProject.defaultBranch}
+            </span>
           </div>
-        ))}
-      </div>
 
-      {/* Recent executions */}
-      <div className="bg-white rounded-xl border border-lavender-grey/10 overflow-hidden">
-        <div className="px-5 py-4 border-b border-lavender-grey/10 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-space-indigo">Recent Executions</h2>
-          <button className="flex items-center gap-1 text-xs font-medium text-lavender-grey hover:text-space-indigo transition-colors">
-            View all
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+          <ViewFilter
+            active={active}
+            counts={{ all: WORK.all.length, review: reviewWork.length, failing: failingWork.length }}
+          />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-lavender-grey/10">
-                <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider">Plan</th>
-                <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider">Status</th>
-                <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider">Steps</th>
-                <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider">Duration</th>
-                <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-lavender-grey uppercase tracking-wider">When</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-lavender-grey/10">
-              {recentExecutions.map((exec) => (
-                <tr key={exec.plan} className="hover:bg-platinum/50 transition-colors cursor-pointer">
-                  <td className="px-5 py-3">
-                    <span className="text-sm font-medium text-space-indigo">{exec.plan}</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${
-                      exec.status === 'passed'
-                        ? 'bg-emerald/10 text-emerald'
-                        : 'bg-punch-red/10 text-punch-red'
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${
-                        exec.status === 'passed' ? 'bg-emerald' : 'bg-punch-red'
-                      }`} />
-                      {exec.status === 'passed' ? 'Passed' : 'Failed'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-sm font-mono text-space-indigo">{exec.steps}</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-sm text-lavender-grey">{exec.duration}</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-sm text-lavender-grey">{exec.date}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <ActionCard
+            icon="queue"
+            tone="warn"
+            label="Plans waiting for you"
+            value={pad(plansAwaitingReview.length)}
+            unit="plans"
+            hint={`${freshPush} of them were drafted from today's pushes`}
+            hintIcon="sparkle"
+            cta="Open review queue"
+            href="/dashboard/queue"
+            emphasis
+          />
+
+          <ActionCard
+            icon="alert"
+            tone="fail"
+            label="Runs that failed"
+            value={pad(failedRuns.length)}
+            unit="runs"
+            hint={
+              newestBreak
+                ? `Newest: ${newestBreak.stepName} returned ${newestBreak.responseStatus}`
+                : 'Nothing broken right now'
+            }
+            hintIcon="clock"
+            cta="See what broke"
+            href="/dashboard?view=failing#work"
+          />
+
+          {currentProject.lastIndexedLabel ? (
+            <ActionCard
+              icon="codebase"
+              tone="pass"
+              label="Codebase read"
+              value={currentProject.lastIndexedLabel.replace(' ago', '')}
+              unit="ago"
+              hint={`${currentProject.fileCount} files · ${currentProject.endpointCount} endpoints tracked`}
+              hintIcon="terminal"
+              cta="See what's indexed"
+              href="/dashboard/codebase"
+            />
+          ) : (
+            <ActionCard
+              icon="terminal"
+              tone="info"
+              label="Codebase read"
+              value="—"
+              hint="Run gritqa once in your project and this fills in"
+              hintIcon="terminal"
+              cta="Set up the CLI"
+              href="/dashboard/setup"
+            />
+          )}
         </div>
-      </div>
-    </div>
+
+        <div className="mt-4">
+          <MetricRail cells={metrics} />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <Panel
+            className="xl:col-span-7"
+            title="Coverage by file"
+            subtitle="One square per endpoint the CLI found"
+            link={{ href: '/dashboard/codebase', label: 'Browse codebase' }}
+          >
+            <CoverageGrid />
+          </Panel>
+
+          <Panel
+            className="xl:col-span-5"
+            title="Last 30 runs"
+            subtitle="Every step, newest on the right"
+            meta={
+              <Badge variant="pass" size="sm" className="nums">
+                {runStripStats.passRate}% pass
+              </Badge>
+            }
+          >
+            <RunMatrix />
+
+            <div className="mt-4 border-t border-rule-soft pt-4">
+              <p className="mb-3 text-[10.5px] tracking-[0.06em] text-ink-subtle uppercase">
+                Pass rate by plan
+              </p>
+              <PlanRates />
+            </div>
+          </Panel>
+        </div>
+
+        <Panel
+          id="work"
+          className="mt-4 scroll-mt-20"
+          title="Your work list"
+          subtitle={SUBTITLE[active]}
+          meta={
+            <span className="nums text-[12px] text-ink-subtle">
+              {rows.length} {rows.length === 1 ? 'item' : 'items'}
+            </span>
+          }
+          bodyClassName="p-0"
+        >
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => row.id}
+            empty={
+              <EmptyState
+                size="sm"
+                icon="check"
+                title="Nothing waiting on you"
+                description="Every plan is approved and every run is green. Push some code and GritQA will find the next thing."
+              />
+            }
+          />
+        </Panel>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <Panel
+            className="xl:col-span-7"
+            title="Recent runs"
+            subtitle="What executed most recently"
+            link={{ href: '/dashboard/runs', label: 'All runs' }}
+            bodyClassName="p-0"
+          >
+            <RunList runs={recentRuns} />
+          </Panel>
+
+          <Panel
+            className="xl:col-span-5"
+            title="Rules in effect"
+            subtitle="What every drafted plan has to respect"
+            link={{ href: '/dashboard/rules', label: 'Edit rules' }}
+            bodyClassName="p-0"
+          >
+            <RulesSummary />
+          </Panel>
+        </div>
+      </PageBody>
+    </>
   );
 }
