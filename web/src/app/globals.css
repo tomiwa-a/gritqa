@@ -165,3 +165,13 @@ pre, code, kbd, samp {
 @utility animate-caret {
   animation: caret-blink 1.1s steps(1) infinite;
 }
+
+@keyframes handoff {
+  from { transform: scaleX(0.04); }
+  to { transform: scaleX(1); }
+}
+
+@utility animate-handoff {
+  transform-origin: left;
+  animation: handoff 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
