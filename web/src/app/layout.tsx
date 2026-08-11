@@ -21,9 +21,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GritQA — AI-Powered Backend Testing",
+  title: "GritQA — Integration tests generated from your backend code",
   description:
-    "GritQA indexes your codebase, generates test plans from what actually changed, and runs them against real Docker databases — all on your machine.",
+    "GritQA reads your routers, handlers and models, then writes chained API integration tests with real request bodies and assertions. One command, plain YAML you own, no agents.",
 };
 
 export default function RootLayout({
@@ -33,7 +33,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${outfit.variable} ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:text-ink-inverse"
+        >
+          Skip to content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

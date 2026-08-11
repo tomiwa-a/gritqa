@@ -1,15 +1,23 @@
-import Navbar from "@/components/Navbar";
-import Hero from "@/components/Hero";
-import Features from "@/components/Features";
+import { Navbar } from '@/components/sections/navbar';
+import { Hero } from '@/components/sections/hero';
+import { Features } from '@/components/sections/features';
+import { HowItWorks } from '@/components/sections/how-it-works';
+import { Spec } from '@/components/sections/spec';
+import { Waitlist } from '@/components/sections/waitlist';
+import { Footer } from '@/components/sections/footer';
 
 export default function Home() {
   return (
     <>
       <Navbar />
-      <main>
+      <main id="main">
         <Hero />
         <Features />
+        <HowItWorks />
+        <Spec />
+        <Waitlist />
       </main>
+      <Footer />
     </>
   );
 }
