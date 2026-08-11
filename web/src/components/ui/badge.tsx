@@ -13,6 +13,15 @@ const badge = cva(
         warn: 'bg-warn-soft text-warn',
         skip: 'bg-skip-soft text-skip',
         onDark: 'border border-rule-dark bg-surface-dark-raised text-term-dim',
+
+        /* Plan lifecycle — drafted, waiting on a person, signed off,
+           executing, shelved, broken. Same vocabulary the dashboard uses. */
+        draft: 'bg-skip-soft text-ink-muted',
+        review: 'bg-warn-soft text-warn',
+        approved: 'bg-pass-soft text-pass',
+        running: 'bg-info-soft text-info',
+        archived: 'border border-rule bg-surface-sunken text-ink-subtle',
+        error: 'bg-fail-soft text-fail',
       },
       size: {
         sm: 'h-5 px-2 text-[11px]',
@@ -43,6 +52,10 @@ const TONE = {
   warn: { fill: 'bg-warn', label: 'Warning' },
   skip: { fill: 'bg-skip', label: 'Skipped' },
   live: { fill: 'bg-pass', label: 'Live' },
+  draft: { fill: 'bg-skip', label: 'Draft' },
+  review: { fill: 'bg-warn', label: 'Waiting for review' },
+  approved: { fill: 'bg-pass', label: 'Approved' },
+  running: { fill: 'bg-info', label: 'Running' },
 } as const;
 
 export function StatusDot({

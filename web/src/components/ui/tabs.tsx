@@ -88,7 +88,7 @@ export function Tabs({
               {t.index && (
                 <span
                   className={cn(
-                    'nums font-mono text-[10.5px] tracking-[0.14em]',
+                    'nums text-[11px] font-semibold',
                     selected ? 'text-punch-red' : 'text-ink-subtle',
                   )}
                 >

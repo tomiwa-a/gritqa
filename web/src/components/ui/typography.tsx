@@ -1,36 +1,55 @@
 import { cn } from '@/lib/cn';
 
 /* ── Eyebrow ──────────────────────────────────────────────────
-   Monospace index label. The numeral is the editorial device —
-   it numbers the page like a spec sheet.                        */
+   `plain` is the default — a red rule, an optional numeral, and a
+   sentence-case label. Monospace is kept for things that really
+   are code, so `mono` has to be asked for.                       */
 
 export function Eyebrow({
   index,
   children,
   tone = 'light',
+  variant = 'plain',
   className,
 }: {
   index?: string;
   children: React.ReactNode;
   tone?: 'light' | 'dark';
+  variant?: 'plain' | 'mono';
   className?: string;
 }) {
+  if (variant === 'mono') {
+    return (
+      <p
+        className={cn(
+          'flex items-center gap-2.5 font-mono text-[11px] uppercase tracking-[0.2em]',
+          tone === 'dark' ? 'text-term-dim' : 'text-ink-subtle',
+          className,
+        )}
+      >
+        {index && (
+          <>
+            <span className={cn('nums', tone === 'dark' ? 'text-ink-inverse' : 'text-ink')}>
+              {index}
+            </span>
+            <span aria-hidden className={cn('h-px w-6', tone === 'dark' ? 'bg-rule-dark' : 'bg-rule-strong')} />
+          </>
+        )}
+        {children}
+      </p>
+    );
+  }
+
   return (
     <p
       className={cn(
-        'flex items-center gap-2.5 font-mono text-[11px] uppercase tracking-[0.2em]',
-        tone === 'dark' ? 'text-term-dim' : 'text-ink-subtle',
+        'flex items-center gap-2.5 text-[13px] font-semibold',
+        tone === 'dark' ? 'text-ink-inverse' : 'text-ink',
         className,
       )}
     >
-      {index && (
-        <>
-          <span className={cn('nums', tone === 'dark' ? 'text-ink-inverse' : 'text-ink')}>
-            {index}
-          </span>
-          <span aria-hidden className={cn('h-px w-6', tone === 'dark' ? 'bg-rule-dark' : 'bg-rule-strong')} />
-        </>
-      )}
+      {index && <span className="nums text-punch-red">{index}</span>}
+      <span aria-hidden className="h-px w-5 shrink-0 bg-punch-red" />
       {children}
     </p>
   );
@@ -132,6 +151,7 @@ export function Prose({
 export function SectionHead({
   index,
   eyebrow,
+  eyebrowVariant = 'plain',
   title,
   lead,
   tone = 'light',
@@ -140,6 +160,7 @@ export function SectionHead({
 }: {
   index?: string;
   eyebrow: string;
+  eyebrowVariant?: 'plain' | 'mono';
   title: React.ReactNode;
   lead?: React.ReactNode;
   tone?: 'light' | 'dark';
@@ -154,7 +175,7 @@ export function SectionHead({
         className,
       )}
     >
-      <Eyebrow index={index} tone={tone}>
+      <Eyebrow index={index} tone={tone} variant={eyebrowVariant}>
         {eyebrow}
       </Eyebrow>
       <Display size="md" tone={tone} className="max-w-[24ch]">

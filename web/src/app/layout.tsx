@@ -21,9 +21,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GritQA — Integration tests generated from your backend code",
+  title: "GritQA — Your backend gets tested. You just approve it.",
   description:
-    "GritQA reads your routers, handlers and models, then writes chained API integration tests with real request bodies and assertions. One command, plain YAML you own, no agents.",
+    "GritQA drafts integration tests for whatever you just changed, waits for you to approve them, then runs them against a real database on your machine. Nothing runs until you say so.",
 };
 
 export default function RootLayout({

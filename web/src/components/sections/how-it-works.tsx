@@ -2,52 +2,73 @@ import { Section } from '@/components/ui/section';
 import { SectionHead, Prose } from '@/components/ui/typography';
 import { Crosshair } from '@/components/ui/crosshair';
 import { ButtonLink } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
 
 type Step = {
   index: string;
   title: string;
   body: string;
-  note: string;
+  /** The one beat that needs a person is called out, not hidden. */
+  needsYou?: boolean;
 };
 
 const STEPS: Step[] = [
   {
     index: '01',
-    title: 'Run it in your repo',
-    body: 'Drop the binary in your path and run it from the root of your service. It detects the language, the router, and the entry point on its own.',
-    note: 'no config file',
+    title: 'You ship a change',
+    body: 'Work the way you already work. Add an endpoint, change a model, fix a bug — no extra step, no annotations, nothing to remember.',
   },
   {
     index: '02',
-    title: 'It reads and plans',
-    body: 'Routes are resolved to handlers, request shapes come from your own types, and the dependency order falls out of the call graph.',
-    note: 'static analysis',
+    title: 'It notices what moved',
+    body: 'GritQA compares your project against the last time it looked and works out which behaviour your change could have broken.',
   },
   {
     index: '03',
-    title: 'It runs and reports',
-    body: 'Each flow executes against your server over real HTTP. Failures arrive with the assertion, the response body, and the source line.',
-    note: 'real requests',
+    title: 'It drafts the tests',
+    body: 'You get a realistic sequence of requests for what changed, with the values threaded through — or you write the plan yourself.',
   },
   {
     index: '04',
-    title: 'You commit the plan',
-    body: 'The generated YAML lands in .gritqa/ as a file you review, edit and version. From then on it is your suite, not ours.',
-    note: 'yours to keep',
+    title: 'You review and approve',
+    body: 'The draft waits for you. Approve it, edit an assertion, or reject it. Nothing runs against anything until you say yes.',
+    needsYou: true,
+  },
+  {
+    index: '05',
+    title: 'It runs for real',
+    body: 'Approved tests run on your machine against a real database that exists only for the run, with paid services swapped for stand-ins.',
+  },
+  {
+    index: '06',
+    title: 'You get the result',
+    body: 'Pass or fail in your terminal, and the full history in your dashboard — what ran, what broke, and what it was before.',
   },
 ];
 
 function StepCell({ step }: { step: Step }) {
   return (
-    <article className="group relative border-t border-rule-dark pt-6 transition-colors duration-200 ease-out hover:border-ink-subtle">
+    <article
+      className={cn(
+        'group relative border-t pt-6 transition-colors duration-200 ease-out',
+        step.needsYou
+          ? 'border-punch-red'
+          : 'border-rule-dark hover:border-ink-subtle',
+      )}
+    >
       <Crosshair at="tl" size="sm" tone="dark" />
 
       <div className="flex items-baseline justify-between gap-4">
         <span className="nums font-mono text-[11px] tracking-[0.16em] text-punch-red">
           {step.index}
         </span>
-        <span className="font-mono text-[10px] tracking-[0.16em] text-term-dim uppercase">
-          {step.note}
+        <span
+          className={cn(
+            'text-[12px]',
+            step.needsYou ? 'font-semibold text-punch-red' : 'text-term-dim',
+          )}
+        >
+          {step.needsYou ? 'Needs you' : 'Automatic'}
         </span>
       </div>
 
@@ -62,46 +83,68 @@ function StepCell({ step }: { step: Step }) {
   );
 }
 
+/* Two places you work, one workflow. This is the strip that stops the
+   product reading as a command-line tool with nothing behind it. */
+const SURFACES = [
+  {
+    where: 'In your terminal',
+    what: 'One command. It reads your project, drafts what changed, and runs whatever you have approved.',
+    detail: 'Runs locally. Your code stays on your machine.',
+  },
+  {
+    where: 'In your browser',
+    what: 'Your review queue, the plans themselves, your team’s rules, and every run you have ever done.',
+    detail: 'Where you approve, edit and look things up.',
+  },
+];
+
 export function HowItWorks() {
   return (
     <Section id="how-it-works" tone="dark" space="md" grid frame>
       <div className="flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-end">
         <SectionHead
-          index="03"
+          index="02"
           eyebrow="How it works"
-          title="Four steps, and you only type one of them."
-          lead="There is no onboarding flow, no SDK to import, and no traffic to record first. The whole surface is a single command you run where your code already lives."
+          title="Six steps. One of them is yours."
+          lead="No onboarding flow, no SDK to import, no traffic to record first. You write code and sign off on tests; GritQA does everything in between."
           tone="dark"
           className="max-w-2xl"
         />
 
-        <ButtonLink href="/docs" variant="ghostDark" size="md" trailing className="shrink-0">
-          Read the docs
+        <ButtonLink href="#waitlist" variant="ghostDark" size="md" trailing className="shrink-0">
+          Get early access
         </ButtonLink>
       </div>
 
       {/* Step band — a hairline above each cell, the same device the cards use. */}
-      <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
+      <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-3">
         {STEPS.map((s) => (
           <StepCell key={s.index} step={s} />
         ))}
       </div>
 
-      {/* The command itself, stated plainly. */}
-      <div className="mt-12 flex flex-col gap-5 rounded-lg border border-rule-dark bg-surface-dark-raised px-6 py-6 sm:flex-row sm:items-center sm:gap-8 sm:px-8">
-        <p className="shrink-0 font-mono text-[15px] text-ink-inverse">
-          <span aria-hidden className="mr-2.5 text-punch-red">
-            $
+      {/* Two surfaces, one workflow. */}
+      <div className="mt-14 rounded-lg border border-rule-dark bg-surface-dark-raised">
+        <div className="flex items-center gap-3 border-b border-rule-dark px-6 py-4 sm:px-8">
+          <h3 className="text-[13px] font-semibold text-ink-inverse">
+            Two places you work, kept in sync
+          </h3>
+          <span className="ml-auto text-[12px] text-term-dim">
+            The command line and the dashboard are the same product
           </span>
-          gritqa
-        </p>
-        <span aria-hidden className="hidden h-8 w-px shrink-0 bg-rule-dark sm:block" />
-        <p className="text-[13.5px] leading-[1.6] text-term-dim">
-          That is the entire command surface. No <code className="font-mono text-ink-inverse">init</code>,
-          no <code className="font-mono text-ink-inverse">generate</code>, no{' '}
-          <code className="font-mono text-ink-inverse">run</code> — the tool works out which of those
-          you needed and does it.
-        </p>
+        </div>
+
+        <dl className="grid gap-x-10 gap-y-8 px-6 py-7 sm:grid-cols-2 sm:px-8">
+          {SURFACES.map((s) => (
+            <div key={s.where}>
+              <dt className="text-[14px] font-semibold text-ink-inverse">{s.where}</dt>
+              <dd className="mt-2 max-w-[38ch] text-[13.5px] leading-[1.65] text-term-dim">
+                {s.what}
+                <span className="mt-2 block text-ink-subtle">{s.detail}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </Section>
   );

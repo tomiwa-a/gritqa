@@ -1,8 +1,8 @@
 import { Navbar } from '@/components/sections/navbar';
 import { Hero } from '@/components/sections/hero';
-import { Features } from '@/components/sections/features';
+import { Pillars } from '@/components/sections/pillars';
 import { HowItWorks } from '@/components/sections/how-it-works';
-import { Spec } from '@/components/sections/spec';
+import { Personas } from '@/components/sections/personas';
 import { Waitlist } from '@/components/sections/waitlist';
 import { Footer } from '@/components/sections/footer';
 
@@ -12,9 +12,9 @@ export default function Home() {
       <Navbar />
       <main id="main">
         <Hero />
-        <Features />
+        <Pillars />
         <HowItWorks />
-        <Spec />
+        <Personas />
         <Waitlist />
       </main>
       <Footer />

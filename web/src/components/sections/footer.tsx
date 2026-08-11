@@ -5,28 +5,19 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
   {
     heading: 'Product',
     links: [
-      { label: 'Capabilities', href: '#capabilities' },
-      { label: 'How it works', href: '#how-it-works' },
-      { label: 'Spec', href: '#spec' },
-      { label: 'Join waitlist', href: '#waitlist' },
+      { label: 'What you get', href: '/#product' },
+      { label: 'How it works', href: '/#how-it-works' },
+      { label: 'Who it’s for', href: '/#who-its-for' },
+      { label: 'Get early access', href: '/#waitlist' },
     ],
   },
   {
-    heading: 'Resources',
-    links: [
-      { label: 'Documentation', href: '/docs' },
-      { label: 'Plan format', href: '/docs/plan-format' },
-      { label: 'CI setup', href: '/docs/ci' },
-      { label: 'Changelog', href: '/changelog' },
-    ],
+    heading: 'Account',
+    links: [{ label: 'Sign in', href: '/login' }],
   },
   {
-    heading: 'Project',
-    links: [
-      { label: 'GitHub', href: 'https://github.com/gritqa' },
-      { label: 'Issues', href: 'https://github.com/gritqa/gritqa/issues' },
-      { label: 'Contact', href: 'mailto:hello@gritqa.dev' },
-    ],
+    heading: 'Contact',
+    links: [{ label: 'hello@gritqa.dev', href: 'mailto:hello@gritqa.dev' }],
   },
 ];
 
@@ -39,8 +30,8 @@ export function Footer() {
           <div className="flex flex-col gap-4 lg:col-span-5">
             <Wordmark />
             <p className="max-w-[34ch] text-[13.5px] leading-[1.65] text-ink-muted">
-              Integration tests generated from the backend code you already wrote.
-              One command, plain YAML, no agents.
+              Backend tests that get written for you, approved by you, and run
+              against a real database on your own machine.
             </p>
           </div>
 
@@ -48,9 +39,7 @@ export function Footer() {
           <nav aria-label="Footer" className="grid gap-x-8 gap-y-10 sm:grid-cols-3 lg:col-span-7">
             {COLUMNS.map((col) => (
               <div key={col.heading}>
-                <h2 className="font-mono text-[10.5px] tracking-[0.18em] text-ink-subtle uppercase">
-                  {col.heading}
-                </h2>
+                <h2 className="text-[13px] font-semibold text-ink">{col.heading}</h2>
                 <ul className="mt-4 space-y-2.5">
                   {col.links.map((l) => (
                     <li key={l.label}>
@@ -73,9 +62,7 @@ export function Footer() {
           <p className="text-[12.5px] text-ink-subtle">
             © {new Date().getFullYear()} GritQA. All rights reserved.
           </p>
-          <p className="nums font-mono text-[10.5px] tracking-[0.16em] text-ink-subtle uppercase">
-            v0.1.0 · pre-release
-          </p>
+          <p className="text-[12.5px] text-ink-subtle">Private beta</p>
         </div>
       </Container>
     </footer>

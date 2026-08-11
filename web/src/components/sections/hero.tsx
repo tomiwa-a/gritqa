@@ -4,34 +4,50 @@ import { Display, Accent, Eyebrow, Lead } from '@/components/ui/typography';
 import { ButtonLink } from '@/components/ui/button';
 import { StatusDot } from '@/components/ui/badge';
 
-/* The run the product is actually selling: one command, a discovered flow,
-   and a real failure it surfaced. */
+/* The story the product actually tells: you push, it drafts, and then it
+   stops and waits for you. The pause is the product. */
 const RUN: TermLine[] = [
   { kind: 'cmd', text: 'gritqa' },
-  { kind: 'info', text: 'go 1.23 · chi · 34 routes discovered' },
-  { kind: 'ok', text: 'inferred 5 flows from the handler call graph', meta: '1.4s' },
+  { kind: 'info', text: 'watching ~/api on branch main' },
+  { kind: 'ok', text: 'read your project — 214 files', meta: '1.1s' },
   { kind: 'blank' },
-  { kind: 'tree', text: 'POST   /v1/sessions', status: 'pass', meta: '84ms' },
-  { kind: 'tree', text: 'POST   /v1/carts', status: 'pass', meta: '61ms' },
-  { kind: 'tree', text: 'PATCH  /v1/carts/{id}/items', status: 'pass', meta: '73ms' },
-  { kind: 'tree', text: 'POST   /v1/checkout', status: 'fail', meta: '212ms' },
-  { kind: 'tree', text: 'GET    /v1/orders/{id}', status: 'skip', last: true, meta: 'blocked' },
+  { kind: 'out', text: 'changed since your last run' },
+  { kind: 'tree', text: 'checkout handler   applies tax' },
+  { kind: 'tree', text: 'refund handler     new endpoint' },
+  { kind: 'tree', text: 'order model        two new fields', last: true },
   { kind: 'blank' },
-  { kind: 'fail', text: 'checkout · expected 201, got 500 (nil tax_rate on cart)' },
+  { kind: 'ok', text: 'drafted 2 test plans for what changed', meta: '6.2s' },
+  { kind: 'info', text: 'waiting for your review · app.gritqa.dev/review' },
+  { kind: 'out', text: 'nothing runs until you approve it.' },
 ];
 
-const STACKS = ['Go', 'chi', 'Gin', 'Echo', 'Express', 'Fastify', 'NestJS'];
+/* Three promises, in plain language, doing the work the invented
+   framework list used to do. */
+const PROMISES = [
+  {
+    label: 'You stay in control',
+    body: 'Every test is a draft until you approve it. Edit it, reject it, or ask for a different one.',
+  },
+  {
+    label: 'Real databases, not mocks',
+    body: 'Tests run against a throwaway database that spins up for the run and disappears after.',
+  },
+  {
+    label: 'Your code stays yours',
+    body: 'Everything runs on your machine. Your source never gets uploaded anywhere.',
+  },
+];
 
 export function Hero() {
   return (
     <Section space="lg" frame>
       {/* ── Masthead ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <Eyebrow index="01" className="animate-line opacity-0">
-          Backend integration testing
+        <Eyebrow className="animate-line opacity-0">
+          Backend testing, handled
         </Eyebrow>
 
-        <p className="animate-line flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-ink-subtle uppercase opacity-0 [animation-delay:80ms]">
+        <p className="animate-line flex items-center gap-2 text-[13px] text-ink-muted opacity-0 [animation-delay:80ms]">
           <StatusDot tone="live" pulse label="Private beta open" />
           Private beta
         </p>
@@ -40,48 +56,34 @@ export function Hero() {
       <Display
         as="h1"
         size="xl"
-        className="animate-line mt-8 max-w-[17ch] opacity-0 [animation-delay:120ms]"
+        className="animate-line mt-8 max-w-[18ch] opacity-0 [animation-delay:120ms]"
       >
-        Point it at your repo. Get a <Accent>real</Accent> test suite.
+        Your backend gets tested. You just <Accent>approve</Accent> it.
       </Display>
 
       {/* ── Body: pitch left, proof right ────────────────────── */}
       <div className="mt-14 grid gap-x-10 gap-y-12 lg:mt-20 lg:grid-cols-12">
         <div className="animate-line flex flex-col gap-8 opacity-0 [animation-delay:220ms] lg:col-span-5">
           <Lead>
-            GritQA reads your routers, handlers, and models — then writes chained
-            integration tests with real request bodies, extracted variables, and
-            assertions that hold. No fixtures to maintain. No YAML to hand-write.
+            Push a change and the tests for it are already waiting in your
+            review queue. Approve them, edit them, or write your own — then
+            they run against a real database instead of a mock. QA stops being
+            the thing you get to last.
           </Lead>
 
           <div className="flex flex-wrap items-center gap-3">
             <ButtonLink href="#waitlist" variant="accent" size="lg" trailing>
-              Join the waitlist
+              Get early access
             </ButtonLink>
             <ButtonLink href="#how-it-works" variant="secondary" size="lg">
               See how it works
             </ButtonLink>
           </div>
 
-          {/* Spec-sheet annotation rather than a marketing sub-line. */}
-          <dl className="grid max-w-sm grid-cols-2 gap-x-6 gap-y-4 border-t border-rule pt-6">
-            <div>
-              <dt className="font-mono text-[10.5px] tracking-[0.16em] text-ink-subtle uppercase">
-                Setup
-              </dt>
-              <dd className="mt-1.5 text-[13.5px] text-ink-muted">
-                One command, zero config
-              </dd>
-            </div>
-            <div>
-              <dt className="font-mono text-[10.5px] tracking-[0.16em] text-ink-subtle uppercase">
-                Output
-              </dt>
-              <dd className="mt-1.5 text-[13.5px] text-ink-muted">
-                Plain YAML you own
-              </dd>
-            </div>
-          </dl>
+          <p className="border-t border-rule pt-6 text-[13.5px] leading-[1.6] text-ink-muted">
+            Works with the backend you already have. Nothing to instrument, no
+            traffic to record, no test framework to learn.
+          </p>
         </div>
 
         <div className="animate-line opacity-0 [animation-delay:300ms] lg:col-span-7">
@@ -90,30 +92,27 @@ export function Hero() {
             meta="~/api · main"
             stagger={90}
             stats={[
-              { label: 'Flows', value: '5' },
-              { label: 'Assertions', value: '41' },
-              { label: 'Failed', value: '1', tone: 'fail' },
-              { label: 'Wall', value: '3.9s' },
+              { label: 'Files read', value: '214' },
+              { label: 'Changed', value: '3' },
+              { label: 'Plans drafted', value: '2' },
+              { label: 'Status', value: 'in review' },
             ]}
-            caption="Running gritqa in an API repository. It discovers 34 routes, infers five request flows, runs them in order, and reports one failure: the checkout endpoint returned 500 instead of 201 because the cart had no tax rate."
+            caption="GritQA running in an API project. It reads 214 files, spots three that changed since the last run — the checkout handler, a new refund endpoint and two new fields on the order model — drafts two test plans for them, and then waits for the developer to review and approve those plans before anything runs."
           />
         </div>
       </div>
 
-      {/* ── Stack rail ───────────────────────────────────────── */}
-      <div className="mt-16 flex flex-col gap-4 border-t border-rule pt-6 sm:flex-row sm:items-center sm:gap-8 lg:mt-24">
-        <p className="shrink-0 font-mono text-[10.5px] tracking-[0.18em] text-ink-subtle uppercase">
-          Reads
-        </p>
-        <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 sm:gap-x-8">
-          {STACKS.map((s) => (
-            <li key={s} className="font-mono text-[13px] text-ink-muted">
-              {s}
-            </li>
-          ))}
-          <li className="font-mono text-[13px] text-ink-subtle">+ JS/TS</li>
-        </ul>
-      </div>
+      {/* ── Promises ─────────────────────────────────────────── */}
+      <dl className="mt-16 grid gap-x-8 gap-y-8 border-t border-rule pt-8 sm:grid-cols-3 lg:mt-24">
+        {PROMISES.map((p) => (
+          <div key={p.label}>
+            <dt className="text-[14px] font-semibold text-ink">{p.label}</dt>
+            <dd className="mt-2 max-w-[34ch] text-[13.5px] leading-[1.65] text-ink-muted">
+              {p.body}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </Section>
   );
 }

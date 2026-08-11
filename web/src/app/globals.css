@@ -35,6 +35,8 @@
   --color-warn-soft: #fdf3e7;
   --color-skip: #8d99ae;
   --color-skip-soft: #f1f3f6;
+  --color-info: #2563eb;
+  --color-info-soft: #e8effd;
 
   /* Terminal-only variants, tuned for the dark panel */
   --color-term-pass: #34d399;
