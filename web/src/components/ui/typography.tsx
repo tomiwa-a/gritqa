@@ -1,10 +1,5 @@
 import { cn } from '@/lib/cn';
 
-/* ── Eyebrow ──────────────────────────────────────────────────
-   `plain` is the default — a red rule, an optional numeral, and a
-   sentence-case label. Monospace is kept for things that really
-   are code, so `mono` has to be asked for.                       */
-
 export function Eyebrow({
   index,
   children,
@@ -23,7 +18,7 @@ export function Eyebrow({
       <p
         className={cn(
           'flex items-center gap-2.5 font-mono text-[11px] uppercase tracking-[0.2em]',
-          tone === 'dark' ? 'text-term-dim' : 'text-ink-subtle',
+          tone === 'dark' ? 'text-ink-dim' : 'text-ink-subtle',
           className,
         )}
       >
@@ -54,10 +49,6 @@ export function Eyebrow({
     </p>
   );
 }
-
-/* ── Display / Heading ────────────────────────────────────────
-   Four steps of display type. `accent` marks a single word in
-   punch-red rather than tinting whole phrases.                  */
 
 const DISPLAY = {
   xl: 'text-[2.75rem] sm:text-display-lg lg:text-display-xl',
@@ -93,12 +84,9 @@ export function Display({
   );
 }
 
-/** Single accented word inside a Display. */
 export function Accent({ children }: { children: React.ReactNode }) {
   return <span className="text-punch-red">{children}</span>;
 }
-
-/* ── Lead / Prose ─────────────────────────────────────────── */
 
 export function Lead({
   tone = 'light',
@@ -113,7 +101,7 @@ export function Lead({
     <p
       className={cn(
         'max-w-[52ch] text-[1.0625rem] leading-[1.65] text-pretty sm:text-lg',
-        tone === 'dark' ? 'text-term-dim' : 'text-ink-muted',
+        tone === 'dark' ? 'text-ink-dim' : 'text-ink-muted',
         className,
       )}
     >
@@ -135,7 +123,7 @@ export function Prose({
     <p
       className={cn(
         'text-[0.9375rem] leading-[1.7] text-pretty',
-        tone === 'dark' ? 'text-term-dim' : 'text-ink-muted',
+        tone === 'dark' ? 'text-ink-dim' : 'text-ink-muted',
         className,
       )}
     >
@@ -143,10 +131,6 @@ export function Prose({
     </p>
   );
 }
-
-/* ── SectionHead ──────────────────────────────────────────────
-   Eyebrow + Display + Lead in one consistent block, so every
-   section shares identical vertical rhythm.                     */
 
 export function SectionHead({
   index,

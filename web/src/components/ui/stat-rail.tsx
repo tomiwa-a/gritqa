@@ -2,22 +2,16 @@ import { cn } from '@/lib/cn';
 
 export type StatItem = {
   value: string;
-  /** Rendered smaller and dimmer, immediately after the value. */
   unit?: string;
   label: string;
 };
 
-/** Two columns on mobile, one row from `sm` up. */
 const COLS: Record<number, string> = {
   2: 'grid-cols-2',
   3: 'grid-cols-2 sm:grid-cols-3',
   4: 'grid-cols-2 sm:grid-cols-4',
 };
 
-/**
- * Metric rail. Hairline dividers between cells, tabular figures so values
- * stay optically aligned as they change.
- */
 export function StatRail({
   items,
   tone = 'light',

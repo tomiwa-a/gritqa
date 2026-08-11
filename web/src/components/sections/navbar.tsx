@@ -9,6 +9,7 @@ import { Wordmark } from '@/components/ui/wordmark';
 const LINKS = [
   { href: '#product', label: 'Product' },
   { href: '#how-it-works', label: 'How it works' },
+  { href: '#coverage', label: 'Test types' },
   { href: '#who-its-for', label: 'Who it’s for' },
 ];
 
@@ -23,7 +24,6 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Lock the page and wire Escape only while the mobile panel is open.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
@@ -45,12 +45,7 @@ export function Navbar() {
     >
       <Container>
         <div className="flex h-16 items-center gap-8">
-          <div className="flex items-baseline gap-2.5">
-            <Wordmark />
-            <span className="nums hidden font-mono text-[10px] tracking-[0.14em] text-ink-subtle sm:inline">
-              v0.1.0
-            </span>
-          </div>
+          <Wordmark />
 
           <nav aria-label="Main" className="hidden md:block">
             <ul className="flex items-center gap-7">
@@ -68,7 +63,6 @@ export function Navbar() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Signals there is an app behind the command line. */}
             <ButtonLink href="/login" variant="ghost" size="sm" className="hidden sm:inline-flex">
               Sign in
             </ButtonLink>
@@ -98,7 +92,6 @@ export function Navbar() {
         </div>
       </Container>
 
-      {/* Mobile panel */}
       {open && (
         <div id="mobile-nav" className="border-t border-rule bg-surface md:hidden">
           <Container>

@@ -6,19 +6,10 @@ import { cn } from '@/lib/cn';
 export type TabItem = {
   id: string;
   label: string;
-  /** Mono index shown before the label. */
   index?: string;
-  /** Panel content. Passed as a node so callers can stay server-rendered. */
   panel: React.ReactNode;
 };
 
-/**
- * Tabs with full ARIA wiring: roving tabindex, arrow/Home/End keys, and
- * `aria-controls`/`aria-labelledby` linkage to the panel.
- *
- * Only the active panel is mounted, keyed by its id, so entrance animations
- * restart on every switch.
- */
 export function Tabs({
   items,
   label,
@@ -27,7 +18,6 @@ export function Tabs({
   panelClassName,
 }: {
   items: TabItem[];
-  /** Accessible name for the tablist. */
   label: string;
   defaultId?: string;
   className?: string;
@@ -97,7 +87,6 @@ export function Tabs({
               )}
               <span className={selected ? 'font-medium' : ''}>{t.label}</span>
 
-              {/* Active marker sits on the tablist hairline. */}
               <span
                 aria-hidden
                 className={cn(

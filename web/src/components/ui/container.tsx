@@ -2,9 +2,7 @@ import { cn } from '@/lib/cn';
 
 type ContainerProps = {
   children: React.ReactNode;
-  /** `wide` for full sections, `prose` for readable text columns. */
   width?: 'wide' | 'prose';
-  /** Draw hairline rules down both edges of the column. */
   rules?: boolean;
   tone?: 'light' | 'dark';
   className?: string;

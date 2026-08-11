@@ -1,10 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 
-/**
- * Flat fills only — depth comes from hairlines and tone, never gradient.
- * `accent` is reserved for the single highest-intent action per view.
- */
 const button = cva(
   [
     'group relative inline-flex items-center justify-center gap-2 whitespace-nowrap',
@@ -20,7 +16,7 @@ const button = cva(
         secondary: 'bg-surface text-ink border border-rule-strong hover:border-ink hover:bg-surface-sunken',
         ghost: 'text-ink-muted hover:text-ink hover:bg-surface-sunken',
         onDark: 'bg-ink-inverse text-ink hover:bg-white',
-        ghostDark: 'text-term-dim border border-rule-dark hover:text-ink-inverse hover:border-ink-subtle',
+        ghostDark: 'text-ink-dim border border-rule-dark hover:text-ink-inverse hover:border-ink-subtle',
       },
       size: {
         sm: 'h-8 px-3 text-[13px]',
@@ -34,7 +30,6 @@ const button = cva(
 
 type ButtonBaseProps = VariantProps<typeof button> & {
   children: React.ReactNode;
-  /** Chevron that slides on hover. */
   trailing?: boolean;
   className?: string;
 };

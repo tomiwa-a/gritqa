@@ -95,7 +95,6 @@ export function WaitlistForm({
           />
         </div>
 
-        {/* Honeypot — hidden from users and assistive tech alike. */}
         <div aria-hidden className="absolute h-0 w-0 overflow-hidden">
           <input name="botField" tabIndex={-1} autoComplete="off" />
         </div>
@@ -112,7 +111,6 @@ export function WaitlistForm({
         </Button>
       </div>
 
-      {/* Live region is always present so the first error is announced. */}
       <div aria-live="polite" className="mt-2 min-h-5">
         {state === 'error' && <FieldError id={errorId}>{message}</FieldError>}
       </div>

@@ -7,11 +7,8 @@ export type PlanStep = {
   name: string;
   method: Method;
   path: string;
-  /** Variables pulled out of the response for later steps. */
   extract?: { name: string; from: string }[];
-  /** Assertions run against the response. */
   assert?: string[];
-  /** Variables consumed from earlier steps — renders the chaining. */
   uses?: string[];
   status?: 'pass' | 'fail' | 'skip' | 'draft';
 };
@@ -23,12 +20,6 @@ const STATUS = {
   draft: { label: 'draft', cls: 'text-ink-subtle' },
 } as const;
 
-/**
- * Renders a generated test plan the way the product actually stores it —
- * ordered steps, extracted variables, assertions, and the chaining between
- * them. This is the artifact the product is selling, so it gets a real
- * component rather than a screenshot.
- */
 export function PlanViewer({
   name,
   steps,
@@ -48,7 +39,6 @@ export function PlanViewer({
         className,
       )}
     >
-      {/* Header */}
       <div className="flex items-center gap-3 border-b border-rule bg-surface-sunken px-4 py-3">
         <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-subtle">
           plan
@@ -59,7 +49,6 @@ export function PlanViewer({
         </span>
       </div>
 
-      {/* Steps */}
       <ol className="divide-y divide-rule">
         {steps.map((step, i) => (
           <li key={step.id} className="px-4 py-3.5">
@@ -81,7 +70,6 @@ export function PlanViewer({
               )}
             </div>
 
-            {/* Detail rail, indented to align under the method badge */}
             {(step.uses || step.extract || step.assert) && (
               <dl className="mt-2.5 space-y-1 pl-[2.4rem] text-[12px]">
                 {step.uses?.map((u) => (

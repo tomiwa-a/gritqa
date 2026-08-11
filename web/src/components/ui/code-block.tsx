@@ -1,6 +1,5 @@
 import { cn } from '@/lib/cn';
 
-/** Minimal YAML tokenizer — keys, strings, comments, punctuation. */
 function highlightYaml(line: string, i: number) {
   if (/^\s*#/.test(line)) {
     return <span className="text-term-dim italic">{line}</span>;

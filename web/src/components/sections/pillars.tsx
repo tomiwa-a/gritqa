@@ -6,10 +6,6 @@ import { Card, SpecList } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHead, Prose } from '@/components/ui/typography';
 
-/* ── Panel shell ──────────────────────────────────────────────
-   Every pillar reads the same way: a narrow explanation column
-   against the thing it produces. */
-
 function Panel({
   title,
   body,
@@ -40,8 +36,6 @@ function Panel({
   );
 }
 
-/* ── 01 Knows your code ───────────────────────────────────── */
-
 const READ: TermLine[] = [
   { kind: 'cmd', text: 'gritqa' },
   { kind: 'info', text: 'reading ~/api — 214 files' },
@@ -55,8 +49,6 @@ const READ: TermLine[] = [
   { kind: 'ok', text: 'mapped your project', meta: '2.3s' },
   { kind: 'info', text: 'from here on it only re-reads what you change' },
 ];
-
-/* ── 02 Drafts the tests ──────────────────────────────────── */
 
 const DRAFT: PlanStep[] = [
   {
@@ -97,10 +89,6 @@ const DRAFT: PlanStep[] = [
     status: 'draft',
   },
 ];
-
-/* ── 03 You approve ───────────────────────────────────────────
-   A still of the review queue. Step 2 replaces this with the real
-   dashboard component; the copy it carries is already true.       */
 
 const QUEUE: {
   name: string;
@@ -184,8 +172,6 @@ function ReviewMock() {
   );
 }
 
-/* ── 04 Real database ─────────────────────────────────────── */
-
 const RUN: TermLine[] = [
   { kind: 'cmd', text: 'gritqa' },
   { kind: 'info', text: 'checkout with tax applied · approved by you' },
@@ -202,8 +188,6 @@ const RUN: TermLine[] = [
   { kind: 'fail', text: 'expected 201, got 500 — the cart had no tax rate' },
   { kind: 'ok', text: 'database destroyed, nothing left behind', meta: '0.4s' },
 ];
-
-/* ── 05 Your rules ────────────────────────────────────────── */
 
 const RULES: { kind: string; rule: string; note: string }[] = [
   {
@@ -258,8 +242,6 @@ function RulesMock() {
     </figure>
   );
 }
-
-/* ── Tabs ─────────────────────────────────────────────────── */
 
 const TABS: TabItem[] = [
   {

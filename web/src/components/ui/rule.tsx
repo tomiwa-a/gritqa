@@ -1,19 +1,14 @@
 import { cn } from '@/lib/cn';
 
 type RuleProps = {
-  /** Monospace label set into the rule, editorial-style. */
   label?: string;
   tone?: 'light' | 'dark';
   className?: string;
 };
 
-/**
- * Horizontal hairline. With a label it becomes a section marker —
- * label left, rule filling the remaining width.
- */
 export function Rule({ label, tone = 'light', className }: RuleProps) {
   const line = tone === 'dark' ? 'bg-rule-dark' : 'bg-rule';
-  const text = tone === 'dark' ? 'text-term-dim' : 'text-ink-subtle';
+  const text = tone === 'dark' ? 'text-ink-dim' : 'text-ink-subtle';
 
   if (!label) {
     return <div aria-hidden className={cn('h-px w-full', line, className)} />;
@@ -29,7 +24,6 @@ export function Rule({ label, tone = 'light', className }: RuleProps) {
   );
 }
 
-/** Dotted leader, for label → value pairs in spec tables. */
 export function Leader({ tone = 'light', className }: { tone?: 'light' | 'dark'; className?: string }) {
   return (
     <span

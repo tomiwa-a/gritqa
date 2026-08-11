@@ -1,14 +1,17 @@
 import { Section } from '@/components/ui/section';
-import { SectionHead, Prose } from '@/components/ui/typography';
+import { SectionHead, Prose, Display } from '@/components/ui/typography';
 import { Crosshair } from '@/components/ui/crosshair';
 import { ButtonLink } from '@/components/ui/button';
+import { Terminal, type TermLine } from '@/components/ui/terminal';
+import { AppFrame } from '@/components/ui/app-frame';
+import { SplitSurface } from '@/components/ui/split-surface';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 
 type Step = {
   index: string;
   title: string;
   body: string;
-  /** The one beat that needs a person is called out, not hidden. */
   needsYou?: boolean;
 };
 
@@ -16,7 +19,7 @@ const STEPS: Step[] = [
   {
     index: '01',
     title: 'You ship a change',
-    body: 'Work the way you already work. Add an endpoint, change a model, fix a bug — no extra step, no annotations, nothing to remember.',
+    body: 'Work the way you already work. Add an endpoint, change a model, fix a bug — no extra step, nothing to remember.',
   },
   {
     index: '02',
@@ -50,53 +53,89 @@ function StepCell({ step }: { step: Step }) {
   return (
     <article
       className={cn(
-        'group relative border-t pt-6 transition-colors duration-200 ease-out',
+        'group relative flex flex-col',
         step.needsYou
-          ? 'border-punch-red'
-          : 'border-rule-dark hover:border-ink-subtle',
+          ? 'rounded-lg border border-punch-red/45 bg-surface-dark-raised p-5 sm:p-6'
+          : 'border-t border-rule-dark pt-6 transition-colors duration-200 ease-out hover:border-ink-subtle',
       )}
     >
-      <Crosshair at="tl" size="sm" tone="dark" />
+      {!step.needsYou && <Crosshair at="tl" size="sm" tone="dark" />}
 
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="nums font-mono text-[11px] tracking-[0.16em] text-punch-red">
-          {step.index}
-        </span>
-        <span
-          className={cn(
-            'text-[12px]',
-            step.needsYou ? 'font-semibold text-punch-red' : 'text-term-dim',
-          )}
-        >
-          {step.needsYou ? 'Needs you' : 'Automatic'}
-        </span>
+      <div className="flex items-center gap-3">
+        <span className="nums text-[13px] font-semibold text-punch-red">{step.index}</span>
+        {step.needsYou && (
+          <Badge variant="fail" size="sm" className="ml-auto">
+            This one is yours
+          </Badge>
+        )}
       </div>
 
-      <h3 className="mt-5 font-heading text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink-inverse">
+      <h3 className="mt-4 font-heading text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink-inverse">
         {step.title}
       </h3>
 
-      <Prose tone="dark" className="mt-3">
+      <Prose tone="dark" className="mt-2.5">
         {step.body}
       </Prose>
     </article>
   );
 }
 
-/* Two places you work, one workflow. This is the strip that stops the
-   product reading as a command-line tool with nothing behind it. */
-const SURFACES = [
-  {
-    where: 'In your terminal',
-    what: 'One command. It reads your project, drafts what changed, and runs whatever you have approved.',
-    detail: 'Runs locally. Your code stays on your machine.',
-  },
-  {
-    where: 'In your browser',
-    what: 'Your review queue, the plans themselves, your team’s rules, and every run you have ever done.',
-    detail: 'Where you approve, edit and look things up.',
-  },
+const CLI: TermLine[] = [
+  { kind: 'cmd', text: 'gritqa' },
+  { kind: 'ok', text: '2 plans drafted for what changed', meta: '6.2s' },
+  { kind: 'info', text: 'waiting for your review' },
+  { kind: 'blank' },
+  { kind: 'ok', text: 'refund flow approved — running', meta: 'now' },
+  { kind: 'tree', text: 'create order', status: 'pass', meta: '71ms' },
+  { kind: 'tree', text: 'refund it', status: 'pass', last: true, meta: '96ms' },
 ];
+
+const QUEUE = [
+  { name: 'Checkout with tax applied', status: 'review' as const, label: 'Review' },
+  { name: 'Refund a paid order', status: 'approved' as const, label: 'Approved' },
+  { name: 'Sign-up rejects a duplicate', status: 'running' as const, label: 'Running' },
+];
+
+function DashboardMock() {
+  return (
+    <figure>
+      <AppFrame url="app.gritqa.dev/review" meta="3 plans">
+        <ul className="divide-y divide-rule-dark" aria-hidden>
+          {QUEUE.map((q) => (
+            <li key={q.name} className="flex items-center gap-3 px-4 py-3">
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ink-inverse">
+                {q.name}
+              </span>
+              <Badge variant={q.status} size="sm">
+                {q.label}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+        <div
+          aria-hidden
+          className="flex items-center gap-2 border-t border-rule-dark px-4 py-3"
+        >
+          <span className="rounded-md bg-punch-red px-2.5 py-1 text-[12px] font-medium text-ink-inverse">
+            Approve
+          </span>
+          <span className="rounded-md border border-rule-dark px-2.5 py-1 text-[12px] text-ink-dim">
+            Edit
+          </span>
+          <span className="rounded-md border border-rule-dark px-2.5 py-1 text-[12px] text-ink-dim">
+            Reject
+          </span>
+        </div>
+      </AppFrame>
+      <figcaption className="sr-only">
+        The GritQA dashboard at app.gritqa.dev/review, showing three test plans —
+        one waiting for review, one approved, one currently running — each of which
+        can be approved, edited or rejected.
+      </figcaption>
+    </figure>
+  );
+}
 
 export function HowItWorks() {
   return (
@@ -116,35 +155,38 @@ export function HowItWorks() {
         </ButtonLink>
       </div>
 
-      {/* Step band — a hairline above each cell, the same device the cards use. */}
-      <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-3">
+      <div className="mt-12 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:mt-16 lg:grid-cols-3">
         {STEPS.map((s) => (
           <StepCell key={s.index} step={s} />
         ))}
       </div>
 
-      {/* Two surfaces, one workflow. */}
-      <div className="mt-14 rounded-lg border border-rule-dark bg-surface-dark-raised">
-        <div className="flex items-center gap-3 border-b border-rule-dark px-6 py-4 sm:px-8">
-          <h3 className="text-[13px] font-semibold text-ink-inverse">
-            Two places you work, kept in sync
-          </h3>
-          <span className="ml-auto text-[12px] text-term-dim">
-            The command line and the dashboard are the same product
-          </span>
+      <div className="mt-16 border-t border-rule-dark pt-12 lg:mt-20">
+        <div className="max-w-2xl">
+          <Display as="h3" size="sm" tone="dark">
+            The command line and the dashboard are the same product.
+          </Display>
+          <Prose tone="dark" className="mt-3">
+            Run it where your code lives, review it where you can actually read it.
+            Approve a plan in the browser and the next run picks it up — you never
+            copy anything between the two.
+          </Prose>
         </div>
 
-        <dl className="grid gap-x-10 gap-y-8 px-6 py-7 sm:grid-cols-2 sm:px-8">
-          {SURFACES.map((s) => (
-            <div key={s.where}>
-              <dt className="text-[14px] font-semibold text-ink-inverse">{s.where}</dt>
-              <dd className="mt-2 max-w-[38ch] text-[13.5px] leading-[1.65] text-term-dim">
-                {s.what}
-                <span className="mt-2 block text-ink-subtle">{s.detail}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <SplitSurface
+          className="mt-10"
+          leftLabel="On your machine"
+          rightLabel="In your browser"
+          left={
+            <Terminal
+              lines={CLI}
+              meta="~/api"
+              stagger={70}
+              caption="The terminal shows two plans drafted for what changed and waiting for review, then the refund flow — which the developer already approved — running its two steps successfully."
+            />
+          }
+          right={<DashboardMock />}
+        />
       </div>
     </Section>
   );

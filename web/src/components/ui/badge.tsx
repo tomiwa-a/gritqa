@@ -12,10 +12,8 @@ const badge = cva(
         fail: 'bg-fail-soft text-fail',
         warn: 'bg-warn-soft text-warn',
         skip: 'bg-skip-soft text-skip',
-        onDark: 'border border-rule-dark bg-surface-dark-raised text-term-dim',
+        onDark: 'border border-rule-dark bg-surface-dark-raised text-ink-dim',
 
-        /* Plan lifecycle — drafted, waiting on a person, signed off,
-           executing, shelved, broken. Same vocabulary the dashboard uses. */
         draft: 'bg-skip-soft text-ink-muted',
         review: 'bg-warn-soft text-warn',
         approved: 'bg-pass-soft text-pass',
@@ -41,10 +39,6 @@ export type BadgeProps = VariantProps<typeof badge> & {
 export function Badge({ variant, size, mono, children, className }: BadgeProps) {
   return <span className={cn(badge({ variant, size, mono }), className)}>{children}</span>;
 }
-
-/* ── StatusDot ────────────────────────────────────────────────
-   Shape carries the meaning alongside colour, so status is not
-   colour-only. Ships an accessible label by default.            */
 
 const TONE = {
   pass: { fill: 'bg-pass', label: 'Passed' },
@@ -80,8 +74,6 @@ export function StatusDot({
     </span>
   );
 }
-
-/* ── Kbd ──────────────────────────────────────────────────── */
 
 export function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (

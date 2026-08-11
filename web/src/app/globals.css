@@ -1,32 +1,28 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* ── Brand ──────────────────────────────────────────────── */
   --color-space-indigo: #2b2d42;
   --color-punch-red: #ef233c;
   --color-lavender-grey: #8d99ae;
   --color-classic-crimson: #d80032;
   --color-platinum: #edf2f4;
 
-  /* ── Ink: text tiers on light surfaces ──────────────────── */
   --color-ink: #1b1d2e;
   --color-ink-muted: #5c6478;
   --color-ink-subtle: #8d99ae;
   --color-ink-inverse: #f7f9fa;
+  --color-ink-dim: #aab3c5;
 
-  /* ── Surfaces: light page, dark accent panels ───────────── */
   --color-surface: #ffffff;
   --color-surface-sunken: #f4f6f8;
   --color-surface-raised: #ffffff;
   --color-surface-dark: #191b2a;
   --color-surface-dark-raised: #21243a;
 
-  /* ── Hairlines: editorial rules, three weights ──────────── */
   --color-rule: #e3e7ec;
   --color-rule-strong: #cbd2dc;
   --color-rule-dark: #2f3350;
 
-  /* ── Semantic: test pass / fail / warn / skip ───────────── */
   --color-pass: #0d9f6e;
   --color-pass-soft: #e7f6f0;
   --color-fail: #ef233c;
@@ -38,13 +34,11 @@
   --color-info: #2563eb;
   --color-info-soft: #e8effd;
 
-  /* Terminal-only variants, tuned for the dark panel */
   --color-term-pass: #34d399;
   --color-term-fail: #fb7185;
   --color-term-warn: #fbbf24;
   --color-term-dim: #7b86a0;
 
-  /* ── Type scale: editorial display range ────────────────── */
   --text-display-xl: 5.25rem;
   --text-display-xl--line-height: 0.93;
   --text-display-xl--letter-spacing: -0.045em;
@@ -66,11 +60,8 @@
   --color-foreground: #1b1d2e;
 }
 
-/* ── Base ─────────────────────────────────────────────────── */
-
 html {
   scroll-behavior: smooth;
-  /* Clears the sticky header when jumping to an anchor. */
   scroll-padding-top: 5rem;
   -webkit-text-size-adjust: 100%;
 }
@@ -80,6 +71,7 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   font-feature-settings: "cv11", "ss01";
+  overflow-x: clip;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -97,7 +89,6 @@ pre, code, kbd, samp {
   color: var(--color-ink);
 }
 
-/* Single focus treatment for every interactive element. */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
   outline: 2px solid var(--color-punch-red);
   outline-offset: 2px;
@@ -113,9 +104,6 @@ pre, code, kbd, samp {
   }
 }
 
-/* ── Editorial utilities ──────────────────────────────────── */
-
-/* Blueprint grid — structure, not decoration. Uses hairline tokens. */
 @utility bg-grid {
   background-image:
     linear-gradient(to right, var(--color-rule) 1px, transparent 1px),
@@ -130,14 +118,11 @@ pre, code, kbd, samp {
   background-size: 72px 72px;
 }
 
-/* Tabular figures — keeps metrics from jittering as values change. */
 @utility nums {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-/* Line reveal — terminal output and staggered list items. Ends at
-   opacity 1 via `forwards` so content persists after the animation. */
 @keyframes line-in {
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: none; }
@@ -147,7 +132,6 @@ pre, code, kbd, samp {
   animation: line-in 380ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Terminal caret. */
 @keyframes caret-blink {
   0%, 45% { opacity: 1; }
   55%, 100% { opacity: 0; }

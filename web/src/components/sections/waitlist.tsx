@@ -12,7 +12,7 @@ export function Waitlist() {
   return (
     <Section id="waitlist" tone="dark" space="lg" grid frame>
       <div className="mx-auto flex max-w-[46rem] flex-col items-center text-center">
-        <Eyebrow index="04" tone="dark">
+        <Eyebrow index="05" tone="dark">
           Private beta
         </Eyebrow>
 
@@ -32,7 +32,7 @@ export function Waitlist() {
         {ASSURANCES.map((a) => (
           <li key={a} className="flex items-baseline gap-2.5">
             <span aria-hidden className="mt-[0.5em] h-px w-3 shrink-0 bg-rule-dark" />
-            <span className="text-[13px] leading-[1.55] text-term-dim">{a}</span>
+            <span className="text-[13px] leading-[1.55] text-ink-dim">{a}</span>
           </li>
         ))}
       </ul>

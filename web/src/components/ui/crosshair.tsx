@@ -1,7 +1,6 @@
 import { cn } from '@/lib/cn';
 
 type CrosshairProps = {
-  /** Corner to pin to. Omit for a free-standing mark. */
   at?: 'tl' | 'tr' | 'bl' | 'br';
   size?: 'sm' | 'md';
   tone?: 'light' | 'dark';
@@ -15,11 +14,6 @@ const AT: Record<NonNullable<CrosshairProps['at']>, string> = {
   br: 'absolute bottom-0 right-0 translate-x-1/2 translate-y-1/2',
 };
 
-/**
- * Registration mark. Borrowed from print/technical drawing — sits where two
- * hairlines cross to make the underlying grid feel deliberate rather than
- * incidental. Purely decorative, so hidden from assistive tech.
- */
 export function Crosshair({ at, size = 'md', tone = 'light', className }: CrosshairProps) {
   const px = size === 'sm' ? 'h-2 w-2' : 'h-3 w-3';
   const stroke = tone === 'dark' ? 'bg-rule-dark' : 'bg-rule-strong';

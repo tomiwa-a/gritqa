@@ -1,10 +1,5 @@
 import { cn } from '@/lib/cn';
 
-/**
- * Structured terminal output. Lines are typed data rather than pre-coloured
- * strings so timings right-align, glyphs stay consistent, and the whole block
- * can be described to assistive tech in one caption.
- */
 export type TermLine =
   | { kind: 'cmd'; text: string }
   | { kind: 'ok'; text: string; meta?: string }
@@ -73,17 +68,11 @@ function Line({ line, delay }: { line: TermLine; delay: number }) {
 
 export type TerminalProps = {
   lines: TermLine[];
-  /** Mono label in the chrome bar. */
   title?: string;
-  /** Right side of the chrome bar. */
   meta?: string;
-  /** Footer metrics rail: [label, value] pairs. */
   stats?: { label: string; value: string; tone?: 'pass' | 'fail' | 'default' }[];
-  /** Blinking caret after the last line. */
   caret?: boolean;
-  /** Plain-language description for screen readers. */
   caption: string;
-  /** Stagger step in ms. 0 renders fully visible. */
   stagger?: number;
   className?: string;
 };
@@ -106,18 +95,16 @@ export function Terminal({
         className,
       )}
     >
-      {/* Chrome — a spec label, not window furniture. */}
       <div className="flex items-center gap-2.5 border-b border-rule-dark px-4 py-2.5">
         <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-term-pass" />
         <span className="font-mono text-[11px] tracking-[0.14em] text-ink-inverse uppercase">
           {title}
         </span>
         {meta && (
-          <span className="nums ml-auto font-mono text-[11px] text-term-dim">{meta}</span>
+          <span className="nums ml-auto font-mono text-[11px] text-ink-dim">{meta}</span>
         )}
       </div>
 
-      {/* Body */}
       <div
         aria-hidden
         className="px-4 py-4 font-mono text-[12.5px] leading-[1.75] sm:px-5 sm:text-[13px]"
@@ -136,7 +123,6 @@ export function Terminal({
         )}
       </div>
 
-      {/* Metrics rail */}
       {stats && stats.length > 0 && (
         <div
           aria-hidden
@@ -145,7 +131,7 @@ export function Terminal({
         >
           {stats.map((s) => (
             <div key={s.label} className="px-4 py-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-term-dim">
+              <div className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-dim">
                 {s.label}
               </div>
               <div

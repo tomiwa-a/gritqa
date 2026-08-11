@@ -4,8 +4,6 @@ import { Display, Accent, Eyebrow, Lead } from '@/components/ui/typography';
 import { ButtonLink } from '@/components/ui/button';
 import { StatusDot } from '@/components/ui/badge';
 
-/* The story the product actually tells: you push, it drafts, and then it
-   stops and waits for you. The pause is the product. */
 const RUN: TermLine[] = [
   { kind: 'cmd', text: 'gritqa' },
   { kind: 'info', text: 'watching ~/api on branch main' },
@@ -21,8 +19,6 @@ const RUN: TermLine[] = [
   { kind: 'out', text: 'nothing runs until you approve it.' },
 ];
 
-/* Three promises, in plain language, doing the work the invented
-   framework list used to do. */
 const PROMISES = [
   {
     label: 'You stay in control',
@@ -41,7 +37,6 @@ const PROMISES = [
 export function Hero() {
   return (
     <Section space="lg" frame>
-      {/* ── Masthead ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <Eyebrow className="animate-line opacity-0">
           Backend testing, handled
@@ -61,7 +56,6 @@ export function Hero() {
         Your backend gets tested. You just <Accent>approve</Accent> it.
       </Display>
 
-      {/* ── Body: pitch left, proof right ────────────────────── */}
       <div className="mt-14 grid gap-x-10 gap-y-12 lg:mt-20 lg:grid-cols-12">
         <div className="animate-line flex flex-col gap-8 opacity-0 [animation-delay:220ms] lg:col-span-5">
           <Lead>
@@ -102,7 +96,6 @@ export function Hero() {
         </div>
       </div>
 
-      {/* ── Promises ─────────────────────────────────────────── */}
       <dl className="mt-16 grid gap-x-8 gap-y-8 border-t border-rule pt-8 sm:grid-cols-3 lg:mt-24">
         {PROMISES.map((p) => (
           <div key={p.label}>

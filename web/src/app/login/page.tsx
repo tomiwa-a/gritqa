@@ -12,9 +12,6 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
-/* The dashboard is real but not open yet. This page says so rather than
-   pretending to be a login form that cannot log anyone in. */
-
 export default function LoginPage() {
   return (
     <main id="main" className="flex min-h-screen flex-col">

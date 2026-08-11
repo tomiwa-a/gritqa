@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 
-/** Deliberately permissive — real validation is the confirmation email. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export async function POST(request: Request) {
@@ -16,8 +15,6 @@ export async function POST(request: Request) {
 
   const { email, botField } = (body ?? {}) as { email?: string; botField?: string };
 
-  // Honeypot: real users never fill a hidden field. Accept silently so bots
-  // get no signal about why they failed.
   if (botField) return NextResponse.json({ ok: true });
 
   if (typeof email !== 'string' || !EMAIL.test(email.trim())) {
@@ -30,9 +27,6 @@ export async function POST(request: Request) {
   const address = email.trim().toLowerCase();
   const sink = process.env.WAITLIST_WEBHOOK_URL;
 
-  // No store is provisioned yet. Forward to a webhook when one is configured
-  // (Resend/Mailchimp/Supabase all accept a POST), otherwise record the signup
-  // in the server log so nothing is silently dropped in development.
   if (!sink) {
     console.info('[waitlist] signup (no WAITLIST_WEBHOOK_URL configured):', address);
     return NextResponse.json({ ok: true });

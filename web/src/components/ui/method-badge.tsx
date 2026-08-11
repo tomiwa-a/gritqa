@@ -2,7 +2,6 @@ import { cn } from '@/lib/cn';
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** Verb colours follow the convention API tools already teach. */
 const METHOD: Record<Method, string> = {
   GET: 'text-[#1d4ed8] bg-[#eaf0fe]',
   POST: 'text-pass bg-pass-soft',

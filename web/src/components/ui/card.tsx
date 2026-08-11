@@ -1,10 +1,6 @@
 import { cn } from '@/lib/cn';
 import { Crosshair } from './crosshair';
 
-/* ── Card ─────────────────────────────────────────────────────
-   Flat surface, hairline border. Depth only on hover, and only
-   as a border-tone shift — never a shadow bloom.                */
-
 export function Card({
   children,
   interactive = false,
@@ -32,11 +28,6 @@ export function Card({
     </div>
   );
 }
-
-/* ── IndexCard ────────────────────────────────────────────────
-   The editorial workhorse: an oversized index numeral, a hairline
-   under the header, then content. Registration marks on the top
-   corners tie it back to the page grid.                          */
 
 export function IndexCard({
   index,
@@ -75,10 +66,6 @@ export function IndexCard({
   );
 }
 
-/* ── SpecList ─────────────────────────────────────────────────
-   Bulletless feature list. A hairline tick replaces the dot so it
-   reads as a spec sheet rather than marketing copy.               */
-
 export function SpecList({
   items,
   tone = 'light',
@@ -99,7 +86,7 @@ export function SpecList({
               tone === 'dark' ? 'bg-rule-dark' : 'bg-rule-strong',
             )}
           />
-          <span className={tone === 'dark' ? 'text-term-dim' : 'text-ink-muted'}>{item}</span>
+          <span className={tone === 'dark' ? 'text-ink-dim' : 'text-ink-muted'}>{item}</span>
         </li>
       ))}
     </ul>
