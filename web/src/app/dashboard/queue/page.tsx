@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Topbar } from '@/components/app/topbar';
 import { EmptyState } from '@/components/app/empty-state';
+import { GenerateMenu } from '@/components/app/generate-menu';
+import { OverlayHost } from '@/components/app/overlay-host';
 import { QueueRail } from '@/components/app/plan/queue-rail';
 import { QueueKeys } from '@/components/app/plan/queue-keys';
 import { PlanReader } from '@/components/app/plan/plan-reader';
@@ -9,6 +11,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { currentProject, plansAwaitingReview } from '@/lib/mock/data';
 import { planDetailFor } from '@/lib/mock/plans';
+import { parseOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
 
@@ -17,14 +20,16 @@ const QUEUE = '/dashboard/queue';
 export default async function QueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; step?: string }>;
+  searchParams: Promise<PageParams>;
 }) {
-  const { plan: planParam, step: stepParam } = await searchParams;
+  const params = await searchParams;
+  const planParam = typeof params.plan === 'string' ? params.plan : undefined;
+  const stepParam = typeof params.step === 'string' ? params.step : undefined;
 
   if (plansAwaitingReview.length === 0) {
     return (
       <>
-        <Topbar icon="queue" title="Review queue" />
+        <Topbar icon="queue" title="Review queue" action={<GenerateMenu />} />
         <main className="mx-auto w-full max-w-[720px] px-4 py-10 sm:px-6">
           <EmptyState
             icon="queue"
@@ -41,6 +46,8 @@ export default async function QueuePage({
             }
           />
         </main>
+
+        <OverlayHost params={params} pathname={QUEUE} />
       </>
     );
   }
@@ -55,6 +62,9 @@ export default async function QueuePage({
   const planHref = `${QUEUE}?plan=${selected.publicId}`;
   const stepHrefFor = (stepId: string) => `${planHref}&step=${stepId}`;
 
+  /* One panel at a time: a drawer or the wizard parks the step inspector. */
+  const overlay = parseOverlay(typeof params.open === 'string' ? params.open : undefined);
+
   const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
   const nextStep = stepIndex >= 0 ? detail?.steps[stepIndex + 1] : undefined;
 
@@ -64,12 +74,15 @@ export default async function QueuePage({
         icon="queue"
         title="Review queue"
         action={
-          <QueueKeys
-            ids={plansAwaitingReview.map((p) => p.publicId)}
-            selectedId={selected.publicId}
-            queuePath={QUEUE}
-            planPathBase="/dashboard/test-plans"
-          />
+          <>
+            <QueueKeys
+              ids={plansAwaitingReview.map((p) => p.publicId)}
+              selectedId={selected.publicId}
+              queuePath={QUEUE}
+              planPathBase="/dashboard/test-plans"
+            />
+            <GenerateMenu />
+          </>
         }
       />
 
@@ -92,7 +105,7 @@ export default async function QueuePage({
         />
       </div>
 
-      {step && detail && (
+      {step && detail && !overlay && (
         <StepInspector
           step={step}
           index={stepIndex}
@@ -103,6 +116,8 @@ export default async function QueuePage({
           failure={detail.previousFailure}
         />
       )}
+
+      <OverlayHost params={params} pathname={QUEUE} />
     </>
   );
 }

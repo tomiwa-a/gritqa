@@ -9,6 +9,7 @@ import { PlanDiff } from '@/components/app/plan/plan-diff';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { DecisionBar } from '@/components/app/plan/decision-bar';
 import { OverlayHost } from '@/components/app/overlay-host';
+import { GenerateMenu } from '@/components/app/generate-menu';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -28,12 +29,14 @@ function isTab(value: string | undefined): value is Tab {
   return TABS.some((t) => t === value);
 }
 
-const STATUS: Record<TestPlan['status'], { badge: 'draft' | 'approved' | 'archived'; word: string }> =
-  {
-    draft: { badge: 'draft', word: 'Waiting for your review' },
-    approved: { badge: 'approved', word: 'Approved' },
-    archived: { badge: 'archived', word: 'Archived' },
-  };
+const STATUS: Record<
+  TestPlan['status'],
+  { badge: 'draft' | 'approved' | 'archived'; word: string }
+> = {
+  draft: { badge: 'draft', word: 'Waiting for your review' },
+  approved: { badge: 'approved', word: 'Approved' },
+  archived: { badge: 'archived', word: 'Archived' },
+};
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -66,53 +69,56 @@ function SettledBar({
   );
 
   return (
-    <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-2 border-t border-rule bg-app-panel/95 px-4 py-3 backdrop-blur-sm sm:px-6">
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={!cliConnected}
-        title={
-          cliConnected
-            ? 'Ask your machine to run this plan now'
-            : 'Runs happen on your machine, and it is not connected right now'
-        }
-      >
-        <Icon name="runs" size={14} />
-        Ask to run
-      </Button>
-
-      <Link
-        href={`/dashboard/test-plans/${plan.publicId}#ask`}
-        title="Say what should change, and read the new version"
-        className={buttonVariants({ variant: 'secondary', size: 'sm' })}
-      >
-        <Icon name="sparkle" size={14} />
-        Ask for a change
-      </Link>
-
-      {plan.status === 'approved' && (
-        <Button variant="ghost" size="sm">
-          <Icon name="archive" size={14} />
-          Archive
+    <div className="flex flex-col gap-2 lg:items-end">
+      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!cliConnected}
+          title={
+            cliConnected
+              ? 'Ask your machine to run this plan now'
+              : 'Runs happen on your machine, and it is not connected right now'
+          }
+        >
+          <Icon name="runs" size={14} />
+          Ask to run
         </Button>
-      )}
 
+        <Link
+          href={`/dashboard/test-plans/${plan.publicId}#ask`}
+          title="Say what should change, and read the new version"
+          className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+        >
+          <Icon name="sparkle" size={14} />
+          Ask for a change
+        </Link>
+
+        {plan.status === 'approved' && (
+          <Button variant="ghost" size="sm">
+            <Icon name="archive" size={14} />
+            Archive
+          </Button>
+        )}
+      </div>
+
+      {/* How it last went, under the buttons that decide what happens next. */}
       {plan.lastRun ? (
         runHref ? (
           <Link
             href={runHref}
             scroll={false}
             title="Look at that run without leaving the plan"
-            className="ml-auto flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-app-hover"
+            className="-mr-1.5 flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-app-hover"
           >
             {lastRun}
             <Icon name="chevronRight" size={13} className="text-ink-subtle" />
           </Link>
         ) : (
-          <span className="ml-auto flex items-center gap-2.5">{lastRun}</span>
+          <span className="flex items-center gap-2.5">{lastRun}</span>
         )
       ) : (
-        <span className="ml-auto flex items-center gap-2">
+        <span className="flex items-center gap-2">
           <StatusDot tone="skip" label="Never run" />
           <span className="text-[12px] text-ink-subtle">Never run</span>
         </span>
@@ -177,175 +183,184 @@ export default async function PlanDetailPage({
         icon="plan"
         title={plan.name}
         action={
-          <Link
-            href="/dashboard/test-plans"
-            className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
-          >
-            <Icon name="chevronRight" size={13} className="rotate-180" />
-            All plans
-          </Link>
+          <>
+            <Link
+              href="/dashboard/test-plans"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
+            >
+              <Icon name="chevronRight" size={13} className="rotate-180" />
+              All plans
+            </Link>
+            <GenerateMenu />
+          </>
         }
       />
 
-      <div className="flex min-w-0 flex-1 flex-col lg:h-[calc(100dvh-3.5rem)] lg:overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <PageBody>
-            <header>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={status.badge} size="sm">
-                  {status.word}
-                </Badge>
-                <Badge variant="outline" size="sm" mono className="nums bg-app-panel">
-                  v{plan.version}
-                </Badge>
-                <span className="flex items-center gap-1.5 text-[11.5px] text-ink-subtle">
-                  <Icon name={plan.triggerSource === 'git_push' ? 'branch' : 'user'} size={12} />
-                  {plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'}
+      <PageBody>
+        {/* Whatever you can do about this plan sits with its title, so the
+            decision is in reach before you have read a single step. */}
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={status.badge} size="sm">
+                {status.word}
+              </Badge>
+              <Badge variant="outline" size="sm" mono className="nums bg-app-panel">
+                v{plan.version}
+              </Badge>
+              <span className="flex items-center gap-1.5 text-[11.5px] text-ink-subtle">
+                <Icon name={plan.triggerSource === 'git_push' ? 'branch' : 'user'} size={12} />
+                {plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'}
+              </span>
+              {detail && (
+                <span className="nums font-mono text-[11.5px] text-ink-subtle">
+                  {detail.baseUrl}
                 </span>
-                {detail && (
-                  <span className="nums font-mono text-[11.5px] text-ink-subtle">
-                    {detail.baseUrl}
-                  </span>
-                )}
-              </div>
+              )}
+            </div>
 
-              <h2 className="mt-2 text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-                {plan.name}
-              </h2>
-              <p className="mt-1 max-w-[68ch] text-[13.5px] leading-relaxed text-ink-muted">
-                {plan.description}
-              </p>
+            <h2 className="mt-2 text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
+              {plan.name}
+            </h2>
+            <p className="mt-1 max-w-[68ch] text-[13.5px] leading-relaxed text-ink-muted">
+              {plan.description}
+            </p>
 
-              <p className="nums mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-ink-subtle">
-                <span>{plan.stepCount} steps</span>
-                <span aria-hidden>·</span>
-                <span>{plan.assertionCount} checks</span>
-                <span aria-hidden>·</span>
-                <span>
-                  {plan.covers.length} endpoint{plan.covers.length === 1 ? '' : 's'}
-                </span>
-                <span aria-hidden>·</span>
-                <span>{plan.createdLabel}</span>
-              </p>
-            </header>
+            <p className="nums mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-ink-subtle">
+              <span>{plan.stepCount} steps</span>
+              <span aria-hidden>·</span>
+              <span>{plan.assertionCount} checks</span>
+              <span aria-hidden>·</span>
+              <span>
+                {plan.covers.length} endpoint
+                {plan.covers.length === 1 ? '' : 's'}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{plan.createdLabel}</span>
+            </p>
+          </div>
 
-            <div className="-mx-1 mt-4 max-w-full overflow-x-auto px-1 pb-1">
-              <Segmented
-                className="w-max"
-                label="What to look at in this plan"
-                active={tab}
-                options={[
-                  { key: 'steps', label: 'Steps', icon: 'plan', href: hrefFor('steps') },
-                  {
-                    key: 'diff',
-                    label: 'What changed',
-                    icon: 'diff',
-                    href: hrefFor('diff'),
-                  },
-                  { key: 'raw', label: 'Raw', icon: 'code', href: hrefFor('raw') },
-                ]}
+          <div className="shrink-0 lg:max-w-[22rem]">
+            {plan.status === 'draft' ? (
+              <DecisionBar
+                planId={plan.publicId}
+                cliConnected={cliConnected}
+                refineHref={`${base}#ask`}
               />
-            </div>
+            ) : (
+              <SettledBar plan={plan} cliConnected={cliConnected} runHref={runPreviewHref} />
+            )}
+          </div>
+        </header>
 
-            <div className="mt-4">
-              {tab === 'steps' && (
-                <PlanBody
-                  plan={plan}
-                  detail={detail}
-                  selectedStepId={step?.id}
-                  stepHrefFor={stepHrefFor}
-                  diffHrefFor={diffHrefFor}
-                />
-              )}
-
-              {tab === 'diff' && (
-                <div className="flex flex-col gap-4">
-                  {revisions.length > 1 && (
-                    <div className="-mx-1 max-w-full overflow-x-auto px-1 pb-1">
-                      <Segmented
-                        className="w-max"
-                        label="Which version to compare"
-                        active={String(revision?.version ?? '')}
-                        options={revisions
-                          .filter((r) => r.version > 1)
-                          .map((r) => ({
-                            key: String(r.version),
-                            label: `v${r.version - 1} → v${r.version}`,
-                            href: diffHrefFor(r.version),
-                          }))}
-                      />
-                    </div>
-                  )}
-
-                  {revision ? (
-                    <Panel
-                      title="What changed"
-                      subtitle="Every version leaves a receipt, so nothing moves without you seeing it"
-                      bodyClassName="p-0"
-                    >
-                      <PlanDiff revision={revision} previous={previous} />
-                    </Panel>
-                  ) : (
-                    <Panel title="What changed" bodyClassName="p-4">
-                      <p className="text-[13px] leading-relaxed text-ink-muted">
-                        This plan has only ever had one version, so there is nothing to compare yet.
-                      </p>
-                    </Panel>
-                  )}
-                </div>
-              )}
-
-              {tab === 'raw' && (
-                <div className="flex flex-col gap-4">
-                  <Panel
-                    title="The plan itself"
-                    subtitle="Exactly what your machine will read when it runs"
-                    meta={
-                      <Button variant="secondary" size="sm">
-                        <Icon name="copy" size={13} />
-                        Copy
-                      </Button>
-                    }
-                    bodyClassName="p-4"
-                  >
-                    {detail ? (
-                      <>
-                        <CodeBlock
-                          code={planJson(detail)}
-                          filename={`${plan.publicId}.v${plan.version}.json`}
-                          lang="json"
-                          caption={`The plan JSON for ${plan.name}`}
-                          className="shadow-none"
-                        />
-                        <p className="mt-3 text-[12.5px] leading-relaxed text-ink-subtle">
-                          Read-only for now. Editing this by hand is coming — until then, ask for a
-                          change in your own words and read what comes back.
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-[13px] leading-relaxed text-ink-muted">
-                        The steps for this plan have not been loaded into this build yet.
-                      </p>
-                    )}
-                  </Panel>
-                </div>
-              )}
-
-            </div>
-          </PageBody>
+        <div className="-mx-1 mt-4 max-w-full overflow-x-auto px-1 pb-1">
+          <Segmented
+            className="w-max"
+            label="What to look at in this plan"
+            active={tab}
+            options={[
+              {
+                key: 'steps',
+                label: 'Steps',
+                icon: 'plan',
+                href: hrefFor('steps'),
+              },
+              {
+                key: 'diff',
+                label: 'What changed',
+                icon: 'diff',
+                href: hrefFor('diff'),
+              },
+              { key: 'raw', label: 'Raw', icon: 'code', href: hrefFor('raw') },
+            ]}
+          />
         </div>
 
-        {plan.status === 'draft' ? (
-          <DecisionBar
-            planId={plan.publicId}
-            cliConnected={cliConnected}
-            refineHref={`${base}#ask`}
-            className="sm:px-6"
-          />
-        ) : (
-          <SettledBar plan={plan} cliConnected={cliConnected} runHref={runPreviewHref} />
-        )}
-      </div>
+        <div className="mt-4">
+          {tab === 'steps' && (
+            <PlanBody
+              plan={plan}
+              detail={detail}
+              selectedStepId={step?.id}
+              stepHrefFor={stepHrefFor}
+              diffHrefFor={diffHrefFor}
+            />
+          )}
+
+          {tab === 'diff' && (
+            <div className="flex flex-col gap-4">
+              {revisions.length > 1 && (
+                <div className="-mx-1 max-w-full overflow-x-auto px-1 pb-1">
+                  <Segmented
+                    className="w-max"
+                    label="Which version to compare"
+                    active={String(revision?.version ?? '')}
+                    options={revisions
+                      .filter((r) => r.version > 1)
+                      .map((r) => ({
+                        key: String(r.version),
+                        label: `v${r.version - 1} → v${r.version}`,
+                        href: diffHrefFor(r.version),
+                      }))}
+                  />
+                </div>
+              )}
+
+              {revision ? (
+                <Panel
+                  title="What changed"
+                  subtitle="Every version leaves a receipt, so nothing moves without you seeing it"
+                  bodyClassName="p-0"
+                >
+                  <PlanDiff revision={revision} previous={previous} />
+                </Panel>
+              ) : (
+                <Panel title="What changed" bodyClassName="p-4">
+                  <p className="text-[13px] leading-relaxed text-ink-muted">
+                    This plan has only ever had one version, so there is nothing to compare yet.
+                  </p>
+                </Panel>
+              )}
+            </div>
+          )}
+
+          {tab === 'raw' && (
+            <div className="flex flex-col gap-4">
+              <Panel
+                title="The plan itself"
+                subtitle="Exactly what your machine will read when it runs"
+                meta={
+                  <Button variant="secondary" size="sm">
+                    <Icon name="copy" size={13} />
+                    Copy
+                  </Button>
+                }
+                bodyClassName="p-4"
+              >
+                {detail ? (
+                  <>
+                    <CodeBlock
+                      code={planJson(detail)}
+                      filename={`${plan.publicId}.v${plan.version}.json`}
+                      lang="json"
+                      caption={`The plan JSON for ${plan.name}`}
+                      className="shadow-none"
+                    />
+                    <p className="mt-3 text-[12.5px] leading-relaxed text-ink-subtle">
+                      Read-only for now. Editing this by hand is coming — until then, ask for a
+                      change in your own words and read what comes back.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[13px] leading-relaxed text-ink-muted">
+                    The steps for this plan have not been loaded into this build yet.
+                  </p>
+                )}
+              </Panel>
+            </div>
+          )}
+        </div>
+      </PageBody>
 
       {step && detail && !overlay && (
         <StepInspector

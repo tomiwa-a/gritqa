@@ -13,6 +13,7 @@ import { allPlans, currentProject } from '@/lib/mock/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { brokeAt, runRowFor, runsForPlan } from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
+import { GenerateMenu } from '@/components/app/generate-menu';
 import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 const BADGE = {
@@ -66,13 +67,16 @@ export default async function RunDetailPage({
         icon="runs"
         title={run.planName}
         action={
-          <Link
-            href="/dashboard/runs"
-            className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
-          >
-            <Icon name="chevronRight" size={13} className="rotate-180" />
-            All runs
-          </Link>
+          <>
+            <Link
+              href="/dashboard/runs"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted transition-colors duration-150 hover:text-ink"
+            >
+              <Icon name="chevronRight" size={13} className="rotate-180" />
+              All runs
+            </Link>
+            <GenerateMenu />
+          </>
         }
       />
 

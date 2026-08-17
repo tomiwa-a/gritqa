@@ -22,6 +22,7 @@ import {
 } from '@/lib/plan';
 import { EndpointFocusHeader, FileFocusHeader } from '@/components/app/coverage-focus';
 import { OverlayHost } from '@/components/app/overlay-host';
+import { GenerateMenu } from '@/components/app/generate-menu';
 import { planToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
@@ -247,15 +248,18 @@ export default async function TestPlansPage({
         icon="plan"
         title="Test plans"
         action={
-          plansAwaitingReview.length > 0 && (
-            <Link
-              href="/dashboard/queue"
-              className={buttonVariants({ variant: 'secondary', size: 'sm' })}
-            >
-              <Icon name="queue" size={14} />
-              Review {plansAwaitingReview.length}
-            </Link>
-          )
+          <>
+            {plansAwaitingReview.length > 0 && (
+              <Link
+                href="/dashboard/queue"
+                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+              >
+                <Icon name="queue" size={14} />
+                Review {plansAwaitingReview.length}
+              </Link>
+            )}
+            <GenerateMenu />
+          </>
         }
       />
 
