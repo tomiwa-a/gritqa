@@ -29,6 +29,8 @@ export type ExecutionStatus = 'pending' | 'running' | 'passed' | 'failed' | 'err
 export type StepStatus = 'pending' | 'passed' | 'failed' | 'skipped' | 'error';
 export type RuleCategory = 'ordering' | 'mock' | 'assertion' | 'fixture';
 
+export type Endpoint = { method: Method; path: string };
+
 export type TestPlan = {
   publicId: string;
   name: string;
@@ -39,8 +41,108 @@ export type TestPlan = {
   createdLabel: string;
   stepCount: number;
   assertionCount: number;
-  endpointCount: number;
+  /** The endpoints the plan is about — sign-in scaffolding excluded. */
+  covers: Endpoint[];
   lastRun: { status: ExecutionStatus; passed: number; total: number; label: string } | null;
+};
+
+export type AssertionType = 'status' | 'bodyField' | 'header' | 'responseTime';
+
+export type AssertionOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'notContains'
+  | 'exists'
+  | 'lt'
+  | 'gt';
+
+export type PlanAssertion = {
+  type: AssertionType;
+  operator: AssertionOperator;
+  target: string;
+  expected?: string | number | boolean;
+};
+
+export type PlanExtraction = {
+  name: string;
+  path: string;
+  source: 'body' | 'header';
+};
+
+export type PlanStepSpec = {
+  id: string;
+  name: string;
+  description: string;
+  dependsOn: string[];
+  request: {
+    method: Method;
+    url: string;
+    headers?: Record<string, string>;
+    body?: Record<string, unknown>;
+    query?: Record<string, string>;
+  };
+  extract: PlanExtraction[];
+  assertions: PlanAssertion[];
+  onFailure: 'abort' | 'continue';
+  retry?: { maxAttempts: number; delayMs: number };
+};
+
+export type PlanChangeKind =
+  | 'step_added'
+  | 'step_removed'
+  | 'step_reordered'
+  | 'assertion_added'
+  | 'assertion_removed'
+  | 'value_changed';
+
+export type PlanChange = {
+  kind: PlanChangeKind;
+  stepName: string;
+  detail: string;
+  from?: string;
+  to?: string;
+};
+
+export type PlanRevision = {
+  version: number;
+  whenLabel: string;
+  /** Who started the turn. A revision by 'you' is an instruction the model answered. */
+  author: 'ai' | 'you';
+  /** SCHEMA GAP: no table stores refine instructions — versions alone lose the why. */
+  instruction?: string;
+  summary: string;
+  changes: PlanChange[];
+};
+
+/** SCHEMA GAP: test_executions records what happened, never the human's read of it. */
+export type FailureVerdict = 'real_bug' | 'bad_test' | 'undecided';
+
+export type PlanFailureSeed = {
+  version: number;
+  stepId: string;
+  whenLabel: string;
+  expected: string;
+  actual: string;
+  verdict: FailureVerdict;
+};
+
+export type PlanDiffContext = {
+  branch: string;
+  commit: string;
+  message: string;
+  additions: number;
+  deletions: number;
+  files: { path: string; additions: number; deletions: number }[];
+};
+
+export type TestPlanDetail = TestPlan & {
+  baseUrl: string;
+  variables: Record<string, string>;
+  steps: PlanStepSpec[];
+  diffContext: PlanDiffContext | null;
+  previousFailure: PlanFailureSeed | null;
+  revisions: PlanRevision[];
 };
 
 export type StepResult = {

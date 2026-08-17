@@ -100,7 +100,12 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: '2h ago',
     stepCount: 5,
     assertionCount: 12,
-    endpointCount: 3,
+    covers: [
+      { method: 'POST', path: '/checkout/quote' },
+      { method: 'POST', path: '/checkout' },
+      { method: 'POST', path: '/checkout/:id/tax' },
+      { method: 'GET', path: '/checkout/:id' },
+    ],
     lastRun: null,
   },
   {
@@ -113,7 +118,11 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: '3h ago',
     stepCount: 4,
     assertionCount: 9,
-    endpointCount: 2,
+    covers: [
+      { method: 'POST', path: '/orders' },
+      { method: 'POST', path: '/refunds' },
+      { method: 'GET', path: '/refunds/:id' },
+    ],
     lastRun: { status: 'failed', passed: 3, total: 4, label: 'v1, yesterday' },
   },
   {
@@ -126,7 +135,11 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: '5h ago',
     stepCount: 6,
     assertionCount: 14,
-    endpointCount: 3,
+    covers: [
+      { method: 'POST', path: '/subscriptions' },
+      { method: 'POST', path: '/subscriptions/:id/pause' },
+      { method: 'POST', path: '/subscriptions/:id/resume' },
+    ],
     lastRun: null,
   },
   {
@@ -139,7 +152,10 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: 'Yesterday',
     stepCount: 3,
     assertionCount: 7,
-    endpointCount: 2,
+    covers: [
+      { method: 'POST', path: '/auth/register' },
+      { method: 'GET', path: '/auth/me' },
+    ],
     lastRun: null,
   },
   {
@@ -152,7 +168,11 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: 'Yesterday',
     stepCount: 5,
     assertionCount: 11,
-    endpointCount: 2,
+    covers: [
+      { method: 'POST', path: '/payouts' },
+      { method: 'POST', path: '/payouts/:id/retry' },
+      { method: 'GET', path: '/payouts/:id' },
+    ],
     lastRun: null,
   },
   {
@@ -165,7 +185,10 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: '2d ago',
     stepCount: 4,
     assertionCount: 10,
-    endpointCount: 2,
+    covers: [
+      { method: 'POST', path: '/webhooks/paystack' },
+      { method: 'GET', path: '/webhooks/log' },
+    ],
     lastRun: { status: 'passed', passed: 4, total: 4, label: 'v2, 3d ago' },
   },
   {
@@ -178,10 +201,153 @@ export const plansAwaitingReview: TestPlan[] = [
     createdLabel: '2d ago',
     stepCount: 5,
     assertionCount: 13,
-    endpointCount: 3,
+    covers: [
+      { method: 'POST', path: '/customers/:id/cards' },
+      { method: 'PUT', path: '/customers/:id/cards/:cardId' },
+      { method: 'GET', path: '/customers/:id/cards' },
+    ],
     lastRun: null,
   },
 ];
+
+/** Plans that have been through the gate — the library the queue feeds. */
+export const settledPlans: TestPlan[] = [
+  {
+    publicId: 'tp_01j1',
+    name: 'Customer CRUD round trip',
+    description: 'Create a customer, edit them, read their orders, remove them.',
+    status: 'approved',
+    version: 2,
+    triggerSource: 'git_push',
+    createdLabel: '3w ago',
+    stepCount: 5,
+    assertionCount: 14,
+    covers: [
+      { method: 'POST', path: '/customers' },
+      { method: 'PATCH', path: '/customers/:id' },
+      { method: 'GET', path: '/customers/:id/orders' },
+      { method: 'DELETE', path: '/customers/:id' },
+    ],
+    lastRun: { status: 'passed', passed: 5, total: 5, label: '2h ago' },
+  },
+  {
+    publicId: 'tp_01j2',
+    name: 'Sign in and fetch the current user',
+    description: 'The shortest path through auth, run before everything else.',
+    status: 'approved',
+    version: 1,
+    triggerSource: 'manual',
+    createdLabel: '2mo ago',
+    stepCount: 3,
+    assertionCount: 8,
+    covers: [
+      { method: 'POST', path: '/auth/login' },
+      { method: 'GET', path: '/auth/me' },
+      { method: 'POST', path: '/auth/logout' },
+    ],
+    lastRun: { status: 'passed', passed: 3, total: 3, label: '1h ago' },
+  },
+  {
+    publicId: 'tp_01j3',
+    name: 'Create and confirm an order',
+    description: 'Open an order, add a line, confirm it, check the total.',
+    status: 'approved',
+    version: 3,
+    triggerSource: 'git_push',
+    createdLabel: '5w ago',
+    stepCount: 4,
+    assertionCount: 11,
+    covers: [
+      { method: 'POST', path: '/orders' },
+      { method: 'POST', path: '/orders/:id/items' },
+      { method: 'POST', path: '/orders/:id/confirm' },
+    ],
+    lastRun: { status: 'passed', passed: 4, total: 4, label: '26m ago' },
+  },
+  {
+    publicId: 'tp_01j4',
+    name: 'Charge a checkout with a mocked provider',
+    description: 'Pay a checkout against the provider mock and read the receipt.',
+    status: 'approved',
+    version: 4,
+    triggerSource: 'git_push',
+    createdLabel: '6w ago',
+    stepCount: 5,
+    assertionCount: 13,
+    covers: [
+      { method: 'POST', path: '/checkout' },
+      { method: 'POST', path: '/checkout/:id/pay' },
+    ],
+    lastRun: { status: 'failed', passed: 3, total: 5, label: '12m ago' },
+  },
+  {
+    publicId: 'tp_01j5',
+    name: 'Refund a paid order',
+    description: 'Refund in full and confirm the ledger balances.',
+    status: 'approved',
+    version: 2,
+    triggerSource: 'manual',
+    createdLabel: '7w ago',
+    stepCount: 4,
+    assertionCount: 10,
+    covers: [
+      { method: 'POST', path: '/refunds' },
+      { method: 'GET', path: '/refunds/:id' },
+    ],
+    lastRun: { status: 'running', passed: 2, total: 4, label: 'Just now' },
+  },
+  {
+    publicId: 'tp_01j6',
+    name: 'Subscription lifecycle',
+    description: 'Start, pause, and cancel a subscription in one pass.',
+    status: 'approved',
+    version: 2,
+    triggerSource: 'git_push',
+    createdLabel: '2mo ago',
+    stepCount: 4,
+    assertionCount: 9,
+    covers: [
+      { method: 'POST', path: '/subscriptions' },
+      { method: 'POST', path: '/subscriptions/:id/pause' },
+      { method: 'DELETE', path: '/subscriptions/:id' },
+    ],
+    lastRun: { status: 'failed', passed: 3, total: 4, label: '3h ago' },
+  },
+  {
+    publicId: 'tp_01j7',
+    name: 'Invoice PDF export',
+    description: 'Send an invoice and download the rendered PDF.',
+    status: 'archived',
+    version: 1,
+    triggerSource: 'manual',
+    createdLabel: '4mo ago',
+    stepCount: 3,
+    assertionCount: 6,
+    covers: [
+      { method: 'POST', path: '/invoices/:id/send' },
+      { method: 'GET', path: '/invoices/:id/pdf' },
+    ],
+    lastRun: null,
+  },
+  {
+    publicId: 'tp_01j8',
+    name: 'Admin flag toggle',
+    description: 'Turn a feature flag on and off as an admin.',
+    status: 'archived',
+    version: 2,
+    triggerSource: 'manual',
+    createdLabel: '4mo ago',
+    stepCount: 4,
+    assertionCount: 8,
+    covers: [
+      { method: 'POST', path: '/admin/flags' },
+      { method: 'DELETE', path: '/admin/flags/:id' },
+    ],
+    lastRun: { status: 'failed', passed: 2, total: 4, label: '3mo ago' },
+  },
+];
+
+export const allPlans: TestPlan[] = [...plansAwaitingReview, ...settledPlans];
 
 export const recentRuns: TestExecution[] = [
   {

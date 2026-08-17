@@ -63,11 +63,11 @@ const reviewWork: WorkItem[] = plansAwaitingReview.map((plan) => ({
   kind: 'review',
   name: plan.name,
   note: `${plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'} · ${plan.createdLabel}`,
-  covers: `${plan.stepCount} steps · ${plan.endpointCount} endpoints`,
+  covers: `${plan.stepCount} steps · ${plan.covers.length} endpoints`,
   signal: `${plan.assertionCount} checks`,
   run: plan.lastRun ? { total: plan.lastRun.total, passed: plan.lastRun.passed } : null,
   cta: 'Review',
-  href: '/dashboard/queue',
+  href: `/dashboard/queue?plan=${plan.publicId}`,
 }));
 
 const WORK: Record<ViewKey, WorkItem[]> = {

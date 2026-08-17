@@ -22,6 +22,36 @@ function highlightYaml(line: string, i: number) {
   );
 }
 
+const JSON_TOKEN = /("(?:\\.|[^"\\])*"\s*:)|("(?:\\.|[^"\\])*")|(\btrue\b|\bfalse\b|\bnull\b)|(-?\d+(?:\.\d+)?)/g;
+
+function highlightJson(line: string) {
+  const out: React.ReactNode[] = [];
+  let at = 0;
+
+  for (const m of line.matchAll(JSON_TOKEN)) {
+    const start = m.index ?? 0;
+    if (start > at) out.push(<span key={`p${at}`}>{line.slice(at, start)}</span>);
+
+    const tone = m[1]
+      ? 'text-[#93b4fd]'
+      : m[2]
+        ? 'text-ink-inverse/80'
+        : m[3]
+          ? 'text-[#e0a3f5]'
+          : 'text-[#8ad7b8]';
+
+    out.push(
+      <span key={`t${start}`} className={tone}>
+        {m[0]}
+      </span>,
+    );
+    at = start + m[0].length;
+  }
+
+  if (at < line.length) out.push(<span key={`p${at}`}>{line.slice(at)}</span>);
+  return <span className="text-term-dim">{out}</span>;
+}
+
 export function CodeBlock({
   code,
   filename,
@@ -32,7 +62,7 @@ export function CodeBlock({
 }: {
   code: string;
   filename?: string;
-  lang?: 'yaml' | 'bash' | 'text';
+  lang?: 'yaml' | 'bash' | 'text' | 'json';
   lineNumbers?: boolean;
   caption: string;
   className?: string;
@@ -70,7 +100,13 @@ export function CodeBlock({
                 </span>
               )}
               <span className="min-w-0 whitespace-pre">
-                {lang === 'yaml' ? highlightYaml(line, i) : <span className="text-ink-inverse/80">{line}</span>}
+                {lang === 'yaml' ? (
+                  highlightYaml(line, i)
+                ) : lang === 'json' ? (
+                  highlightJson(line)
+                ) : (
+                  <span className="text-ink-inverse/80">{line}</span>
+                )}
               </span>
             </div>
           ))}
