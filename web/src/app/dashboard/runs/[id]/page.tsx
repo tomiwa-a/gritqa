@@ -12,6 +12,8 @@ import { Icon } from '@/components/ui/icon';
 import { allPlans, currentProject } from '@/lib/mock/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { brokeAt, runRowFor, runsForPlan } from '@/lib/runs';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 const BADGE = {
   passed: 'pass',
@@ -27,8 +29,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: run ? `${run.planName} run · GritQA` : 'Run not found · GritQA' };
 }
 
-export default async function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RunDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<PageParams>;
+}) {
   const { id } = await params;
+  const query = await searchParams;
 
   const run = runRowFor(id);
   if (!run) notFound();
@@ -39,9 +48,16 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
   const brokeIndex = detail && broke ? detail.steps.indexOf(broke) : -1;
   const cliConnected = currentProject.lastIndexedLabel !== null;
 
+  const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
   const refineHref = `${planHref}?tab=history`;
   const siblings = runsForPlan(run.planPublicId).filter((r) => r.publicId !== run.publicId);
+
+  /* Checking the plan or a sibling run should not cost you this report. */
+  const planPreviewHref = plan
+    ? withOverlay(path, query, planToken(plan.publicId))
+    : planHref;
+  const openRun = (publicId: string) => withOverlay(path, query, runToken(publicId));
 
   return (
     <>
@@ -164,7 +180,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
             </p>
             {siblings[0] && (
               <Link
-                href={`/dashboard/runs/${siblings[0].publicId}`}
+                href={openRun(siblings[0].publicId)}
+                scroll={false}
                 className={buttonVariants({ variant: 'secondary', size: 'sm', className: 'mt-3' })}
               >
                 <Icon name="runs" size={13} />
@@ -195,9 +212,13 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
               Run it again
             </Button>
 
-            <Link href={planHref} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+            <Link
+              href={planPreviewHref}
+              scroll={false}
+              className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+            >
               <Icon name="plan" size={14} />
-              Open the plan
+              What it was testing
             </Link>
 
             <Link href={refineHref} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
@@ -226,6 +247,8 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           )}
         </Panel>
       </PageBody>
+
+      <OverlayHost params={query} pathname={path} />
     </>
   );
 }

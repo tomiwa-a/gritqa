@@ -134,6 +134,25 @@ export type PlanDiffContext = {
   additions: number;
   deletions: number;
   files: { path: string; additions: number; deletions: number }[];
+  /** How many commits the range covers. One, when it is a single push. */
+  commitCount?: number;
+};
+
+export type CommitFile = { path: string; additions: number; deletions: number };
+
+/**
+ * NO COLUMN FOR THIS. `test_plans.diff_context` holds one JSONB blob per plan,
+ * so there is nowhere to browse a project's history from and no way to look a
+ * commit up by hash. Drafting from a range needs both.
+ */
+export type Commit = {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  whenLabel: string;
+  branch: string;
+  files: CommitFile[];
 };
 
 export type TestPlanDetail = TestPlan & {

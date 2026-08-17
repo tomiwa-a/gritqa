@@ -42,11 +42,14 @@ function NextAction({
   plans,
   method,
   path,
+  generateHref,
 }: {
   state: CoverageState;
   plans: TestPlan[];
   method: string;
   path: string;
+  /** Where drafting starts — the wizard opens over this page. */
+  generateHref: string;
 }) {
   if (state === 'failing') {
     const run = failedRunForEndpoint(method, path);
@@ -95,7 +98,8 @@ function NextAction({
 
   return (
     <Link
-      href="/dashboard/generate?from=endpoints"
+      href={generateHref}
+      scroll={false}
       className={buttonVariants({ variant: 'primary', size: 'sm' })}
     >
       <Icon name="sparkle" size={14} />
@@ -107,9 +111,11 @@ function NextAction({
 export function EndpointFocusHeader({
   focus,
   plans,
+  generateHref,
 }: {
   focus: EndpointFocus;
   plans: TestPlan[];
+  generateHref: string;
 }) {
   return (
     <Shell eyebrow="one endpoint" clearLabel="Clear">
@@ -141,6 +147,7 @@ export function EndpointFocusHeader({
           plans={plans}
           method={focus.method}
           path={focus.path}
+          generateHref={generateHref}
         />
         <Link
           href={`/dashboard/test-plans?group=endpoint`}

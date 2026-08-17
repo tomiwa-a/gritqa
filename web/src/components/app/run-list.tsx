@@ -12,7 +12,14 @@ const TONE: Record<ExecutionStatus, 'pass' | 'fail' | 'running' | 'skip'> = {
   pending: 'skip',
 };
 
-export function RunList({ runs }: { runs: TestExecution[] }) {
+export function RunList({
+  runs,
+  hrefFor = (id) => `/dashboard/runs/${id}`,
+}: {
+  runs: TestExecution[];
+  /** Where a row goes — a drawer on the pages that host one, the run's page otherwise. */
+  hrefFor?: (publicId: string) => string;
+}) {
   return (
     <ul className="divide-y divide-rule-soft">
       {runs.map((run) => {
@@ -22,7 +29,7 @@ export function RunList({ runs }: { runs: TestExecution[] }) {
         return (
           <li key={run.publicId}>
             <Link
-              href={`/dashboard/runs/${run.publicId}`}
+              href={hrefFor(run.publicId)}
               className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-app-hover"
             >
               <StatusDot tone={TONE[run.status]} pulse={run.status === 'running'} />

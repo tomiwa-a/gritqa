@@ -5,13 +5,17 @@ import { cn } from '@/lib/cn';
 
 const SERIES = ['bg-series-1', 'bg-series-2', 'bg-series-3', 'bg-series-4', 'bg-series-5'];
 
-export function PlanRates() {
+export function PlanRates({
+  hrefFor = (id) => `/dashboard/test-plans/${id}`,
+}: {
+  hrefFor?: (planPublicId: string) => string;
+} = {}) {
   return (
     <ul className="flex flex-col gap-1">
       {planPassRates.map((p) => (
         <li key={p.name}>
           <Link
-            href={`/dashboard/test-plans/${p.planPublicId}`}
+            href={hrefFor(p.planPublicId)}
             title={`${p.name} — ${p.rate}% across ${p.runs} runs`}
             className="-mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-app-hover"
           >

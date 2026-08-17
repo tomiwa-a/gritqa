@@ -175,3 +175,40 @@ pre, code, kbd, samp {
   transform-origin: left;
   animation: handoff 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
+@keyframes overlay-veil {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@utility animate-veil {
+  animation: overlay-veil 160ms ease-out forwards;
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+
+@utility animate-drawer {
+  animation: drawer-in 190ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.98) translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@utility animate-modal {
+  animation: modal-in 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Under sm the modal is a bottom sheet, so it rises instead of scaling. */
+@keyframes sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@utility animate-sheet {
+  animation: sheet-in 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}

@@ -1,5 +1,7 @@
+import { diffFrom } from '../commits';
 import type {
   AuditEntry,
+  Commit,
   CoverageFile,
   CoverageState,
   ExecutionStatus,
@@ -509,21 +511,161 @@ export const runStripStats = (() => {
 })();
 
 /**
- * What the CLI has read but nothing has been drafted for yet — the same shape as
- * the diff_context a generated plan carries.
+ * The project's history, newest first. Plenty of these commits never touch a
+ * route file — a model or a shared service changes and the endpoints it reaches
+ * are nowhere in the diff, which is exactly why nothing here claims to know
+ * which endpoints a commit affects.
  */
-export const pendingChanges: PlanDiffContext | null = {
-  branch: 'main',
-  commit: '7d41c9a',
-  message: 'Split checkout tax out of the quote endpoint',
-  additions: 214,
-  deletions: 61,
-  files: [
-    { path: 'routes/checkout.go', additions: 96, deletions: 24 },
-    { path: 'routes/refunds.go', additions: 71, deletions: 18 },
-    { path: 'routes/invoices.go', additions: 47, deletions: 19 },
-  ],
-};
+export const commits: Commit[] = [
+  {
+    hash: '7d41c9ae2f3b5c81d90a4e6f27b18c3d5a9e0f42',
+    shortHash: '7d41c9a',
+    subject: 'Split checkout tax out of the quote endpoint',
+    author: 'Tomiwa',
+    whenLabel: '2h ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/checkout.go', additions: 96, deletions: 24 },
+      { path: 'routes/refunds.go', additions: 71, deletions: 18 },
+      { path: 'routes/invoices.go', additions: 47, deletions: 19 },
+    ],
+  },
+  {
+    hash: '2b8e504c7a1f9e3d6b0c85a2f4d17e9b3c60a8d1',
+    shortHash: '2b8e504',
+    subject: "Round tax to the currency's smallest unit",
+    author: 'Tomiwa',
+    whenLabel: '6h ago',
+    branch: 'main',
+    files: [{ path: 'internal/billing/tax.go', additions: 38, deletions: 12 }],
+  },
+  {
+    hash: '9f2c1ab8d4e70f3a5c29b6e18d0a7f4c3b52e9d6',
+    shortHash: '9f2c1ab',
+    subject: 'Add a partial refund ceiling to the order model',
+    author: 'Tomiwa',
+    whenLabel: '1d ago',
+    branch: 'main',
+    files: [
+      { path: 'internal/models/order.go', additions: 64, deletions: 9 },
+      { path: 'internal/service/refunds.go', additions: 41, deletions: 16 },
+    ],
+  },
+  {
+    hash: 'c40d7e61a9f4c28b3e05d7a6f19c40b8e2d53a79',
+    shortHash: 'c40d7e6',
+    subject: 'Return 409 when a subscription is already cancelled',
+    author: 'Ada',
+    whenLabel: '1d ago',
+    branch: 'main',
+    files: [{ path: 'routes/subscriptions.go', additions: 23, deletions: 7 }],
+  },
+  {
+    hash: '5a1f83bc9e2d0a7f46b18c35e97d0a2b4f6c8e13',
+    shortHash: '5a1f83b',
+    subject: 'Move payout scheduling behind a feature flag',
+    author: 'Ada',
+    whenLabel: '2d ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/payouts.go', additions: 52, deletions: 31 },
+      { path: 'internal/config/flags.go', additions: 18, deletions: 0 },
+    ],
+  },
+  {
+    hash: 'e7b26cd0f83a1b596c24d7e0a9f31b8c5d4e6a2f',
+    shortHash: 'e7b26cd',
+    subject: 'Drop the legacy invoice PDF endpoint',
+    author: 'Tomiwa',
+    whenLabel: '3d ago',
+    branch: 'main',
+    files: [{ path: 'routes/invoices.go', additions: 4, deletions: 87 }],
+  },
+  {
+    hash: '1d9a4f27e0b8c365a91d4f08b2e7c5a3d69f0b41',
+    shortHash: '1d9a4f2',
+    subject: 'Verify webhook signatures before parsing the body',
+    author: 'Marcus',
+    whenLabel: '4d ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/webhooks.go', additions: 71, deletions: 14 },
+      { path: 'internal/crypto/sign.go', additions: 29, deletions: 3 },
+    ],
+  },
+  {
+    hash: '8c3be91d50a2c74e6b13d8f95a0c27e4b6d18f3a',
+    shortHash: '8c3be91',
+    subject: 'Cache product lookups on the read path',
+    author: 'Marcus',
+    whenLabel: '5d ago',
+    branch: 'main',
+    files: [
+      { path: 'internal/service/products.go', additions: 47, deletions: 11 },
+      { path: 'routes/products.go', additions: 9, deletions: 4 },
+    ],
+  },
+  {
+    hash: '4f60a27b1c9e83d05a6f24b7e0d19c38a5f6b2e4',
+    shortHash: '4f60a27',
+    subject: 'Require an idempotency key on charge creation',
+    author: 'Tomiwa',
+    whenLabel: '6d ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/checkout.go', additions: 33, deletions: 8 },
+      { path: 'internal/service/checkout.go', additions: 58, deletions: 12 },
+    ],
+  },
+  {
+    hash: 'b52c8de7a01f9c463b8e2d5a70f14c96b3e8d0a2',
+    shortHash: 'b52c8de',
+    subject: 'Expand the customer search index',
+    author: 'Ada',
+    whenLabel: '8d ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/customers.go', additions: 26, deletions: 5 },
+      { path: 'internal/search/index.go', additions: 81, deletions: 22 },
+    ],
+  },
+  {
+    hash: '3ae91c46b0d8f2a75c19e3b60a4d7f28c5b1e9a3',
+    shortHash: '3ae91c4',
+    subject: 'Split admin routes off the public router',
+    author: 'Tomiwa',
+    whenLabel: '9d ago',
+    branch: 'main',
+    files: [
+      { path: 'routes/admin.go', additions: 112, deletions: 48 },
+      { path: 'routes/health.go', additions: 6, deletions: 2 },
+    ],
+  },
+  {
+    hash: '6014fb8c2a9d071e35b4f8c60a2d19b7e4c3f5a8',
+    shortHash: '6014fb8',
+    subject: 'Bump Go to 1.23',
+    author: 'Marcus',
+    whenLabel: '11d ago',
+    branch: 'main',
+    files: [
+      { path: 'go.mod', additions: 3, deletions: 3 },
+      { path: 'go.sum', additions: 64, deletions: 58 },
+    ],
+  },
+];
+
+/**
+ * The oldest commit nothing has been drafted for yet — where "what moved" starts
+ * reading, and the row the history opens on.
+ */
+export const lastDraftedFrom = commits[0].shortHash;
+
+/**
+ * What the CLI has read but nothing has been drafted for yet. Collapsed out of
+ * the history above rather than typed in beside it, so the two cannot disagree.
+ */
+export const pendingChanges: PlanDiffContext | null = diffFrom(commits, lastDraftedFrom);
 
 export const period = {
   runs: 142,

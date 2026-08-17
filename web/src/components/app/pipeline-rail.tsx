@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { StatusDot } from '@/components/ui/badge';
-import { cn } from '@/lib/cn';
 
 export type Stage = {
   key: string;
@@ -21,27 +20,17 @@ export function PipelineRail({ stages }: { stages: Stage[] }) {
         <Link
           key={stage.key}
           href={stage.href}
-          className="relative flex flex-col gap-1.5 bg-app-panel px-4 py-3.5 transition-colors duration-150 hover:bg-app-hover"
+          className="flex flex-col gap-1.5 bg-app-panel px-4 py-3.5 transition-colors duration-150 hover:bg-app-hover"
         >
-          {i > 0 && (
-            <span
-              aria-hidden
-              className={cn(
-                'absolute top-1/2 -left-[9px] z-10 hidden h-[18px] w-[18px] -translate-y-1/2',
-                'items-center justify-center rounded-full border border-rule bg-app text-ink-subtle',
-                'lg:flex',
-              )}
-            >
-              <Icon name="chevronRight" size={10} />
-            </span>
-          )}
-
           <span className="flex items-center gap-1.5">
+            {i > 0 && (
+              <Icon name="chevronRight" size={11} className="-ml-0.5 text-rule-strong" />
+            )}
             <Icon name={stage.icon} size={12} className="text-ink-subtle" />
-            <span className="font-mono text-[9.5px] tracking-[0.14em] text-ink-subtle uppercase">
+            <span className="truncate font-mono text-[9.5px] tracking-[0.14em] text-ink-subtle uppercase">
               {stage.label}
             </span>
-            {stage.tone && <StatusDot tone={stage.tone} className="ml-auto" />}
+            {stage.tone && <StatusDot tone={stage.tone} className="ml-auto shrink-0" />}
           </span>
 
           <span className="flex items-baseline gap-1">

@@ -10,6 +10,7 @@ import { RevisionThread } from '@/components/app/plan/revision-thread';
 import { RefineComposer } from '@/components/app/plan/refine-composer';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { DecisionBar } from '@/components/app/plan/decision-bar';
+import { OverlayHost } from '@/components/app/overlay-host';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -18,6 +19,8 @@ import { Icon } from '@/components/ui/icon';
 import { allPlans, currentProject, user } from '@/lib/mock/data';
 import { planDetailFor } from '@/lib/mock/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
+import { runsForPlan } from '@/lib/runs';
+import { parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
 const TABS = ['steps', 'diff', 'raw', 'history'] as const;
@@ -41,7 +44,29 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 /** Approved plans get run and archived, not approved again. */
-function SettledBar({ plan, cliConnected }: { plan: TestPlan; cliConnected: boolean }) {
+function SettledBar({
+  plan,
+  cliConnected,
+  runHref,
+}: {
+  plan: TestPlan;
+  cliConnected: boolean;
+  /** Where the last-run readout goes — a preview over this page, when there is a run. */
+  runHref?: string;
+}) {
+  const lastRun = plan.lastRun && (
+    <>
+      <StatusDot tone={RUN_TONE[plan.lastRun.status]} pulse={plan.lastRun.status === 'running'} />
+      <span className="text-[12px] text-ink-muted">{RUN_WORD[plan.lastRun.status]}</span>
+      <Meter
+        total={plan.lastRun.total}
+        passed={plan.lastRun.passed}
+        tone={plan.lastRun.status === 'failed' ? 'fail' : 'skip'}
+      />
+      <span className="hidden text-[12px] text-ink-subtle sm:inline">{plan.lastRun.label}</span>
+    </>
+  );
+
   return (
     <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-2 border-t border-rule bg-app-panel/95 px-4 py-3 backdrop-blur-sm sm:px-6">
       <Button
@@ -74,19 +99,19 @@ function SettledBar({ plan, cliConnected }: { plan: TestPlan; cliConnected: bool
       )}
 
       {plan.lastRun ? (
-        <span className="ml-auto flex items-center gap-2.5">
-          <StatusDot
-            tone={RUN_TONE[plan.lastRun.status]}
-            pulse={plan.lastRun.status === 'running'}
-          />
-          <span className="text-[12px] text-ink-muted">{RUN_WORD[plan.lastRun.status]}</span>
-          <Meter
-            total={plan.lastRun.total}
-            passed={plan.lastRun.passed}
-            tone={plan.lastRun.status === 'failed' ? 'fail' : 'skip'}
-          />
-          <span className="hidden text-[12px] text-ink-subtle sm:inline">{plan.lastRun.label}</span>
-        </span>
+        runHref ? (
+          <Link
+            href={runHref}
+            scroll={false}
+            title="Look at that run without leaving the plan"
+            className="ml-auto flex items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-app-hover"
+          >
+            {lastRun}
+            <Icon name="chevronRight" size={13} className="text-ink-subtle" />
+          </Link>
+        ) : (
+          <span className="ml-auto flex items-center gap-2.5">{lastRun}</span>
+        )
       ) : (
         <span className="ml-auto flex items-center gap-2">
           <StatusDot tone="skip" label="Never run" />
@@ -102,10 +127,13 @@ export default async function PlanDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; step?: string; v?: string }>;
+  searchParams: Promise<PageParams>;
 }) {
   const { id } = await params;
-  const { tab: tabParam, step: stepParam, v: versionParam } = await searchParams;
+  const query = await searchParams;
+  const tabParam = typeof query.tab === 'string' ? query.tab : undefined;
+  const stepParam = typeof query.step === 'string' ? query.step : undefined;
+  const versionParam = typeof query.v === 'string' ? query.v : undefined;
 
   const plan = allPlans.find((p) => p.publicId === id);
   if (!plan) notFound();
@@ -117,6 +145,13 @@ export default async function PlanDetailPage({
 
   const base = `/dashboard/test-plans/${plan.publicId}`;
   const hrefFor = (next: Tab) => (next === 'steps' ? base : `${base}?tab=${next}`);
+
+  /* One drawer at a time: a preview opening here parks the step inspector. */
+  const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
+  const newestRun = runsForPlan(plan.publicId)[0];
+  const runPreviewHref = newestRun
+    ? withOverlay(base, query, runToken(newestRun.publicId))
+    : undefined;
 
   const revisions = detail?.revisions ?? [];
   const asked = Number(versionParam);
@@ -346,11 +381,11 @@ export default async function PlanDetailPage({
             className="sm:px-6"
           />
         ) : (
-          <SettledBar plan={plan} cliConnected={cliConnected} />
+          <SettledBar plan={plan} cliConnected={cliConnected} runHref={runPreviewHref} />
         )}
       </div>
 
-      {step && detail && (
+      {step && detail && !overlay && (
         <StepInspector
           step={step}
           index={stepIndex}
@@ -361,6 +396,8 @@ export default async function PlanDetailPage({
           failure={detail.previousFailure}
         />
       )}
+
+      <OverlayHost params={query} pathname={base} />
     </>
   );
 }

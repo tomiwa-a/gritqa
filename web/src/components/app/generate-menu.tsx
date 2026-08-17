@@ -2,32 +2,41 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Icon, type IconName } from '@/components/ui/icon';
+import { withOverlay } from '@/lib/overlay';
 
-const PATHS: { href: string; icon: IconName; label: string; hint: string }[] = [
+const PATHS: { from: string; icon: IconName; label: string; hint: string }[] = [
   {
-    href: '/dashboard/generate?from=changes',
+    from: 'changes',
     icon: 'sparkle',
     label: 'From what changed',
-    hint: 'Draft plans for the files touched since the last index',
+    hint: 'Draft plans from a commit and everything since it',
   },
   {
-    href: '/dashboard/generate?from=endpoints',
+    from: 'endpoints',
     icon: 'endpoint',
     label: 'Pick endpoints',
     hint: 'Choose routes and describe the behaviour to cover',
   },
   {
-    href: '/dashboard/generate?from=blank',
+    from: 'blank',
     icon: 'plan',
-    label: 'Write it yourself',
-    hint: 'Start from a blank plan and add your own steps',
+    label: 'Describe a journey',
+    hint: 'Say what it should prove and let the requests be worked out',
   },
 ];
 
 export function GenerateMenu() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  /** Keeps whatever you were looking at on the URL, so closing puts you back. */
+  const params = Object.fromEntries(searchParams.entries());
+  const openHref = (from?: string) =>
+    withOverlay(pathname, params, 'generate', from ? { from, g: 'scope' } : undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -47,7 +56,8 @@ export function GenerateMenu() {
     <div ref={root} className="relative">
       <div className="flex h-8 items-stretch overflow-hidden rounded-md bg-ink text-ink-inverse shadow-[0_1px_2px_rgba(27,29,46,0.16)]">
         <Link
-          href="/dashboard/generate"
+          href={openHref()}
+          scroll={false}
           className="flex items-center gap-1.5 pr-2.5 pl-3 text-[13px] font-medium transition-colors duration-150 hover:bg-space-indigo"
         >
           <Icon name="sparkle" size={14} />
@@ -75,7 +85,8 @@ export function GenerateMenu() {
           {PATHS.map((p) => (
             <Link
               key={p.label}
-              href={p.href}
+              href={openHref(p.from)}
+              scroll={false}
               role="menuitem"
               onClick={() => setOpen(false)}
               className="flex gap-2.5 rounded-md p-2 transition-colors duration-150 hover:bg-app-hover"

@@ -14,7 +14,11 @@ function summarise(cells: string, planName: string, whenLabel: string) {
   return `${planName} · ${whenLabel} — ${tail}`;
 }
 
-export function RunMatrix() {
+export function RunMatrix({
+  hrefFor = (id) => `/dashboard/runs/${id}`,
+}: {
+  hrefFor?: (publicId: string) => string;
+} = {}) {
   return (
     <div>
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
@@ -22,7 +26,7 @@ export function RunMatrix() {
           {COLUMNS.map((run) => (
             <Link
               key={run.publicId}
-              href={`/dashboard/runs/${run.publicId}`}
+              href={hrefFor(run.publicId)}
               title={summarise(run.cells, run.planName, run.whenLabel)}
               aria-label={summarise(run.cells, run.planName, run.whenLabel)}
               className="flex flex-col-reverse gap-[3px] rounded-sm p-px transition-opacity duration-150 hover:opacity-60"

@@ -21,9 +21,13 @@ import {
   RUN_WORD,
 } from '@/lib/plan';
 import { EndpointFocusHeader, FileFocusHeader } from '@/components/app/coverage-focus';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { planToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
 export const metadata = { title: 'Test plans · GritQA' };
+
+const PATH = '/dashboard/test-plans';
 
 const GROUPS = ['flat', 'endpoint', 'file', 'status'] as const;
 type Group = (typeof GROUPS)[number];
@@ -95,13 +99,15 @@ function Covers({ plan }: { plan: TestPlan }) {
   );
 }
 
-const COLUMNS: Column<TestPlan>[] = [
+/** The name previews the plan over the list; the chevron leaves for the full plan. */
+const planColumns = (openPlan: (publicId: string) => string): Column<TestPlan>[] => [
   {
     key: 'name',
     header: 'Plan',
     cell: (plan) => (
       <Link
-        href={`/dashboard/test-plans/${plan.publicId}`}
+        href={openPlan(plan.publicId)}
+        scroll={false}
         className="group flex min-w-0 items-center gap-2.5"
       >
         <StatusDot
@@ -164,7 +170,8 @@ const COLUMNS: Column<TestPlan>[] = [
     cell: (plan) =>
       plan.status === 'draft' ? (
         <Link
-          href={`/dashboard/queue?plan=${plan.publicId}`}
+          href={openPlan(plan.publicId)}
+          scroll={false}
           className={buttonVariants({ variant: 'secondary', size: 'sm' })}
         >
           Review
@@ -172,7 +179,8 @@ const COLUMNS: Column<TestPlan>[] = [
       ) : (
         <Link
           href={`/dashboard/test-plans/${plan.publicId}`}
-          aria-label={`Open ${plan.name}`}
+          aria-label={`Open the full plan for ${plan.name}`}
+          title="Open the full plan"
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
         >
           <Icon name="chevronRight" size={14} />
@@ -184,14 +192,25 @@ const COLUMNS: Column<TestPlan>[] = [
 export default async function TestPlansPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string; endpoint?: string; file?: string }>;
+  searchParams: Promise<PageParams>;
 }) {
-  const { group: groupParam, endpoint: endpointParam, file: fileParam } = await searchParams;
+  const params = await searchParams;
+  const groupParam = typeof params.group === 'string' ? params.group : undefined;
+  const endpointParam = typeof params.endpoint === 'string' ? params.endpoint : undefined;
+  const fileParam = typeof params.file === 'string' ? params.file : undefined;
   const group: Group = isGroup(groupParam) ? groupParam : 'flat';
+  const openPlan = (publicId: string) => withOverlay(PATH, params, planToken(publicId));
 
   /* A coverage square or a file name lands here. Focus narrows the list to what
      touches that one thing, and the grouping control steps aside while it does. */
   const endpointFocus = endpointFocusFor(endpointParam);
+  /* Drafting for one endpoint opens the wizard over this page, on that endpoint. */
+  const generateHref = (method: string, path: string) =>
+    withOverlay(PATH, params, 'generate', {
+      from: 'endpoints',
+      g: 'scope',
+      only: `${method} ${path}`,
+    });
   const fileFocus = coverageFileFor(fileParam);
   const focused = Boolean(endpointFocus || fileFocus);
   const missing = Boolean((endpointParam && !endpointFocus) || (fileParam && !fileFocus));
@@ -270,6 +289,7 @@ export default async function TestPlansPage({
           <EndpointFocusHeader
             focus={endpointFocus}
             plans={plansForEndpoint(endpointFocus.path)}
+            generateHref={generateHref(endpointFocus.method, endpointFocus.path)}
           />
         )}
 
@@ -347,7 +367,7 @@ export default async function TestPlansPage({
                 bodyClassName="p-0"
               >
                 <DataTable
-                  columns={COLUMNS}
+                  columns={planColumns(openPlan)}
                   rows={section.plans}
                   rowKey={(plan) => `${section.key}-${plan.publicId}`}
                   minWidth={760}
@@ -364,6 +384,8 @@ export default async function TestPlansPage({
           )}
         </div>
       </PageBody>
+
+      <OverlayHost params={params} pathname={PATH} />
     </>
   );
 }

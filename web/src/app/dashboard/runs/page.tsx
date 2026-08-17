@@ -8,6 +8,7 @@ import { RunMatrix } from '@/components/app/run-matrix';
 import { RunCells } from '@/components/app/run-cells';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { EmptyState } from '@/components/app/empty-state';
+import { OverlayHost } from '@/components/app/overlay-host';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
@@ -15,8 +16,11 @@ import { MethodBadge } from '@/components/ui/method-badge';
 import { allPlans, runStripStats } from '@/lib/mock/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { brokeAt, matchesStatus, runCounts, runRows, type RunRow } from '@/lib/runs';
+import { runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Runs · GritQA' };
+
+const PATH = '/dashboard/runs';
 
 const FILTERS = ['all', 'failed', 'passed', 'running'] as const;
 type Filter = (typeof FILTERS)[number];
@@ -25,12 +29,17 @@ function isFilter(value: string | undefined): value is Filter {
   return FILTERS.some((f) => f === value);
 }
 
-const COLUMNS: Column<RunRow>[] = [
+/** The name opens a preview over the list; the chevron leaves for the full report. */
+const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => [
   {
     key: 'plan',
     header: 'Run',
     cell: (run) => (
-      <Link href={`/dashboard/runs/${run.publicId}`} className="group flex min-w-0 items-center gap-2.5">
+      <Link
+        href={openRun(run.publicId)}
+        scroll={false}
+        className="group flex min-w-0 items-center gap-2.5"
+      >
         <StatusDot
           tone={RUN_TONE[run.status]}
           pulse={run.status === 'running'}
@@ -101,7 +110,8 @@ const COLUMNS: Column<RunRow>[] = [
     cell: (run) => (
       <Link
         href={`/dashboard/runs/${run.publicId}`}
-        aria-label={`Open ${run.planName} run ${run.publicId}`}
+        aria-label={`Open the full report for ${run.planName}, run ${run.publicId}`}
+        title="Open the full report"
         className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
       >
         <Icon name="chevronRight" size={14} />
@@ -113,10 +123,13 @@ const COLUMNS: Column<RunRow>[] = [
 export default async function RunsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; plan?: string }>;
+  searchParams: Promise<PageParams>;
 }) {
-  const { status: statusParam, plan: planParam } = await searchParams;
+  const params = await searchParams;
+  const statusParam = typeof params.status === 'string' ? params.status : undefined;
+  const planParam = typeof params.plan === 'string' ? params.plan : undefined;
   const filter: Filter = isFilter(statusParam) ? statusParam : 'all';
+  const openRun = (publicId: string) => withOverlay(PATH, params, runToken(publicId));
 
   const plan = planParam ? allPlans.find((p) => p.publicId === planParam) : undefined;
   const scoped = plan ? runRows.filter((r) => r.planPublicId === plan.publicId) : runRows;
@@ -205,7 +218,7 @@ export default async function RunsPage({
             subtitle="Every step, newest on the right"
             link={{ href: '/dashboard/test-plans?group=status', label: 'What gets run' }}
           >
-            <RunMatrix />
+            <RunMatrix hrefFor={openRun} />
           </Panel>
         )}
 
@@ -221,7 +234,7 @@ export default async function RunsPage({
           bodyClassName="p-0"
         >
           <DataTable
-            columns={COLUMNS}
+            columns={runColumns(openRun)}
             rows={rows}
             rowKey={(run) => run.publicId}
             minWidth={780}
@@ -236,6 +249,8 @@ export default async function RunsPage({
           />
         </Panel>
       </PageBody>
+
+      <OverlayHost params={params} pathname={PATH} />
     </>
   );
 }

@@ -15,6 +15,7 @@ import { RulesSummary } from '@/components/app/rules-summary';
 import { EmptyState } from '@/components/app/empty-state';
 import { PipelineRail, type Stage } from '@/components/app/pipeline-rail';
 import { ViewFilter, type ViewKey } from '@/components/app/view-filter';
+import { OverlayHost } from '@/components/app/overlay-host';
 import { Icon } from '@/components/ui/icon';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -28,8 +29,11 @@ import {
   runStripStats,
 } from '@/lib/mock/data';
 import { cn } from '@/lib/cn';
+import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Overview · GritQA' };
+
+const PATH = '/dashboard';
 
 type WorkItem = {
   id: string;
@@ -40,7 +44,8 @@ type WorkItem = {
   signal: string;
   run: { total: number; passed: number } | null;
   cta: string;
-  href: string;
+  /** What the row opens, as an overlay token — the row never leaves this page. */
+  token: string;
 };
 
 const failedRuns = recentRuns.filter((r) => r.status === 'failed');
@@ -56,7 +61,7 @@ const failingWork: WorkItem[] = failedRuns.map((run) => {
     signal: broke ? `${broke.method} ${broke.responseStatus}` : '—',
     run: { total: run.steps.length, passed: run.steps.filter((s) => s.status === 'passed').length },
     cta: 'Inspect',
-    href: `/dashboard/runs/${run.publicId}`,
+    token: runToken(run.publicId),
   };
 });
 
@@ -69,7 +74,7 @@ const reviewWork: WorkItem[] = plansAwaitingReview.map((plan) => ({
   signal: `${plan.assertionCount} checks`,
   run: plan.lastRun ? { total: plan.lastRun.total, passed: plan.lastRun.passed } : null,
   cta: 'Review',
-  href: `/dashboard/queue?plan=${plan.publicId}`,
+  token: planToken(plan.publicId),
 }));
 
 const WORK: Record<ViewKey, WorkItem[]> = {
@@ -84,7 +89,7 @@ const SUBTITLE: Record<ViewKey, string> = {
   failing: 'Runs that broke and have not been dealt with',
 };
 
-const columns: Column<WorkItem>[] = [
+const workColumns = (hrefFor: (row: WorkItem) => string): Column<WorkItem>[] => [
   {
     key: 'name',
     header: 'Item',
@@ -139,7 +144,11 @@ const columns: Column<WorkItem>[] = [
     align: 'right',
     hideHeader: true,
     cell: (row) => (
-      <Link href={row.href} className={buttonVariants({ variant: 'secondary', size: 'xs' })}>
+      <Link
+        href={hrefFor(row)}
+        scroll={false}
+        className={buttonVariants({ variant: 'secondary', size: 'xs' })}
+      >
         {row.cta}
       </Link>
     ),
@@ -150,7 +159,7 @@ const passRateDelta = (
   Number(runStripStats.passRate) - Number(period.passRatePrevious)
 ).toFixed(1);
 
-const metrics: MetricCell[] = [
+const metricCells = (generateHref: string): MetricCell[] => [
   {
     icon: 'check',
     label: 'Pass rate',
@@ -189,7 +198,7 @@ const metrics: MetricCell[] = [
     delta: `+${coverageTotals.approved - period.endpointsCoveredPrevious}`,
     tone: 'good',
     comparison: `from ${period.endpointsCoveredPrevious}`,
-    href: '/dashboard/generate?from=endpoints',
+    href: generateHref,
   },
 ];
 
@@ -253,11 +262,19 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<PageParams>;
 }) {
-  const { view } = await searchParams;
+  const params = await searchParams;
+  const view = typeof params.view === 'string' ? params.view : undefined;
   const active: ViewKey = view === 'review' || view === 'failing' ? view : 'all';
   const rows = WORK[active];
+
+  /* Everything on this page opens over it, so the work list and the filter stay put. */
+  const open = (token: string) => withOverlay(PATH, params, token);
+  const generateHref = withOverlay(PATH, params, 'generate', {
+    from: 'endpoints',
+    g: 'scope',
+  });
 
   return (
     <>
@@ -347,7 +364,7 @@ export default async function OverviewPage({
         </Panel>
 
         <div className="mt-4">
-          <MetricRail cells={metrics} />
+          <MetricRail cells={metricCells(generateHref)} />
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -355,7 +372,7 @@ export default async function OverviewPage({
             className="xl:col-span-7"
             title="Coverage by file"
             subtitle="One square per endpoint the CLI found"
-            link={{ href: '/dashboard/generate?from=endpoints', label: 'Cover a gap' }}
+            link={{ href: generateHref, label: 'Cover a gap' }}
           >
             <CoverageGrid />
           </Panel>
@@ -371,13 +388,13 @@ export default async function OverviewPage({
             }
             link={{ href: '/dashboard/runs', label: 'All runs' }}
           >
-            <RunMatrix />
+            <RunMatrix hrefFor={(id) => open(runToken(id))} />
 
             <div className="mt-4 border-t border-rule-soft pt-4">
               <p className="mb-3 text-[10.5px] tracking-[0.06em] text-ink-subtle uppercase">
                 Pass rate by plan
               </p>
-              <PlanRates />
+              <PlanRates hrefFor={(id) => open(planToken(id))} />
             </div>
           </Panel>
         </div>
@@ -395,7 +412,7 @@ export default async function OverviewPage({
           bodyClassName="p-0"
         >
           <DataTable
-            columns={columns}
+            columns={workColumns((row) => open(row.token))}
             rows={rows}
             rowKey={(row) => row.id}
             empty={
@@ -417,7 +434,7 @@ export default async function OverviewPage({
             link={{ href: '/dashboard/runs', label: 'All runs' }}
             bodyClassName="p-0"
           >
-            <RunList runs={recentRuns} />
+            <RunList runs={recentRuns} hrefFor={(id) => open(runToken(id))} />
           </Panel>
 
           <Panel
@@ -431,6 +448,8 @@ export default async function OverviewPage({
           </Panel>
         </div>
       </PageBody>
+
+      <OverlayHost params={params} pathname={PATH} />
     </>
   );
 }
