@@ -14,6 +14,7 @@ export function DecisionBar({
 }: {
   planId: string;
   cliConnected: boolean;
+  /** Points at the conversation on this page — asking is not a trip elsewhere. */
   refineHref: string;
   fullHref?: string;
   showKeys?: boolean;
@@ -46,9 +47,16 @@ export function DecisionBar({
         Approve and run
       </Button>
 
-      <Link href={refineHref} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+      <span aria-hidden className="mx-0.5 hidden h-5 w-px bg-rule sm:block" />
+
+      {/* The third outcome, and it acts here like the other two. */}
+      <Link
+        href={refineHref}
+        title="Say what should change, and read the new version"
+        className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+      >
         <Icon name="sparkle" size={14} />
-        Ask for changes
+        Ask for a change
       </Link>
 
       <Button variant="ghost" size="sm" data-decision="reject" data-plan={planId}>

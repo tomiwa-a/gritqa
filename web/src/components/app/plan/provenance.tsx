@@ -1,6 +1,5 @@
 import { Icon } from '@/components/ui/icon';
-import type { TestPlanDetail } from '@/lib/mock/types';
-import { user } from '@/lib/mock/data';
+import type { PlanDiffContext } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
 function Bar({ additions, deletions }: { additions: number; deletions: number }) {
@@ -18,26 +17,11 @@ function Bar({ additions, deletions }: { additions: number; deletions: number })
   );
 }
 
-export function Provenance({ plan, className }: { plan: TestPlanDetail; className?: string }) {
-  const diff = plan.diffContext;
-
-  if (!diff) {
-    const first = plan.revisions[0];
-    return (
-      <div className={cn('flex flex-col gap-2.5 px-4 py-3.5', className)}>
-        <p className="flex items-center gap-2 text-[12.5px] text-ink-muted">
-          <Icon name="user" size={13} className="text-ink-subtle" />
-          Started by hand by {user.name}, {plan.createdLabel}.
-        </p>
-        {first?.instruction && (
-          <blockquote className="border-l-2 border-rule-strong pl-3 text-[13px] leading-relaxed text-ink">
-            “{first.instruction}”
-          </blockquote>
-        )}
-      </div>
-    );
-  }
-
+/**
+ * The push a draft was written for. How a plan came to exist without one is the
+ * conversation's opening turn, so this is only rendered when there is a diff.
+ */
+export function Provenance({ diff, className }: { diff: PlanDiffContext; className?: string }) {
   return (
     <div className={cn('flex flex-col', className)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3.5">

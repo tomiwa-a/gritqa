@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 
@@ -12,7 +12,19 @@ const EXAMPLES = [
 
 export function RefineComposer({ nextVersion }: { nextVersion: number }) {
   const [text, setText] = useState('');
+  const field = useRef<HTMLTextAreaElement>(null);
   const ready = text.trim().length > 0;
+
+  /* "Ask for a change" points at #ask. Scrolling here is not enough — the caret
+     should land in the field, whether you came from this page or another one. */
+  useEffect(() => {
+    const focusIfAsked = () => {
+      if (window.location.hash === '#ask') field.current?.focus();
+    };
+    focusIfAsked();
+    window.addEventListener('hashchange', focusIfAsked);
+    return () => window.removeEventListener('hashchange', focusIfAsked);
+  }, []);
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -23,6 +35,7 @@ export function RefineComposer({ nextVersion }: { nextVersion: number }) {
       <textarea
         id="refine"
         name="refine"
+        ref={field}
         rows={3}
         value={text}
         onChange={(e) => setText(e.target.value)}

@@ -87,6 +87,7 @@ export default async function QueuePage({
           cliConnected={currentProject.lastIndexedLabel !== null}
           selectedStepId={step?.id}
           stepHrefFor={stepHrefFor}
+          askHref={`${planHref}#ask`}
           className="min-w-0 flex-1"
         />
       </div>

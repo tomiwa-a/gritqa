@@ -5,6 +5,7 @@ import { VariableChain } from './variable-chain';
 import { Provenance } from './provenance';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
+import { PlanConversation } from './plan-conversation';
 import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
@@ -14,6 +15,7 @@ export function PlanBody({
   detail,
   selectedStepId,
   stepHrefFor,
+  diffHrefFor,
   fullHref,
   className,
 }: {
@@ -21,28 +23,34 @@ export function PlanBody({
   detail: TestPlanDetail | undefined;
   selectedStepId?: string;
   stepHrefFor: (stepId: string) => string;
+  /** Where a version's changes are read, for the conversation's diff links. */
+  diffHrefFor: (version: number) => string;
   fullHref?: string;
   className?: string;
 }) {
   if (!detail) {
     return (
-      <Panel title="Steps" bodyClassName="p-4" className={className}>
-        <p className="text-[13px] leading-relaxed text-ink-muted">
-          The steps for {plan.name.toLowerCase()} have not been loaded into this build yet.
-          {fullHref && (
-            <>
-              {' '}
-              <Link
-                href={fullHref}
-                className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
-              >
-                Open the full plan
-              </Link>{' '}
-              to see how the page is laid out.
-            </>
-          )}
-        </p>
-      </Panel>
+      <div className={cn('flex flex-col gap-4', className)}>
+        <Panel title="Steps" bodyClassName="p-4">
+          <p className="text-[13px] leading-relaxed text-ink-muted">
+            The steps for {plan.name.toLowerCase()} have not been loaded into this build yet.
+            {fullHref && (
+              <>
+                {' '}
+                <Link
+                  href={fullHref}
+                  className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
+                >
+                  Open the full plan
+                </Link>{' '}
+                to see how the page is laid out.
+              </>
+            )}
+          </p>
+        </Panel>
+
+        <PlanConversation plan={plan} detail={detail} diffHrefFor={diffHrefFor} />
+      </div>
     );
   }
 
@@ -67,15 +75,16 @@ export function PlanBody({
         </Panel>
       )}
 
-      <Panel
-        title={detail.diffContext ? 'What changed' : 'Why this exists'}
-        subtitle={
-          detail.diffContext ? 'The push this draft was written for' : 'The request that started it'
-        }
-        bodyClassName="p-0"
-      >
-        <Provenance plan={detail} />
-      </Panel>
+      {/* Why a plan exists without a diff behind it is the conversation's job now. */}
+      {detail.diffContext && (
+        <Panel
+          title="What changed"
+          subtitle="The push this draft was written for"
+          bodyClassName="p-0"
+        >
+          <Provenance diff={detail.diffContext} />
+        </Panel>
+      )}
 
       <Panel title="Rules it followed" bodyClassName="p-0">
         <RulesApplied plan={detail} />
@@ -106,6 +115,9 @@ export function PlanBody({
           failure={detail.previousFailure}
         />
       </Panel>
+
+      {/* Last, because you read the plan and then you answer it. */}
+      <PlanConversation plan={plan} detail={detail} diffHrefFor={diffHrefFor} />
     </div>
   );
 }

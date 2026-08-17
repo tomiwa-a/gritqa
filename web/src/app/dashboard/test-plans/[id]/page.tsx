@@ -6,8 +6,6 @@ import { Panel } from '@/components/app/panel';
 import { Meter } from '@/components/app/meter';
 import { PlanBody } from '@/components/app/plan/plan-body';
 import { PlanDiff } from '@/components/app/plan/plan-diff';
-import { RevisionThread } from '@/components/app/plan/revision-thread';
-import { RefineComposer } from '@/components/app/plan/refine-composer';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { DecisionBar } from '@/components/app/plan/decision-bar';
 import { OverlayHost } from '@/components/app/overlay-host';
@@ -16,14 +14,14 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { CodeBlock } from '@/components/ui/code-block';
 import { Icon } from '@/components/ui/icon';
-import { allPlans, currentProject, user } from '@/lib/mock/data';
+import { allPlans, currentProject } from '@/lib/mock/data';
 import { planDetailFor } from '@/lib/mock/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runsForPlan } from '@/lib/runs';
 import { parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
-const TABS = ['steps', 'diff', 'raw', 'history'] as const;
+const TABS = ['steps', 'diff', 'raw'] as const;
 type Tab = (typeof TABS)[number];
 
 function isTab(value: string | undefined): value is Tab {
@@ -84,11 +82,12 @@ function SettledBar({
       </Button>
 
       <Link
-        href={`/dashboard/test-plans/${plan.publicId}?tab=history`}
+        href={`/dashboard/test-plans/${plan.publicId}#ask`}
+        title="Say what should change, and read the new version"
         className={buttonVariants({ variant: 'secondary', size: 'sm' })}
       >
         <Icon name="sparkle" size={14} />
-        Ask for changes
+        Ask for a change
       </Link>
 
       {plan.status === 'approved' && (
@@ -145,6 +144,8 @@ export default async function PlanDetailPage({
 
   const base = `/dashboard/test-plans/${plan.publicId}`;
   const hrefFor = (next: Tab) => (next === 'steps' ? base : `${base}?tab=${next}`);
+  const diffHrefFor = (version: number) =>
+    version > 1 ? `${base}?tab=diff&v=${version}` : `${base}?tab=diff`;
 
   /* One drawer at a time: a preview opening here parks the step inspector. */
   const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
@@ -242,13 +243,6 @@ export default async function PlanDetailPage({
                     href: hrefFor('diff'),
                   },
                   { key: 'raw', label: 'Raw', icon: 'code', href: hrefFor('raw') },
-                  {
-                    key: 'history',
-                    label: 'History',
-                    icon: 'clock',
-                    href: hrefFor('history'),
-                    count: revisions.length || undefined,
-                  },
                 ]}
               />
             </div>
@@ -260,6 +254,7 @@ export default async function PlanDetailPage({
                   detail={detail}
                   selectedStepId={step?.id}
                   stepHrefFor={stepHrefFor}
+                  diffHrefFor={diffHrefFor}
                 />
               )}
 
@@ -276,7 +271,7 @@ export default async function PlanDetailPage({
                           .map((r) => ({
                             key: String(r.version),
                             label: `v${r.version - 1} → v${r.version}`,
-                            href: `${base}?tab=diff&v=${r.version}`,
+                            href: diffHrefFor(r.version),
                           }))}
                       />
                     </div>
@@ -336,39 +331,6 @@ export default async function PlanDetailPage({
                 </div>
               )}
 
-              {tab === 'history' && (
-                <div className="flex flex-col gap-4">
-                  {revisions.length > 0 ? (
-                    <Panel
-                      title="How this plan got here"
-                      subtitle="Every version, and what was asked for"
-                      bodyClassName="p-0"
-                    >
-                      <RevisionThread
-                        revisions={revisions}
-                        author={user.name}
-                        diffHrefFor={(version) =>
-                          version > 1 ? `${base}?tab=diff&v=${version}` : `${base}?tab=diff`
-                        }
-                      />
-                    </Panel>
-                  ) : (
-                    <Panel title="How this plan got here" bodyClassName="p-4">
-                      <p className="text-[13px] leading-relaxed text-ink-muted">
-                        No versions have been recorded for this plan yet.
-                      </p>
-                    </Panel>
-                  )}
-
-                  <Panel
-                    title="Ask for a change"
-                    subtitle="You describe it, GritQA rewrites the plan, you read the difference"
-                    bodyClassName="p-0"
-                  >
-                    <RefineComposer nextVersion={plan.version + 1} />
-                  </Panel>
-                </div>
-              )}
             </div>
           </PageBody>
         </div>
@@ -377,7 +339,7 @@ export default async function PlanDetailPage({
           <DecisionBar
             planId={plan.publicId}
             cliConnected={cliConnected}
-            refineHref={`${base}?tab=history`}
+            refineHref={`${base}#ask`}
             className="sm:px-6"
           />
         ) : (

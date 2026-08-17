@@ -50,7 +50,8 @@ export default async function RunDetailPage({
 
   const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
-  const refineHref = `${planHref}?tab=history`;
+  /* Leaves this report, because the conversation lives with the plan. */
+  const refineHref = `${planHref}#ask`;
   const siblings = runsForPlan(run.planPublicId).filter((r) => r.publicId !== run.publicId);
 
   /* Checking the plan or a sibling run should not cost you this report. */
@@ -221,9 +222,13 @@ export default async function RunDetailPage({
               What it was testing
             </Link>
 
-            <Link href={refineHref} className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+            <Link
+              href={refineHref}
+              title="Say what should change about the plan behind this run"
+              className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+            >
               <Icon name="sparkle" size={14} />
-              Ask for changes
+              Ask for a change
             </Link>
 
             <Link
