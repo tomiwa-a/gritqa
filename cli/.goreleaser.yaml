@@ -1,0 +1,73 @@
+version: 2
+
+project_name: gritqa
+
+# Archive names and the bare `gritqa` binary are what the install guide in
+# web/src/components/app/wizard/platform-picker.tsx tells people to expect.
+#
+# Note: `go install github.com/gritqa/cli@latest` needs this module at the root
+# of its own repository. While it lives under cli/ in the monorepo, that command
+# will not resolve — split the module out before the first tag.
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: gritqa
+    main: .
+    binary: gritqa
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: gritqa
+    ids: [gritqa]
+    name_template: >-
+      gritqa_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  footer: |
+    ## Install
+
+    With Go:
+
+        go install github.com/gritqa/cli@latest
+
+    Or download an archive below, unpack it, and put `gritqa` on your PATH.
