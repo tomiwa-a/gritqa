@@ -3,15 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
+import { initialsOf } from '@/components/ui/avatar';
 import { user } from '@/lib/mock/data';
 import { cn } from '@/lib/cn';
 
-const initials = user.name
-  .split(' ')
-  .slice(0, 2)
-  .map((w) => w[0])
-  .join('')
-  .toUpperCase();
+const initials = initialsOf(user.name);
 
 const PROVIDER = { github: 'GitHub', gitlab: 'GitLab' } as const;
 

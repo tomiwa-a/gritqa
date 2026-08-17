@@ -2,7 +2,15 @@ import Link from 'next/link';
 import { Wordmark } from '@/components/ui/wordmark';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
-import { SetupFlow } from '@/components/app/setup/setup-flow';
+import { WizardRail, WIZARD_STEPS, type WizardStepKey } from '@/components/app/wizard/wizard-rail';
+import { WizardStep } from '@/components/app/wizard/wizard-step';
+import { MachineDiagram } from '@/components/app/wizard/machine-diagram';
+import { WaitingBeacon } from '@/components/app/wizard/waiting-beacon';
+import { ApprovalGate } from '@/components/app/wizard/approval-gate';
+import { StepInstall } from '@/components/app/wizard/step-install';
+import { StepConnect } from '@/components/app/wizard/step-connect';
+import { StepReview } from '@/components/app/wizard/step-review';
+import { OS_KEYS, type OsKey } from '@/components/app/wizard/platform-picker';
 import { user } from '@/lib/mock/data';
 import { cn } from '@/lib/cn';
 
@@ -12,11 +20,48 @@ export const metadata = {
   robots: { index: false },
 };
 
-export default function OnboardingPage() {
+const COPY: Record<WizardStepKey, { title: string; lede: string }> = {
+  install: {
+    title: 'Put the CLI on your machine',
+    lede: 'One binary. It reads your code and runs your tests where your code already lives — nothing is uploaded to us to be executed.',
+  },
+  connect: {
+    title: 'Point it at a project',
+    lede: 'Run it once inside a repo. It learns your routes, handlers, and models, then reports back here so both sides are looking at the same project.',
+  },
+  review: {
+    title: 'Nothing runs until you approve it',
+    lede: 'Plans arrive as drafts. You read what a plan would send and what it would assert, then approve it or leave it sitting there.',
+  },
+};
+
+const VISUAL: Record<WizardStepKey, React.ReactNode> = {
+  install: <MachineDiagram />,
+  connect: <WaitingBeacon />,
+  review: <ApprovalGate />,
+};
+
+function stepFrom(value: string | undefined): WizardStepKey {
+  return WIZARD_STEPS.some((s) => s.key === value) ? (value as WizardStepKey) : 'install';
+}
+
+function osFrom(value: string | undefined): OsKey {
+  return OS_KEYS.includes(value as OsKey) ? (value as OsKey) : 'mac';
+}
+
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ step?: string; os?: string }>;
+}) {
+  const params = await searchParams;
+  const step = stepFrom(params.step);
+  const os = osFrom(params.os);
+
   return (
     <div className="min-h-screen bg-app">
       <header className="sticky top-0 z-30 border-b border-rule bg-app-panel">
-        <div className="mx-auto flex h-14 max-w-[1000px] items-center gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-14 max-w-[1120px] items-center gap-3 px-4 sm:px-6">
           <Wordmark />
           <span className="ml-auto hidden items-center gap-1.5 text-[12.5px] text-ink-muted sm:flex">
             <Icon name={user.provider} size={13} className="text-ink-subtle" />
@@ -31,33 +76,31 @@ export default function OnboardingPage() {
         </div>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-[1000px] px-4 py-8 sm:px-6 sm:py-10">
+      <main id="main" className="mx-auto w-full max-w-[1120px] px-4 py-8 sm:px-6 sm:py-10">
         <p className="text-[12px] font-medium tracking-[0.14em] text-ink-subtle uppercase">
           Welcome, {user.name.split(' ')[0]}
         </p>
-        <h1 className="mt-2 text-[26px] leading-tight font-semibold tracking-[-0.025em] text-ink sm:text-[30px]">
-          Let us get GritQA reading your code.
+        <h1 className="mt-2 text-[26px] leading-tight font-semibold tracking-[-0.025em] text-ink sm:text-[29px]">
+          Three things, then you are running tests.
         </h1>
-        <p className="mt-2.5 max-w-[58ch] text-[14px] leading-relaxed text-ink-muted">
-          Your tests run on your machine, against your database, from a plan you have read. The CLI
-          is the piece that does that — everything below sets it up once.
-        </p>
 
-        <div className="mt-7">
-          <SetupFlow done={0} />
-        </div>
+        <div className="mt-7 grid gap-6 lg:grid-cols-[196px_minmax(0,1fr)] lg:gap-8">
+          <WizardRail active={step} os={os} />
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rule bg-app-panel px-4 py-3.5 shadow-panel">
-          <p className="text-[12.5px] text-ink-muted">
-            You can leave and come back — the dashboard keeps these steps under CLI setup.
-          </p>
-          <Link
-            href="/dashboard"
-            className={buttonVariants({ variant: 'primary', size: 'sm' })}
-          >
-            Go to the dashboard
-            <Icon name="arrowRight" size={14} />
-          </Link>
+          <div className="min-w-0">
+            <WizardStep step={step} os={os} {...COPY[step]} visual={VISUAL[step]}>
+              {step === 'install' && (
+                <StepInstall os={os} hrefFor={(next) => `/onboarding?step=install&os=${next}`} />
+              )}
+              {step === 'connect' && <StepConnect />}
+              {step === 'review' && <StepReview />}
+            </WizardStep>
+
+            <p className="mt-4 text-[12px] leading-snug text-ink-subtle">
+              You can leave and come back — this page remembers nothing you have to redo, and the
+              dashboard keeps a link to it.
+            </p>
+          </div>
         </div>
       </main>
     </div>

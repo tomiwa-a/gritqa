@@ -1,4 +1,5 @@
 import type {
+  AuditEntry,
   CoverageFile,
   Project,
   TestExecution,
@@ -14,6 +15,7 @@ export const user: User = {
   avatarUrl: null,
   provider: 'github',
   hasAiKey: true,
+  aiKeyMasked: 'sk-••••••••••••4f2a',
 };
 
 export const projects: Project[] = [
@@ -397,3 +399,15 @@ export const coverageTotals = coverage
     (acc, e) => ({ ...acc, [e.state]: acc[e.state] + 1, total: acc.total + 1 }),
     { approved: 0, draft: 0, failing: 0, none: 0, total: 0 },
   );
+
+export const auditLog: AuditEntry[] = [
+  { id: 8421, action: 'project.indexed', label: 'payments-api re-read after a push to main', tone: 'project', whenLabel: '4m ago', ip: '102.89.34.7' },
+  { id: 8420, action: 'test_execution.completed', label: 'Charge a checkout with a mocked provider failed on step 4', tone: 'run', whenLabel: '12m ago', ip: '102.89.34.7' },
+  { id: 8419, action: 'test_plan.created', label: 'Checkout applies the right tax rate drafted from a push', tone: 'plan', whenLabel: '2h ago', ip: '102.89.34.7' },
+  { id: 8418, action: 'test_plan.approved', label: 'Webhook replay is idempotent approved by you', tone: 'plan', whenLabel: '3h ago', ip: '102.89.34.7' },
+  { id: 8417, action: 'testing_rule.updated', label: 'Pagination envelope turned off', tone: 'rule', whenLabel: 'Yesterday', ip: '102.89.34.7' },
+  { id: 8416, action: 'mock_endpoint.created', label: 'Stripe webhook mock added', tone: 'rule', whenLabel: 'Yesterday', ip: '102.89.34.7' },
+  { id: 8415, action: 'user.ai_key.updated', label: 'AI key replaced', tone: 'account', whenLabel: '3d ago', ip: '102.89.34.7' },
+  { id: 8414, action: 'project.created', label: 'notifications added from the CLI', tone: 'project', whenLabel: '5d ago', ip: '41.58.120.19' },
+  { id: 8413, action: 'user.login', label: 'Signed in with GitHub', tone: 'account', whenLabel: '5d ago', ip: '41.58.120.19' },
+];

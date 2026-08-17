@@ -9,6 +9,7 @@ export type User = {
   avatarUrl: string | null;
   provider: Provider;
   hasAiKey: boolean;
+  aiKeyMasked: string | null;
 };
 
 export type Project = {
@@ -79,4 +80,15 @@ export type EndpointCoverage = {
 export type CoverageFile = {
   file: string;
   endpoints: EndpointCoverage[];
+};
+
+export type AuditTone = 'plan' | 'run' | 'rule' | 'project' | 'account';
+
+export type AuditEntry = {
+  id: number;
+  action: string;
+  label: string;
+  tone: AuditTone;
+  whenLabel: string;
+  ip: string;
 };

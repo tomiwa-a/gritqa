@@ -3,13 +3,15 @@ import { cn } from '@/lib/cn';
 export function Input({
   className,
   invalid,
+  dense,
   ...rest
-}: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
+}: React.InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean; dense?: boolean }) {
   return (
     <input
       aria-invalid={invalid || undefined}
       className={cn(
-        'h-12 w-full rounded-md border bg-surface px-3.5 text-[0.9375rem] text-ink',
+        'w-full rounded-md border bg-surface text-ink',
+        dense ? 'h-9 px-3 text-[13px]' : 'h-12 px-3.5 text-[0.9375rem]',
         'placeholder:text-ink-subtle',
         'transition-colors duration-150 ease-out',
         invalid ? 'border-fail' : 'border-rule-strong hover:border-ink-subtle',
