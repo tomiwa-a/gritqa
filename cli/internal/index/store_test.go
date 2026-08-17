@@ -28,7 +28,7 @@ func Products(r chi.Router, h *H) {
 `,
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestStoreHashesDriveChangeDetection(t *testing.T) {
 		t.Errorf("a fresh cache should be empty, got %v", before)
 	}
 
-	first, err := Read(context.Background(), root)
+	first, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestStoreHashesDriveChangeDetection(t *testing.T) {
 	write(t, filepath.Join(root, "a.go"), "package a\n\nvar X = 1\n")
 	write(t, filepath.Join(root, "b.go"), "package a\n")
 
-	second, err := Read(context.Background(), root)
+	second, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestSaveIsAReplacement(t *testing.T) {
 	})
 
 	s := open(t, root)
-	first, err := Read(context.Background(), root)
+	first, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

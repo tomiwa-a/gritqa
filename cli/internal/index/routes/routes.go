@@ -1,5 +1,6 @@
 // Package routes holds the endpoint model the dashboard's coverage grid is
-// built from, and the framework-agnostic extractor interface.
+// built from. It is language- and framework-neutral: every source on the
+// discovery ladder produces these.
 package routes
 
 import (
@@ -23,17 +24,6 @@ func (r Route) Signature() string {
 	}
 	return r.Method + " " + r.Path
 }
-
-// Framework names a supported router.
-type Framework string
-
-const (
-	Stdlib Framework = "net/http"
-	Chi    Framework = "chi"
-	Gin    Framework = "gin"
-	Echo   Framework = "echo"
-	Fiber  Framework = "fiber"
-)
 
 // Normalize rewrites a framework's path syntax into the canonical :param form
 // the dashboard uses, so chi's {id} and gin's :id land on the same endpoint.
@@ -166,11 +156,4 @@ func (r Route) NeedsAuth() bool {
 var authHints = []string{
 	"auth", "jwt", "session", "bearer", "token", "login",
 	"protect", "requireuser", "currentuser", "identity",
-}
-
-// Extractor pulls routes out of a single file. One per language.
-type Extractor interface {
-	Language() string
-	Handles(path string) bool
-	Extract(path string, src []byte) ([]Route, error)
 }

@@ -17,14 +17,37 @@ const (
 )
 
 // Config is .gritqa/config.yaml. The first three fields are all that first run
-// writes; Run is appended later, when a plan first needs executing.
+// writes; Endpoints and Run are appended later, when discovery needs help and
+// when a plan first needs executing.
 type Config struct {
-	Project string `yaml:"project"`
-	Path    string `yaml:"path"`
-	Branch  string `yaml:"branch"`
-	Run     *Run   `yaml:"run,omitempty"`
+	Project   string     `yaml:"project"`
+	Path      string     `yaml:"path"`
+	Branch    string     `yaml:"branch"`
+	Endpoints *Endpoints `yaml:"endpoints,omitempty"`
+	Run       *Run       `yaml:"run,omitempty"`
 
 	root string `yaml:"-"`
+}
+
+// Endpoints overrides how GritQA discovers the project's endpoints, for the
+// projects it cannot read on its own.
+type Endpoints struct {
+	// List is the escape hatch: "GET /orders" lines, which win over everything.
+	List []string `yaml:"list,omitempty"`
+	// Spec points at an OpenAPI or Swagger document, when it is not somewhere
+	// obvious.
+	Spec string `yaml:"spec,omitempty"`
+	// AI sends changed files to the server for extraction. Opt-in, because
+	// unlike every other source it means source code leaves the machine.
+	AI bool `yaml:"ai,omitempty"`
+}
+
+// EndpointOpts returns the discovery overrides, zeroed when none are set.
+func (c *Config) EndpointOpts() Endpoints {
+	if c.Endpoints == nil {
+		return Endpoints{}
+	}
+	return *c.Endpoints
 }
 
 // Run describes how to bring the user's API up for a test run.

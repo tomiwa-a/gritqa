@@ -7,17 +7,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gritqa/cli/internal/index/golang"
+	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/index/source"
 
 	_ "modernc.org/sqlite"
 )
 
 // schemaVersion guards the cache. It is only a cache, so a mismatch rebuilds
 // rather than migrates.
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 const schema = `
 CREATE TABLE files (
@@ -35,6 +38,7 @@ CREATE TABLE routes (
   line       INTEGER NOT NULL,
   handler    TEXT NOT NULL,
   middleware TEXT NOT NULL DEFAULT '[]',
+  unresolved INTEGER NOT NULL DEFAULT 0,
   seq        INTEGER NOT NULL,
   PRIMARY KEY (file, method, path)
 );
@@ -140,28 +144,41 @@ func (s *Store) Save(snap *Snapshot) error {
 	}
 
 	insertRoute, err := tx.Prepare(
-		`INSERT OR REPLACE INTO routes (file, method, path, line, handler, middleware, seq)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`)
+		`INSERT OR REPLACE INTO routes (file, method, path, line, handler, middleware, unresolved, seq)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer insertRoute.Close()
 
-	for i, r := range snap.Routes {
-		mw, err := json.Marshal(r.Middleware)
-		if err != nil {
-			return err
-		}
-		if _, err := insertRoute.Exec(r.File, r.Method, r.Path, r.Line, r.Handler, string(mw), i); err != nil {
-			return fmt.Errorf("cache %s: %w", r.Signature(), err)
+	seq := 0
+	for _, set := range []struct {
+		unresolved int
+		rs         []routes.Route
+	}{{0, snap.Routes}, {1, snap.Unresolved}} {
+		for _, r := range set.rs {
+			mw, err := json.Marshal(r.Middleware)
+			if err != nil {
+				return err
+			}
+			if _, err := insertRoute.Exec(
+				r.File, r.Method, r.Path, r.Line, r.Handler, string(mw), set.unresolved, seq,
+			); err != nil {
+				return fmt.Errorf("cache %s: %w", r.Signature(), err)
+			}
+			seq++
 		}
 	}
 
-	if _, err := tx.Exec(
-		`INSERT OR REPLACE INTO meta (key, value) VALUES ('indexed_at', ?)`,
-		time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
-		return err
+	for k, v := range map[string]string{
+		"indexed_at":    time.Now().UTC().Format(time.RFC3339),
+		"source":        string(snap.Source),
+		"source_detail": snap.SourceDetail,
+		"frameworks":    joinIDs(snap.Frameworks),
+	} {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`, k, v); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -192,7 +209,7 @@ func (s *Store) Load(root string) (*Snapshot, error) {
 	}
 
 	rs, err := s.db.Query(
-		`SELECT file, method, path, line, handler, middleware FROM routes ORDER BY seq`)
+		`SELECT file, method, path, line, handler, middleware, unresolved FROM routes ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -201,15 +218,58 @@ func (s *Store) Load(root string) (*Snapshot, error) {
 	for rs.Next() {
 		var r routes.Route
 		var mw string
-		if err := rs.Scan(&r.File, &r.Method, &r.Path, &r.Line, &r.Handler, &mw); err != nil {
+		var unresolved bool
+		if err := rs.Scan(&r.File, &r.Method, &r.Path, &r.Line, &r.Handler, &mw, &unresolved); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(mw), &r.Middleware); err != nil {
 			r.Middleware = nil
 		}
+		if unresolved {
+			snap.Unresolved = append(snap.Unresolved, r)
+			continue
+		}
 		snap.Routes = append(snap.Routes, r)
 	}
-	return snap, rs.Err()
+	if err := rs.Err(); err != nil {
+		return nil, err
+	}
+
+	kind, err := s.Meta("source")
+	if err != nil {
+		return nil, err
+	}
+	snap.Source = source.Kind(kind)
+	if snap.SourceDetail, err = s.Meta("source_detail"); err != nil {
+		return nil, err
+	}
+
+	fw, err := s.Meta("frameworks")
+	if err != nil {
+		return nil, err
+	}
+	snap.Frameworks = splitIDs(fw)
+	return snap, nil
+}
+
+func joinIDs(ids []lang.ID) string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	return strings.Join(out, ",")
+}
+
+func splitIDs(s string) []lang.ID {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]lang.ID, len(parts))
+	for i, p := range parts {
+		out[i] = lang.ID(p)
+	}
+	return out
 }
 
 func (s *Store) Meta(key string) (string, error) {

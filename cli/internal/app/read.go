@@ -8,7 +8,8 @@ import (
 
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/index/lang"
+	"github.com/gritqa/cli/internal/index/source"
 	"github.com/gritqa/cli/internal/term"
 )
 
@@ -39,7 +40,12 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config) (*index.Snaps
 		Text: fmt.Sprintf("reading %s — %s", cfg.Path, term.Count(len(paths), "file", "files")),
 	})
 
-	snap, err := index.ReadPaths(ctx, cfg.Root(), paths)
+	ep := cfg.EndpointOpts()
+	snap, err := index.ReadPaths(ctx, cfg.Root(), paths, index.Options{
+		List: ep.List,
+		Spec: ep.Spec,
+		AI:   ep.AI,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -77,21 +83,47 @@ func findings(snap *index.Snapshot) []term.Line {
 	var lines []term.Line
 	add := func(text string) { lines = append(lines, term.Line{Kind: term.Tree, Text: text}) }
 
-	if len(snap.Frameworks) == 0 {
-		add("no router I recognise — endpoint discovery needs net/http, chi, gin, echo or fiber")
-	} else {
+	switch {
+	case snap.EndpointCount() > 0:
 		add(fmt.Sprintf("%s across %s",
 			term.Count(snap.EndpointCount(), "endpoint", "endpoints"),
 			term.Count(snap.RouteFileCount(), "file", "files")))
-		add(names(snap.Frameworks))
-
+		add(origin(snap))
 		if n := snap.GuardedCount(); n > 0 {
 			add(fmt.Sprintf("%d of them need a logged-in user", n))
 		}
+	case len(snap.Frameworks) == 0:
+		add("no framework I recognise — " + escapeHatch)
+	case !lang.Readable(snap.Frameworks):
+		add(fmt.Sprintf("this looks like a %s project, which I cannot read from source yet",
+			names(lang.Unreadable(snap.Frameworks))))
+		add(escapeHatch)
+	default:
+		add(fmt.Sprintf("your %s code registers no endpoints I could resolve", names(snap.Frameworks)))
+	}
+
+	if n := snap.UnresolvedCount(); n > 0 {
+		add(fmt.Sprintf("%s whose path I could not work out, so %s left out",
+			term.Count(n, "registration", "registrations"), plural(n, "it is", "they are")))
 	}
 
 	lines[len(lines)-1].Last = true
 	return lines
+}
+
+const escapeHatch = "point me at an OpenAPI file with endpoints.spec, or list them under endpoints.list"
+
+// origin names where the endpoints came from, since a spec and a source scan are
+// very different claims about the same numbers.
+func origin(snap *index.Snapshot) string {
+	switch {
+	case snap.Source == source.Static:
+		return names(snap.Frameworks)
+	case snap.SourceDetail != "":
+		return fmt.Sprintf("read from %s, %s", snap.Source, snap.SourceDetail)
+	default:
+		return "read from " + string(snap.Source)
+	}
 }
 
 func summary(first bool, delta index.Delta, snap *index.Snapshot) string {
@@ -105,10 +137,10 @@ func summary(first bool, delta index.Delta, snap *index.Snapshot) string {
 	}
 }
 
-func names(fw []routes.Framework) string {
-	out := make([]string, len(fw))
-	for i, f := range fw {
-		out[i] = string(f)
+func names(ids []lang.ID) string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
 	}
 	return strings.Join(out, ", ")
 }

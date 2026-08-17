@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/routes"
 )
 
@@ -113,12 +114,12 @@ func TestHandlerAndLineAreRecorded(t *testing.T) {
 }
 
 func TestFrameworkDetection(t *testing.T) {
-	cases := map[string]routes.Framework{
-		"chi_products.go":   routes.Chi,
-		"gin_orders.go":     routes.Gin,
-		"echo_customers.go": routes.Echo,
-		"fiber_invoices.go": routes.Fiber,
-		"stdlib_health.go":  routes.Stdlib,
+	cases := map[string]lang.ID{
+		"chi_products.go":   lang.Chi,
+		"gin_orders.go":     lang.Gin,
+		"echo_customers.go": lang.Echo,
+		"fiber_invoices.go": lang.Fiber,
+		"stdlib_health.go":  lang.NetHTTP,
 	}
 	for fixture, want := range cases {
 		f := parse(t, fixture)
@@ -214,7 +215,7 @@ func f(r chi.Router) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := signatures(f.Routes())
+			got := signatures(found(f))
 			if strings.Join(got, "\n") != strings.Join(c.want, "\n") {
 				t.Errorf("got %v, want %v", got, c.want)
 			}
@@ -225,6 +226,121 @@ func f(r chi.Router) {
 func TestParseReturnsSyntaxErrors(t *testing.T) {
 	if _, err := Parse("x.go", []byte("package p\nfunc f( {")); err == nil {
 		t.Error("expected a parse error")
+	}
+}
+
+// A path the walker cannot read is reported, never guessed. The report names the
+// expression so there is something to go and fix.
+func TestUnresolvablePathsAreReported(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"prefix from a field", `package p
+import "github.com/go-chi/chi/v5"
+func f(r chi.Router, cfg Config) { r.Get(cfg.OrdersPath, list) }`,
+			[]string{"GET /<cfg.OrdersPath>"}},
+
+		{"mount poisons its scope", `package p
+import "github.com/go-chi/chi/v5"
+func f(r chi.Router, base string) {
+	r.Route(base, func(r chi.Router) {
+		r.Get("/orders", list)
+		r.Post("/orders", create)
+	})
+}`,
+			[]string{"GET /<base>/orders", "POST /<base>/orders"}},
+
+		{"verbless registration", `package p
+import "net/http"
+func f(mux *http.ServeMux, pattern string) { mux.HandleFunc(pattern, ok) }`,
+			[]string{"ANY /<pattern>"}},
+
+		{"unnameable expression", `package p
+import "github.com/gin-gonic/gin"
+func f(r *gin.Engine, paths []string) { r.GET(paths[0], list) }`,
+			[]string{"GET /<expr>"}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f, err := Parse("x.go", []byte(c.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, bad := f.Routes()
+			if len(got) != 0 {
+				t.Errorf("emitted %v, want nothing", signatures(got))
+			}
+			if s := signatures(bad); strings.Join(s, "\n") != strings.Join(c.want, "\n") {
+				t.Errorf("got %v, want %v", s, c.want)
+			}
+		})
+	}
+}
+
+// Calls that were never registrations must not turn up in either list.
+func TestNonRoutesStayOutOfBothLists(t *testing.T) {
+	src := `package p
+import "net/http"
+func f(url string, body io.Reader) {
+	http.Get(url)
+	http.Post(url, "application/json", body)
+	store.Put("/tmp/session", body)
+}`
+	f, err := Parse("x.go", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, bad := f.Routes(); len(got) != 0 || len(bad) != 0 {
+		t.Errorf("got %v and %v, want neither", signatures(got), signatures(bad))
+	}
+}
+
+// A router does not have to arrive as a parameter, so the receiver gate has to
+// recognise the other three ways real code holds one.
+func TestRoutersHeldOutsideParameters(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"local constructor", `package p
+import "github.com/go-chi/chi/v5"
+func main() {
+	r := chi.NewRouter()
+	r.Get("/health", ok)
+}`,
+			[]string{"GET /health"}},
+
+		{"struct field", `package p
+import "github.com/go-chi/chi/v5"
+type Server struct{ mux chi.Router }
+func (s *Server) routes() {
+	s.mux.Use(RequireAuth)
+	s.mux.Get("/me", me)
+}`,
+			[]string{"GET /me"}},
+
+		{"package var", `package p
+import "github.com/gin-gonic/gin"
+var engine = gin.Default()
+func mount() { engine.GET("/health", ok) }`,
+			[]string{"GET /health"}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f, err := Parse("x.go", []byte(c.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := signatures(found(f))
+			if strings.Join(got, "\n") != strings.Join(c.want, "\n") {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
@@ -243,7 +359,12 @@ func parse(t *testing.T, fixture string) *File {
 
 func extract(t *testing.T, fixture string) []routes.Route {
 	t.Helper()
-	return parse(t, fixture).Routes()
+	return found(parse(t, fixture))
+}
+
+func found(f *File) []routes.Route {
+	rs, _ := f.Routes()
+	return rs
 }
 
 func signatures(rs []routes.Route) []string {

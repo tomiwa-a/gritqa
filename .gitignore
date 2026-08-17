@@ -43,6 +43,8 @@ docker-compose.override.yml
 # config.yaml is meant to be committed so a team shares one project.
 .gritqa/*
 !.gritqa/config.yaml
+# Left behind by running the CLI against its own module.
+cli/.gritqa/
 /plan/
 web/AGENTS.md
 web/CLAUDE.md

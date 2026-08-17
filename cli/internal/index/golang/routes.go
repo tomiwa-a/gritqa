@@ -9,15 +9,16 @@ import (
 	"github.com/gritqa/cli/internal/index/routes"
 )
 
-// Routes returns the endpoints this file registers, in source order.
+// Routes returns the endpoints this file registers, in source order, plus the
+// ones it recognised but could not pin to an absolute path. The second list is
+// reported, never emitted: an invented endpoint gets tests drafted that 404.
 //
-// Extraction is keyed on call shape rather than on framework, because the five
-// supported routers use disjoint shapes and real projects mix them. A file that
-// imports no known router is skipped: without that gate, an unrelated
-// store.Put("/tmp/x", data) would read as a route.
-func (f *File) Routes() []routes.Route {
+// Matching is on call shape, not framework: the five routers use disjoint shapes
+// and real projects mix them. The receiver is what keeps a shape from
+// over-matching — see router.
+func (f *File) Routes() (found, unresolved []routes.Route) {
 	if len(f.frameworks) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	w := &walker{file: f}
@@ -26,10 +27,36 @@ func (f *File) Routes() []routes.Route {
 		if !ok || fn.Body == nil {
 			continue
 		}
+
 		root := newEnv(nil)
+		for name := range f.routerVars {
+			root.names[name] = &binding{}
+		}
+		w.seed(root, fn.Recv)
+		if fn.Type != nil {
+			w.seed(root, fn.Type.Params)
+		}
 		w.block(fn.Body, root)
 	}
-	return routes.Dedupe(w.out)
+	return routes.Dedupe(w.out), routes.Dedupe(w.bad)
+}
+
+// seed binds the router-typed parameters of a function, which is where the
+// routers in a MountOrders(r chi.Router, h *Handler) shape come from.
+func (w *walker) seed(e *env, fields *ast.FieldList) {
+	if fields == nil {
+		return
+	}
+	for _, fld := range fields.List {
+		if !w.file.isRouterType(fld.Type) {
+			continue
+		}
+		for _, n := range fld.Names {
+			if n.Name != "_" {
+				e.names[n.Name] = &binding{}
+			}
+		}
+	}
 }
 
 // binding is a router value: the prefix its routes hang off, and the middleware
@@ -37,6 +64,7 @@ func (f *File) Routes() []routes.Route {
 type binding struct {
 	prefix     string
 	middleware []string
+	unknown    bool // the prefix could not be read, so paths under it are guesses
 }
 
 func derive(base *binding, path string, mw []string) *binding {
@@ -44,6 +72,7 @@ func derive(base *binding, path string, mw []string) *binding {
 	if base != nil {
 		b.prefix = base.prefix
 		b.middleware = append(b.middleware, base.middleware...)
+		b.unknown = base.unknown
 	}
 	if path != "" {
 		b.prefix = routes.Join(b.prefix, path)
@@ -86,6 +115,7 @@ func (e *env) lookup(name string) *binding {
 type walker struct {
 	file *File
 	out  []routes.Route
+	bad  []routes.Route
 }
 
 func (w *walker) block(b *ast.BlockStmt, e *env) {
@@ -232,21 +262,23 @@ func (w *walker) descend(c *ast.CallExpr, e *env) {
 
 // verbNamed handles r.Get("/x", h) and r.GET("/x", h) across all four routers.
 func (w *walker) verbNamed(method string, c *ast.CallExpr, recv ast.Expr, e *env) {
-	if len(c.Args) < 2 {
+	b, ok := w.router(recv, e)
+	if !ok || len(c.Args) < 2 {
 		return
 	}
 	p, ok := w.pathArg(c, 0)
 	if !ok {
+		w.unresolved(c, 0, method, b)
 		return
 	}
-	b := w.bindingFor(recv, e)
-	w.add(c.Lparen, method, routes.Join(b.prefix, p), handlerOf(c.Args, 1), b.middleware)
+	w.add(c.Lparen, method, routes.Join(b.prefix, p), handlerOf(c.Args, 1), b)
 }
 
 // verbFirst handles chi's Method/MethodFunc and echo's Add, where the verb is
 // the first argument.
 func (w *walker) verbFirst(c *ast.CallExpr, recv ast.Expr, e *env) {
-	if len(c.Args) < 3 {
+	b, ok := w.router(recv, e)
+	if !ok || len(c.Args) < 3 {
 		return
 	}
 	v, ok := w.stringArg(c, 0)
@@ -259,15 +291,24 @@ func (w *walker) verbFirst(c *ast.CallExpr, recv ast.Expr, e *env) {
 	}
 	p, ok := w.pathArg(c, 1)
 	if !ok {
+		w.unresolved(c, 1, m, b)
 		return
 	}
-	b := w.bindingFor(recv, e)
-	w.add(c.Lparen, m, routes.Join(b.prefix, p), handlerOf(c.Args, 2), b.middleware)
+	w.add(c.Lparen, m, routes.Join(b.prefix, p), handlerOf(c.Args, 2), b)
 }
 
 // handle covers gin's Handle(verb, path, h) and net/http's HandleFunc, whose Go
 // 1.22 patterns may carry the verb inline ("POST /products/{id}").
 func (w *walker) handle(c *ast.CallExpr, recv ast.Expr, e *env) {
+	b, ok := w.router(recv, e)
+	if !ok {
+		// http.Handle and http.HandleFunc register on DefaultServeMux.
+		if id, isIdent := recv.(*ast.Ident); !isIdent || id.Name != w.file.httpPkg {
+			return
+		}
+		b = &binding{}
+	}
+
 	if len(c.Args) >= 3 {
 		if v, ok := w.stringArg(c, 0); ok {
 			if _, isVerb := routes.Method(v); isVerb {
@@ -282,6 +323,7 @@ func (w *walker) handle(c *ast.CallExpr, recv ast.Expr, e *env) {
 
 	pattern, ok := w.stringArg(c, 0)
 	if !ok {
+		w.unresolved(c, 0, "", b)
 		return
 	}
 	method, p := splitPattern(pattern)
@@ -289,8 +331,7 @@ func (w *walker) handle(c *ast.CallExpr, recv ast.Expr, e *env) {
 		return
 	}
 
-	b := w.bindingFor(recv, e)
-	w.add(c.Lparen, method, routes.Join(b.prefix, p), handlerOf(c.Args, 1), b.middleware)
+	w.add(c.Lparen, method, routes.Join(b.prefix, p), handlerOf(c.Args, 1), b)
 }
 
 // splitPattern reads a net/http pattern. A registration with no verb keeps an
@@ -310,17 +351,27 @@ func splitPattern(pattern string) (method, path string) {
 // chi.Router){…})) and the group value (v1 := r.Group("/v1")). withPath marks
 // callers whose first argument is always a path, which chi's Group is not.
 func (w *walker) scopeCall(c *ast.CallExpr, recv ast.Expr, e *env, withPath bool) {
-	base := w.bindingFor(recv, e)
+	base, ok := w.router(recv, e)
+	if !ok {
+		w.descend(c, e)
+		return
+	}
 
-	prefix, rest := "", c.Args
-	if p, ok := w.pathArg(c, 0); ok {
+	prefix, rest, unknown := "", c.Args, false
+	switch p, ok := w.pathArg(c, 0); {
+	case ok:
 		prefix, rest = p, c.Args[1:]
-	} else if withPath {
+	// A mount whose prefix cannot be read poisons everything under it: the
+	// routes are real, their absolute paths are not knowable.
+	case withPath && w.unreadable(c, 0):
+		prefix, rest, unknown = "/"+describe(c.Args[0]), c.Args[1:], true
+	case withPath:
 		w.descend(c, e)
 		return
 	}
 
 	scope := derive(base, prefix, w.middlewareOf(rest))
+	scope.unknown = scope.unknown || unknown
 	for _, a := range rest {
 		if fl, ok := a.(*ast.FuncLit); ok {
 			w.funcLit(fl, scope, e)
@@ -342,22 +393,29 @@ func (w *walker) funcLit(fl *ast.FuncLit, scope *binding, e *env) {
 }
 
 func (w *walker) use(c *ast.CallExpr, recv ast.Expr, e *env) {
-	b := w.bindingFor(recv, e)
-	b.middleware = append(b.middleware, w.middlewareOf(c.Args)...)
+	if b, ok := w.router(recv, e); ok {
+		b.middleware = append(b.middleware, w.middlewareOf(c.Args)...)
+	}
 }
 
-// bindingFor resolves a receiver to its router, registering an unseen one at the
-// enclosing function scope so a later r.Use still reaches it.
-func (w *walker) bindingFor(x ast.Expr, e *env) *binding {
+// router resolves a receiver to the router it names, and reports whether it is
+// one at all. Anything unrecognised is not a router: without that gate a cache's
+// Put("/tmp/x", v) in a file that happens to import chi would read as PUT /tmp/x.
+//
+// A struct field is bound on first sight at the enclosing function scope, so a
+// later s.router.Use still reaches the same binding.
+func (w *walker) router(x ast.Expr, e *env) (*binding, bool) {
 	if b := w.resolve(x, e); b != nil {
-		return b
+		return b, true
 	}
-	if name := exprName(x); name != "" {
-		b := &binding{}
-		e.root.names[name] = b
-		return b
+	name := exprName(x)
+	i := strings.LastIndexByte(name, '.')
+	if i < 0 || !w.file.routerFields[name[i+1:]] {
+		return nil, false
 	}
-	return &binding{}
+	b := &binding{}
+	e.root.names[name] = b
+	return b, true
 }
 
 func (w *walker) resolve(x ast.Expr, e *env) *binding {
@@ -369,36 +427,57 @@ func (w *walker) resolve(x ast.Expr, e *env) *binding {
 	case *ast.ParenExpr:
 		return w.resolve(x.X, e)
 	case *ast.CallExpr:
+		if w.file.isRouterCtor(x) {
+			return &binding{}
+		}
 		sel, ok := x.Fun.(*ast.SelectorExpr)
 		if !ok {
 			return nil
 		}
 		switch sel.Sel.Name {
-		case "Group", "Route":
-			base := w.resolve(sel.X, e)
+		case "Group", "Route", "With":
+			base, ok := w.router(sel.X, e)
+			if !ok {
+				return nil
+			}
 			if p, ok := w.pathArg(x, 0); ok {
 				return derive(base, p, w.middlewareOf(x.Args[1:]))
 			}
 			return derive(base, "", w.middlewareOf(x.Args))
-		case "With":
-			return derive(w.resolve(sel.X, e), "", w.middlewareOf(x.Args))
 		}
 	}
 	return nil
 }
 
-func (w *walker) add(pos token.Pos, method, path, handler string, mw []string) {
+func (w *walker) add(pos token.Pos, method, path, handler string, b *binding) {
 	if path == "" {
 		return
 	}
-	w.out = append(w.out, routes.Route{
+	r := routes.Route{
 		Method:     method,
 		Path:       path,
 		File:       w.file.Path,
 		Line:       w.file.fset.Position(pos).Line,
 		Handler:    handler,
-		Middleware: append([]string(nil), mw...),
-	})
+		Middleware: append([]string(nil), b.middleware...),
+	}
+	if b.unknown {
+		w.bad = append(w.bad, r)
+		return
+	}
+	w.out = append(w.out, r)
+}
+
+// unresolved files a registration whose path argument could not be read. The
+// path it records names that argument, so the report can point at the thing to
+// fix rather than at a route nobody can find.
+func (w *walker) unresolved(c *ast.CallExpr, i int, method string, b *binding) {
+	if !w.unreadable(c, i) {
+		return
+	}
+	u := derive(b, "/"+describe(c.Args[i]), nil)
+	u.unknown = true
+	w.add(c.Lparen, method, u.prefix, "", u)
 }
 
 func (w *walker) pathArg(c *ast.CallExpr, i int) (string, bool) {
@@ -407,6 +486,27 @@ func (w *walker) pathArg(c *ast.CallExpr, i int) (string, bool) {
 		return "", false
 	}
 	return s, true
+}
+
+// unreadable separates the two ways pathArg fails. A string that turns out not
+// to be a path means this was never a route — http.Get("https://…") reaches the
+// same code. An expression whose value cannot be worked out means a route whose
+// path is unknown, which is worth reporting.
+func (w *walker) unreadable(c *ast.CallExpr, i int) bool {
+	if i >= len(c.Args) {
+		return false
+	}
+	_, ok := w.stringOf(c.Args[i])
+	return !ok
+}
+
+// describe names the expression a path could not be read from. The angle
+// brackets keep it from reading like a real path segment.
+func describe(x ast.Expr) string {
+	if n := exprName(x); n != "" {
+		return "<" + n + ">"
+	}
+	return "<expr>"
 }
 
 func (w *walker) stringArg(c *ast.CallExpr, i int) (string, bool) {

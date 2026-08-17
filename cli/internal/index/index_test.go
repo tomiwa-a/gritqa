@@ -33,7 +33,7 @@ func Health(mux *http.ServeMux) {
 		"internal/store/store.go": "package store\n\ntype Store struct{}\n",
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestReadSkipsNonSourceAndVendoredTrees(t *testing.T) {
 		"internal/handler/api.py": "def handler(): pass\n",
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestX(t *testing.T) {
 `,
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestReadReportsFrameworksAndUnparseableFiles(t *testing.T) {
 		"b.go": "package b\n\nfunc f( {\n",
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,12 +131,12 @@ func TestReadIsDeterministic(t *testing.T) {
 		"c.go": "package c\n\nimport \"github.com/go-chi/chi/v5\"\n\nfunc f(r chi.Router) { r.Get(\"/c\", h) }\n",
 	})
 
-	first, err := Read(context.Background(), root)
+	first, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for range 5 {
-		next, err := Read(context.Background(), root)
+		next, err := Read(context.Background(), root, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +155,7 @@ func TestByFileGroupsEndpoints(t *testing.T) {
 		"b.go": "package b\n\nimport \"github.com/go-chi/chi/v5\"\n\nfunc f(r chi.Router) { r.Get(\"/b\", h) }\n",
 	})
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestLargeFilesAreCountedButNotParsed(t *testing.T) {
 	big := strings.Repeat("// generated\n", (maxFileSize/13)+100)
 	write(t, filepath.Join(root, "generated.go"), "package a\n"+big)
 
-	snap, err := Read(context.Background(), root)
+	snap, err := Read(context.Background(), root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

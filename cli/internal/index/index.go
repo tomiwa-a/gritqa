@@ -9,7 +9,9 @@ import (
 	"sync"
 
 	"github.com/gritqa/cli/internal/index/golang"
+	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/index/source"
 )
 
 type File struct {
@@ -20,18 +22,31 @@ type File struct {
 	Symbols  map[golang.SymbolKind]int
 }
 
+// Options carries the endpoint-discovery overrides from .gritqa/config.yaml.
+type Options struct {
+	List []string
+	Spec string
+	AI   bool
+}
+
 type Snapshot struct {
 	Root       string
 	Files      []File
 	Routes     []routes.Route
-	Frameworks []routes.Framework
+	Unresolved []routes.Route
+	Frameworks []lang.ID
 	Unparsed   []string
+
+	// Source is where the endpoints came from, and Detail which file said so.
+	Source       source.Kind
+	SourceDetail string
 }
 
 type outcome struct {
 	file       *File
 	routes     []routes.Route
-	frameworks []routes.Framework
+	unresolved []routes.Route
+	frameworks []lang.ID
 	unparsed   bool
 }
 
@@ -43,17 +58,59 @@ func List(ctx context.Context, root string) ([]string, error) {
 }
 
 // Read indexes the whole project.
-func Read(ctx context.Context, root string) (*Snapshot, error) {
+func Read(ctx context.Context, root string, opts Options) (*Snapshot, error) {
 	paths, err := list(ctx, root)
 	if err != nil {
 		return nil, err
 	}
-	return ReadPaths(ctx, root, paths)
+	return ReadPaths(ctx, root, paths, opts)
 }
 
 // ReadPaths hashes and parses the given files concurrently, assembling the
 // result in path order so two indexes of an unchanged tree are byte-identical.
-func ReadPaths(ctx context.Context, root string, paths []string) (*Snapshot, error) {
+//
+// Endpoints come from a ladder of sources, cheapest and most private first. The
+// project-level ones need no file pass at all, so they are tried before it and
+// static extraction is skipped when one of them answers.
+func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (*Snapshot, error) {
+	res, err := source.Resolve(root, opts.List, opts.Spec)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := scan(ctx, root, paths, res.Empty())
+	if err != nil {
+		return nil, err
+	}
+
+	snap := &Snapshot{Root: root}
+	ids := lang.Detect(root)
+
+	for _, o := range out {
+		if o.file == nil {
+			continue
+		}
+		snap.Files = append(snap.Files, *o.file)
+		snap.Routes = append(snap.Routes, o.routes...)
+		snap.Unresolved = append(snap.Unresolved, o.unresolved...)
+		ids = append(ids, o.frameworks...)
+		if o.unparsed {
+			snap.Unparsed = append(snap.Unparsed, o.file.Path)
+		}
+	}
+	snap.Frameworks = lang.Order(ids)
+
+	switch {
+	case !res.Empty():
+		snap.Source, snap.SourceDetail = res.Kind, res.Detail
+		snap.Routes, snap.Unresolved = res.Routes, res.Unresolved
+	case len(snap.Routes) > 0:
+		snap.Source = source.Static
+	}
+	return snap, nil
+}
+
+func scan(ctx context.Context, root string, paths []string, wantRoutes bool) ([]outcome, error) {
 	out := make([]outcome, len(paths))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -63,7 +120,7 @@ func ReadPaths(ctx context.Context, root string, paths []string) (*Snapshot, err
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				out[i] = inspect(root, paths[i])
+				out[i] = inspect(root, paths[i], wantRoutes)
 			}
 		}()
 	}
@@ -79,33 +136,10 @@ func ReadPaths(ctx context.Context, root string, paths []string) (*Snapshot, err
 	}
 	close(jobs)
 	wg.Wait()
-
-	snap := &Snapshot{Root: root}
-	seen := map[routes.Framework]bool{}
-
-	for _, o := range out {
-		if o.file == nil {
-			continue
-		}
-		snap.Files = append(snap.Files, *o.file)
-		snap.Routes = append(snap.Routes, o.routes...)
-		for _, fw := range o.frameworks {
-			seen[fw] = true
-		}
-		if o.unparsed {
-			snap.Unparsed = append(snap.Unparsed, o.file.Path)
-		}
-	}
-
-	for _, fw := range []routes.Framework{routes.Stdlib, routes.Chi, routes.Gin, routes.Echo, routes.Fiber} {
-		if seen[fw] {
-			snap.Frameworks = append(snap.Frameworks, fw)
-		}
-	}
-	return snap, nil
+	return out, nil
 }
 
-func inspect(root, rel string) outcome {
+func inspect(root, rel string, wantRoutes bool) outcome {
 	var o outcome
 
 	body, hash, size, err := read(filepath.Join(root, filepath.FromSlash(rel)))
@@ -113,9 +147,9 @@ func inspect(root, rel string) outcome {
 		return o
 	}
 
-	lang := Language(rel)
-	o.file = &File{Path: rel, Language: lang, Size: size, Hash: hash}
-	if lang != "go" || body == nil {
+	language := Language(rel)
+	o.file = &File{Path: rel, Language: language, Size: size, Hash: hash}
+	if language != "go" || body == nil {
 		return o
 	}
 
@@ -130,14 +164,15 @@ func inspect(root, rel string) outcome {
 
 	// Tests import net/http and register handlers against it; those are not the
 	// project's endpoints.
-	if !strings.HasSuffix(rel, "_test.go") {
-		o.routes = f.Routes()
+	if wantRoutes && !strings.HasSuffix(rel, "_test.go") {
+		o.routes, o.unresolved = f.Routes()
 	}
 	return o
 }
 
-func (s *Snapshot) FileCount() int     { return len(s.Files) }
-func (s *Snapshot) EndpointCount() int { return len(s.Routes) }
+func (s *Snapshot) FileCount() int       { return len(s.Files) }
+func (s *Snapshot) EndpointCount() int   { return len(s.Routes) }
+func (s *Snapshot) UnresolvedCount() int { return len(s.Unresolved) }
 
 // GuardedCount is how many endpoints sit behind an auth middleware.
 func (s *Snapshot) GuardedCount() int {
