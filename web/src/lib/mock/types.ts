@@ -156,11 +156,27 @@ export type StepResult = {
 
 export type TestExecution = {
   publicId: string;
+  /** test_executions.test_plan_id — a run always belongs to one plan. */
+  planPublicId: string;
   planName: string;
   status: ExecutionStatus;
   durationMs: number | null;
   startedLabel: string;
   steps: StepResult[];
+};
+
+/**
+ * The 30-day strip. Every run in the window has an identity and a plan; only
+ * the newest few carry a full step report in this build.
+ */
+export type RunHistoryEntry = {
+  publicId: string;
+  planPublicId: string;
+  planName: string;
+  status: ExecutionStatus;
+  /** One character per step: p passed, f failed, s skipped or not reached. */
+  cells: string;
+  whenLabel: string;
 };
 
 export type TestingRule = {

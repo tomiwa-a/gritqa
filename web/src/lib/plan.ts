@@ -1,5 +1,7 @@
-import { coverage, rules } from '@/lib/mock/data';
+import { allPlans, coverage, rules } from '@/lib/mock/data';
 import type {
+  CoverageFile,
+  CoverageState,
   Endpoint,
   ExecutionStatus,
   PlanAssertion,
@@ -132,6 +134,62 @@ export function filesCoveredBy(plan: TestPlan): string[] {
     if (file) files.add(file);
   }
   return [...files].sort();
+}
+
+/* ---- Endpoints as first-class objects -------------------------------------
+   A coverage square is an endpoint, so it needs one address and one place to
+   land. Both are derived from the index; nothing new is stored. */
+
+export function endpointKey(endpoint: { method: string; path: string }) {
+  return `${endpoint.method} ${endpoint.path}`;
+}
+
+export function endpointHref(endpoint: { method: string; path: string }) {
+  return `/dashboard/test-plans?endpoint=${encodeURIComponent(endpointKey(endpoint))}`;
+}
+
+export function fileHref(file: string) {
+  return `/dashboard/test-plans?file=${encodeURIComponent(file)}`;
+}
+
+export type EndpointFocus = {
+  method: Endpoint['method'];
+  path: string;
+  file: string;
+  state: CoverageState;
+};
+
+/** Only an endpoint the index actually knows about resolves. */
+export function endpointFocusFor(key: string | undefined): EndpointFocus | null {
+  if (!key) return null;
+  for (const file of coverage) {
+    for (const endpoint of file.endpoints) {
+      if (endpointKey(endpoint) === key) {
+        return { method: endpoint.method, path: endpoint.path, file: file.file, state: endpoint.state };
+      }
+    }
+  }
+  return null;
+}
+
+export function coverageFileFor(name: string | undefined): CoverageFile | null {
+  if (!name) return null;
+  return coverage.find((f) => f.file === name) ?? null;
+}
+
+export function plansForEndpoint(path: string): TestPlan[] {
+  return allPlans.filter((plan) => plan.covers.some((c) => c.path === path));
+}
+
+export function plansForFile(file: string): TestPlan[] {
+  return allPlans.filter((plan) => filesCoveredBy(plan).includes(file));
+}
+
+export function coverageTotalsOf(endpoints: { state: CoverageState }[]) {
+  return endpoints.reduce(
+    (acc, e) => ({ ...acc, [e.state]: acc[e.state] + 1 }),
+    { approved: 0, draft: 0, failing: 0, none: 0 } as Record<CoverageState, number>,
+  );
 }
 
 /**

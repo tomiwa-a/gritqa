@@ -1,7 +1,12 @@
 import type {
   AuditEntry,
   CoverageFile,
+  CoverageState,
+  ExecutionStatus,
+  PlanDiffContext,
   Project,
+  RunHistoryEntry,
+  StepStatus,
   TestExecution,
   TestPlan,
   TestingRule,
@@ -276,6 +281,7 @@ export const settledPlans: TestPlan[] = [
     assertionCount: 13,
     covers: [
       { method: 'POST', path: '/checkout' },
+      { method: 'POST', path: '/checkout/:id/tax' },
       { method: 'POST', path: '/checkout/:id/pay' },
     ],
     lastRun: { status: 'failed', passed: 3, total: 5, label: '12m ago' },
@@ -352,6 +358,7 @@ export const allPlans: TestPlan[] = [...plansAwaitingReview, ...settledPlans];
 export const recentRuns: TestExecution[] = [
   {
     publicId: 'ex_01m1',
+    planPublicId: 'tp_01j4',
     planName: 'Charge a checkout with a mocked provider',
     status: 'failed',
     durationMs: 4100,
@@ -366,6 +373,7 @@ export const recentRuns: TestExecution[] = [
   },
   {
     publicId: 'ex_01m2',
+    planPublicId: 'tp_01j3',
     planName: 'Create and confirm an order',
     status: 'passed',
     durationMs: 2900,
@@ -379,6 +387,7 @@ export const recentRuns: TestExecution[] = [
   },
   {
     publicId: 'ex_01m3',
+    planPublicId: 'tp_01j5',
     planName: 'Refund a paid order',
     status: 'running',
     durationMs: null,
@@ -392,6 +401,7 @@ export const recentRuns: TestExecution[] = [
   },
   {
     publicId: 'ex_01m4',
+    planPublicId: 'tp_01j2',
     planName: 'Sign in and fetch the current user',
     status: 'passed',
     durationMs: 1400,
@@ -404,6 +414,7 @@ export const recentRuns: TestExecution[] = [
   },
   {
     publicId: 'ex_01m5',
+    planPublicId: 'tp_01j1',
     planName: 'Customer CRUD round trip',
     status: 'passed',
     durationMs: 5200,
@@ -418,6 +429,7 @@ export const recentRuns: TestExecution[] = [
   },
   {
     publicId: 'ex_01m6',
+    planPublicId: 'tp_01j6',
     planName: 'Subscription lifecycle',
     status: 'failed',
     durationMs: 3600,
@@ -432,28 +444,63 @@ export const recentRuns: TestExecution[] = [
 ];
 
 export const planPassRates = [
-  { name: 'Customer CRUD round trip', series: 1, rate: 99, runs: 31, direction: 'up' as const, delta: '+1' },
-  { name: 'Sign in and fetch the current user', series: 2, rate: 98, runs: 44, direction: 'flat' as const, delta: '0' },
-  { name: 'Create and confirm an order', series: 3, rate: 96, runs: 28, direction: 'up' as const, delta: '+4' },
-  { name: 'Charge a checkout with a mocked provider', series: 4, rate: 91, runs: 22, direction: 'down' as const, delta: '−6' },
-  { name: 'Refund a paid order', series: 5, rate: 88, runs: 17, direction: 'down' as const, delta: '−2' },
+  { planPublicId: 'tp_01j1', name: 'Customer CRUD round trip', series: 1, rate: 99, runs: 31, direction: 'up' as const, delta: '+1' },
+  { planPublicId: 'tp_01j2', name: 'Sign in and fetch the current user', series: 2, rate: 98, runs: 44, direction: 'flat' as const, delta: '0' },
+  { planPublicId: 'tp_01j3', name: 'Create and confirm an order', series: 3, rate: 96, runs: 28, direction: 'up' as const, delta: '+4' },
+  { planPublicId: 'tp_01j4', name: 'Charge a checkout with a mocked provider', series: 4, rate: 91, runs: 22, direction: 'down' as const, delta: '−6' },
+  { planPublicId: 'tp_01j5', name: 'Refund a paid order', series: 5, rate: 88, runs: 17, direction: 'down' as const, delta: '−2' },
 ];
 
-export const runStrip = [
+/** The 24 runs older than the ones with a full report, oldest first. */
+const OLDER_CELLS = [
   'ppppp', 'pppp', 'ppppp', 'ppppf', 'pppppp', 'ppppp', 'pppp', 'ppppp',
   'pppfs', 'pppppp', 'ppppp', 'pppp', 'ppppp', 'pppppp', 'ppppf', 'ppppp',
   'pppp', 'pppppp', 'ppppp', 'pppfs', 'ppppp', 'pppppp', 'pppp', 'ppppp',
-  'ppppp', 'ppppf', 'pppppp', 'ppppp', 'pppp', 'ppppf',
-] as const;
+];
+
+const RUN_PLANS = ['tp_01j1', 'tp_01j2', 'tp_01j3', 'tp_01j4', 'tp_01j5', 'tp_01j6'];
+
+const CELL: Record<StepStatus, string> = {
+  passed: 'p',
+  failed: 'f',
+  skipped: 's',
+  pending: 's',
+  error: 'f',
+};
+
+const planName = (id: string) => allPlans.find((p) => p.publicId === id)?.name ?? id;
+
+export const runHistory: RunHistoryEntry[] = [
+  ...OLDER_CELLS.map((cells, i) => {
+    const planPublicId = RUN_PLANS[i % RUN_PLANS.length];
+    return {
+      publicId: `ex_01l${String(i + 1).padStart(2, '0')}`,
+      planPublicId,
+      planName: planName(planPublicId),
+      status: (cells.includes('f') ? 'failed' : 'passed') as ExecutionStatus,
+      cells,
+      whenLabel: `${29 - i}d ago`,
+    };
+  }),
+  ...[...recentRuns].reverse().map((run) => ({
+    publicId: run.publicId,
+    planPublicId: run.planPublicId,
+    planName: run.planName,
+    status: run.status,
+    cells: run.steps.map((s) => CELL[s.status]).join(''),
+    whenLabel: run.startedLabel,
+  })),
+];
 
 export const runStripStats = (() => {
-  const cells = runStrip.join('');
+  const cells = runHistory.map((r) => r.cells).join('');
   const total = cells.length;
   const failed = [...cells].filter((c) => c === 'f').length;
   const skipped = [...cells].filter((c) => c === 's').length;
   const passed = total - failed - skipped;
   return {
     total,
+    runs: runHistory.length,
     passed,
     failed,
     skipped,
@@ -461,13 +508,30 @@ export const runStripStats = (() => {
   };
 })();
 
+/**
+ * What the CLI has read but nothing has been drafted for yet — the same shape as
+ * the diff_context a generated plan carries.
+ */
+export const pendingChanges: PlanDiffContext | null = {
+  branch: 'main',
+  commit: '7d41c9a',
+  message: 'Split checkout tax out of the quote endpoint',
+  additions: 214,
+  deletions: 61,
+  files: [
+    { path: 'routes/checkout.go', additions: 96, deletions: 24 },
+    { path: 'routes/refunds.go', additions: 71, deletions: 18 },
+    { path: 'routes/invoices.go', additions: 47, deletions: 19 },
+  ],
+};
+
 export const period = {
   runs: 142,
   runsPrevious: 118,
   passRatePrevious: '91.0',
   medianRun: '3.2s',
   medianRunPrevious: '3.6s',
-  endpointsCoveredPrevious: 63,
+  endpointsCoveredPrevious: 12,
 };
 
 export const rules: TestingRule[] = [
@@ -491,70 +555,98 @@ export const rules: TestingRule[] = [
   { publicId: 'tr_18', name: 'Test currency', category: 'fixture', isActive: true, detail: 'testCurrency — NGN' },
 ];
 
+/* Everything the CLI found in the repo. Coverage is not authored here — a
+   square's colour is worked out below from the plans and runs that exist, so
+   clicking one always lands on something that agrees with it. */
 const COVERAGE_SOURCE: [string, string[]][] = [
   ['routes/auth.go', [
-    'POST /auth/login|a', 'POST /auth/register|a', 'POST /auth/refresh|a', 'POST /auth/logout|a',
-    'GET /auth/me|a', 'POST /auth/forgot-password|d', 'POST /auth/reset-password|n',
+    'POST /auth/login', 'POST /auth/register', 'POST /auth/refresh', 'POST /auth/logout',
+    'GET /auth/me', 'POST /auth/forgot-password', 'POST /auth/reset-password',
   ]],
   ['routes/checkout.go', [
-    'POST /checkout|a', 'GET /checkout/:id|a', 'POST /checkout/:id/pay|f', 'POST /checkout/:id/cancel|a',
-    'POST /checkout/:id/tax|f', 'GET /checkout/:id/summary|d', 'POST /checkout/quote|a', 'POST /checkout/validate|a',
+    'POST /checkout', 'GET /checkout/:id', 'POST /checkout/:id/pay', 'POST /checkout/:id/cancel',
+    'POST /checkout/:id/tax', 'GET /checkout/:id/summary', 'POST /checkout/quote', 'POST /checkout/validate',
   ]],
   ['routes/orders.go', [
-    'GET /orders|a', 'POST /orders|a', 'GET /orders/:id|a', 'PATCH /orders/:id|a', 'DELETE /orders/:id|a',
-    'POST /orders/:id/confirm|a', 'POST /orders/:id/cancel|a', 'GET /orders/:id/items|a', 'POST /orders/:id/items|d',
+    'GET /orders', 'POST /orders', 'GET /orders/:id', 'PATCH /orders/:id', 'DELETE /orders/:id',
+    'POST /orders/:id/confirm', 'POST /orders/:id/cancel', 'GET /orders/:id/items', 'POST /orders/:id/items',
   ]],
   ['routes/refunds.go', [
-    'POST /refunds|a', 'GET /refunds|a', 'GET /refunds/:id|a', 'POST /refunds/:id/approve|a',
-    'POST /refunds/:id/reject|d', 'GET /refunds/:id/receipt|n',
+    'POST /refunds', 'GET /refunds', 'GET /refunds/:id', 'POST /refunds/:id/approve',
+    'POST /refunds/:id/reject', 'GET /refunds/:id/receipt',
   ]],
   ['routes/customers.go', [
-    'GET /customers|a', 'POST /customers|a', 'GET /customers/:id|a', 'PATCH /customers/:id|a',
-    'DELETE /customers/:id|a', 'GET /customers/:id/orders|a', 'GET /customers/:id/cards|a',
-    'POST /customers/:id/cards|a', 'PUT /customers/:id/cards/:cardId|a', 'POST /customers/import|d',
+    'GET /customers', 'POST /customers', 'GET /customers/:id', 'PATCH /customers/:id',
+    'DELETE /customers/:id', 'GET /customers/:id/orders', 'GET /customers/:id/cards',
+    'POST /customers/:id/cards', 'PUT /customers/:id/cards/:cardId', 'POST /customers/import',
   ]],
   ['routes/subscriptions.go', [
-    'GET /subscriptions|a', 'POST /subscriptions|a', 'GET /subscriptions/:id|a', 'PATCH /subscriptions/:id|a',
-    'POST /subscriptions/:id/pause|a', 'POST /subscriptions/:id/resume|d', 'DELETE /subscriptions/:id|f',
+    'GET /subscriptions', 'POST /subscriptions', 'GET /subscriptions/:id', 'PATCH /subscriptions/:id',
+    'POST /subscriptions/:id/pause', 'POST /subscriptions/:id/resume', 'DELETE /subscriptions/:id',
   ]],
   ['routes/invoices.go', [
-    'GET /invoices|a', 'POST /invoices|a', 'GET /invoices/:id|a', 'POST /invoices/:id/send|a',
-    'GET /invoices/:id/pdf|n', 'POST /invoices/:id/void|a', 'GET /invoices/:id/lines|a',
+    'GET /invoices', 'POST /invoices', 'GET /invoices/:id', 'POST /invoices/:id/send',
+    'GET /invoices/:id/pdf', 'POST /invoices/:id/void', 'GET /invoices/:id/lines',
   ]],
   ['routes/payouts.go', [
-    'GET /payouts|a', 'POST /payouts|a', 'GET /payouts/:id|a', 'POST /payouts/:id/retry|d',
-    'GET /payouts/:id/ledger|n', 'POST /payouts/:id/cancel|a',
+    'GET /payouts', 'POST /payouts', 'GET /payouts/:id', 'POST /payouts/:id/retry',
+    'GET /payouts/:id/ledger', 'POST /payouts/:id/cancel',
   ]],
   ['routes/webhooks.go', [
-    'POST /webhooks/paystack|a', 'POST /webhooks/stripe|a', 'POST /webhooks/replay|d', 'GET /webhooks/log|a',
+    'POST /webhooks/paystack', 'POST /webhooks/stripe', 'POST /webhooks/replay', 'GET /webhooks/log',
   ]],
   ['routes/products.go', [
-    'GET /products|a', 'POST /products|a', 'GET /products/:id|a', 'PATCH /products/:id|a',
-    'DELETE /products/:id|a', 'GET /products/:id/prices|a', 'POST /products/:id/prices|a',
-    'POST /products/:id/archive|n', 'GET /products/search|a', 'POST /products/bulk|d',
+    'GET /products', 'POST /products', 'GET /products/:id', 'PATCH /products/:id',
+    'DELETE /products/:id', 'GET /products/:id/prices', 'POST /products/:id/prices',
+    'POST /products/:id/archive', 'GET /products/search', 'POST /products/bulk',
   ]],
   ['routes/reports.go', [
-    'GET /reports/revenue|a', 'GET /reports/churn|a', 'GET /reports/mrr|a', 'POST /reports/export|d',
-    'GET /reports/failed-payments|a', 'GET /reports/disputes|n',
+    'GET /reports/revenue', 'GET /reports/churn', 'GET /reports/mrr', 'POST /reports/export',
+    'GET /reports/failed-payments', 'GET /reports/disputes',
   ]],
   ['routes/admin.go', [
-    'GET /admin/users|a', 'POST /admin/users|a', 'PATCH /admin/users/:id|a', 'GET /admin/audit|a',
-    'POST /admin/flags|a', 'GET /admin/flags|a', 'DELETE /admin/flags/:id|f', 'GET /admin/health|a',
+    'GET /admin/users', 'POST /admin/users', 'PATCH /admin/users/:id', 'GET /admin/audit',
+    'POST /admin/flags', 'GET /admin/flags', 'DELETE /admin/flags/:id', 'GET /admin/health',
   ]],
-  ['routes/health.go', ['GET /health|a', 'GET /ready|a', 'GET /version|n']],
+  ['routes/health.go', ['GET /health', 'GET /ready', 'GET /version']],
 ];
 
-const STATE = { a: 'approved', d: 'draft', f: 'failing', n: 'none' } as const;
+const brokenEndpoints = new Set(
+  recentRuns.flatMap((run) =>
+    run.steps
+      .filter((s) => s.status === 'failed' || s.status === 'error')
+      .map((s) => `${s.method} ${s.path}`),
+  ),
+);
+
+const endpointsOf = (status: TestPlan['status']) =>
+  new Set(
+    allPlans
+      .filter((p) => p.status === status)
+      .flatMap((p) => p.covers.map((c) => `${c.method} ${c.path}`)),
+  );
+
+const approvedEndpoints = endpointsOf('approved');
+const draftEndpoints = endpointsOf('draft');
+
+/* A broken run outranks everything, then an approved plan, then a draft. An
+   endpoint only archived plans touch counts as uncovered, because archived
+   plans never run. */
+function coverageState(signature: string): CoverageState {
+  if (brokenEndpoints.has(signature)) return 'failing';
+  if (approvedEndpoints.has(signature)) return 'approved';
+  if (draftEndpoints.has(signature)) return 'draft';
+  return 'none';
+}
 
 export const coverage: CoverageFile[] = COVERAGE_SOURCE.map(([file, entries]) => ({
   file,
-  endpoints: entries.map((entry) => {
-    const [signature, key] = entry.split('|');
+  endpoints: entries.map((signature) => {
     const [method, path] = signature.split(' ');
     return {
       method: method as CoverageFile['endpoints'][number]['method'],
       path,
-      state: STATE[key as keyof typeof STATE],
+      state: coverageState(signature),
     };
   }),
 }));

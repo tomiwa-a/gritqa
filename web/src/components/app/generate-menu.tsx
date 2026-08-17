@@ -6,19 +6,19 @@ import { Icon, type IconName } from '@/components/ui/icon';
 
 const PATHS: { href: string; icon: IconName; label: string; hint: string }[] = [
   {
-    href: '/dashboard/test-plans',
+    href: '/dashboard/generate?from=changes',
     icon: 'sparkle',
     label: 'From what changed',
     hint: 'Draft plans for the files touched since the last index',
   },
   {
-    href: '/dashboard/test-plans',
+    href: '/dashboard/generate?from=endpoints',
     icon: 'endpoint',
     label: 'Pick endpoints',
     hint: 'Choose routes and describe the behaviour to cover',
   },
   {
-    href: '/dashboard/test-plans',
+    href: '/dashboard/generate?from=blank',
     icon: 'plan',
     label: 'Write it yourself',
     hint: 'Start from a blank plan and add your own steps',
@@ -47,7 +47,7 @@ export function GenerateMenu() {
     <div ref={root} className="relative">
       <div className="flex h-8 items-stretch overflow-hidden rounded-md bg-ink text-ink-inverse shadow-[0_1px_2px_rgba(27,29,46,0.16)]">
         <Link
-          href="/dashboard/test-plans"
+          href="/dashboard/generate"
           className="flex items-center gap-1.5 pr-2.5 pl-3 text-[13px] font-medium transition-colors duration-150 hover:bg-space-indigo"
         >
           <Icon name="sparkle" size={14} />

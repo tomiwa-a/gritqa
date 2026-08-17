@@ -1,23 +1,8 @@
 import Link from 'next/link';
 import { coverage, coverageTotals } from '@/lib/mock/data';
-import type { CoverageState } from '@/lib/mock/types';
+import { endpointHref, fileHref } from '@/lib/plan';
+import { COVERAGE_FILL, COVERAGE_LABEL, COVERAGE_ORDER } from '@/lib/coverage';
 import { cn } from '@/lib/cn';
-
-const FILL: Record<CoverageState, string> = {
-  approved: 'bg-pass',
-  draft: 'bg-warn',
-  failing: 'bg-fail',
-  none: 'bg-rule-strong',
-};
-
-const LABEL: Record<CoverageState, string> = {
-  approved: 'Approved plan',
-  draft: 'Needs review',
-  failing: 'Failing',
-  none: 'No plan yet',
-};
-
-const ORDER: CoverageState[] = ['approved', 'draft', 'failing', 'none'];
 
 export function CoverageGrid() {
   return (
@@ -32,22 +17,24 @@ export function CoverageGrid() {
           return (
             <div key={file.file} className="flex items-center gap-3">
               <Link
-                href="/dashboard/codebase"
-                title={file.file}
+                href={fileHref(file.file)}
+                title={`${file.file} — ${file.endpoints.length} endpoints`}
                 className="w-[104px] shrink-0 truncate font-mono text-[11px] text-ink-subtle transition-colors duration-150 hover:text-ink sm:w-[132px]"
               >
                 {file.file.replace(/^routes\//, '')}
               </Link>
 
-              <div className="flex flex-wrap gap-1" aria-hidden>
+              <div className="flex flex-wrap gap-1">
                 {file.endpoints.map((e) => (
-                  <span
+                  <Link
                     key={`${e.method} ${e.path}`}
-                    title={`${e.method} ${e.path} — ${LABEL[e.state]}`}
+                    href={endpointHref(e)}
+                    title={`${e.method} ${e.path} — ${COVERAGE_LABEL[e.state]}`}
+                    aria-label={`${e.method} ${e.path}, ${COVERAGE_LABEL[e.state]}`}
                     className={cn(
                       'h-3 w-3 rounded-[3px] transition-shadow duration-150',
                       'hover:ring-2 hover:ring-ink/25',
-                      FILL[e.state],
+                      COVERAGE_FILL[e.state],
                     )}
                   />
                 ))}
@@ -55,7 +42,9 @@ export function CoverageGrid() {
 
               <span className="sr-only">
                 {file.file}: {file.endpoints.length} endpoints —{' '}
-                {ORDER.filter((s) => counts[s]).map((s) => `${counts[s]} ${LABEL[s]}`).join(', ')}
+                {COVERAGE_ORDER.filter((s) => counts[s])
+                  .map((s) => `${counts[s]} ${COVERAGE_LABEL[s]}`)
+                  .join(', ')}
               </span>
             </div>
           );
@@ -63,14 +52,18 @@ export function CoverageGrid() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule-soft pt-3.5">
-        {ORDER.map((state) => (
+        {COVERAGE_ORDER.map((state) => (
           <span key={state} className="flex items-center gap-1.5">
-            <span className={cn('h-2.5 w-2.5 rounded-[3px]', FILL[state])} />
-            <span className="text-[12px] text-ink-muted">{LABEL[state]}</span>
+            <span className={cn('h-2.5 w-2.5 rounded-[3px]', COVERAGE_FILL[state])} />
+            <span className="text-[12px] text-ink-muted">{COVERAGE_LABEL[state]}</span>
             <span className="nums text-[12px] font-medium text-ink">{coverageTotals[state]}</span>
           </span>
         ))}
       </div>
+
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-subtle">
+        One square is one endpoint. Open a square to see which plans cover it and what to do next.
+      </p>
     </div>
   );
 }

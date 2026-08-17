@@ -5,13 +5,28 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/ui/icon';
 import { Kbd } from '@/components/ui/badge';
 
-const SHORTCUTS: [string, string][] = [
-  ['J / ↓', 'Next draft'],
-  ['K / ↑', 'Previous draft'],
-  ['A', 'Approve this draft'],
-  ['E', 'Send it back'],
-  ['↵', 'Open the full plan'],
-  ['?', 'Show this list'],
+const GROUPS: { title: string; keys: { keys: string[]; what: string }[] }[] = [
+  {
+    title: 'Move',
+    keys: [
+      { keys: ['J', '↓'], what: 'Next draft' },
+      { keys: ['K', '↑'], what: 'Previous draft' },
+    ],
+  },
+  {
+    title: 'Decide',
+    keys: [
+      { keys: ['A'], what: 'Approve' },
+      { keys: ['E'], what: 'Send it back' },
+    ],
+  },
+  {
+    title: 'Open',
+    keys: [
+      { keys: ['↵'], what: 'The full plan' },
+      { keys: ['?'], what: 'This list' },
+    ],
+  },
 ];
 
 function typing(target: EventTarget | null) {
@@ -101,32 +116,55 @@ export function QueueKeys({
           <div
             role="dialog"
             aria-label="Keyboard shortcuts"
-            className="relative w-full max-w-[22rem] overflow-hidden rounded-xl border border-rule bg-app-panel shadow-menu"
+            className="relative flex w-[19.5rem] max-w-full flex-col overflow-hidden rounded-xl border border-rule bg-app-panel shadow-menu"
           >
-            <header className="flex items-center gap-3 border-b border-rule-soft px-4 py-3">
-              <h3 className="text-[13.5px] font-medium text-ink">Triage without the mouse</h3>
+            <header className="flex items-start gap-3 border-b border-rule-soft px-4 pt-3.5 pb-3">
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-[10px] tracking-[0.14em] text-ink-subtle uppercase">
+                  Keyboard
+                </p>
+                <h3 className="mt-1 text-[13.5px] font-medium text-ink">
+                  Triage without the mouse
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setSheet(false)}
                 aria-label="Close shortcuts"
-                className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
+                className="-mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
               >
                 <Icon name="close" size={14} />
               </button>
             </header>
-            <dl className="flex flex-col">
-              {SHORTCUTS.map(([keys, what]) => (
-                <div
-                  key={keys}
-                  className="flex items-center gap-3 border-b border-rule-soft px-4 py-2.5 last:border-b-0"
-                >
-                  <dt className="w-[4.5rem] shrink-0">
-                    <Kbd>{keys}</Kbd>
-                  </dt>
-                  <dd className="text-[12.5px] text-ink-muted">{what}</dd>
-                </div>
+
+            <div className="flex flex-col px-4 py-1">
+              {GROUPS.map((group) => (
+                <section key={group.title} className="border-b border-rule-soft py-3 last:border-b-0">
+                  <h4 className="font-mono text-[9.5px] tracking-[0.14em] text-ink-subtle uppercase">
+                    {group.title}
+                  </h4>
+                  <dl className="mt-2 flex flex-col gap-2">
+                    {group.keys.map((row) => (
+                      <div key={row.what} className="flex items-center gap-3">
+                        <dt className="text-[12.5px] text-ink-muted">{row.what}</dt>
+                        <dd className="ml-auto flex shrink-0 items-center gap-1">
+                          {row.keys.map((key) => (
+                            <Kbd key={key} className="bg-app">
+                              {key}
+                            </Kbd>
+                          ))}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
               ))}
-            </dl>
+            </div>
+
+            <footer className="flex items-center gap-2 border-t border-rule-soft bg-app px-4 py-2.5">
+              <Kbd className="bg-app-panel">Esc</Kbd>
+              <span className="text-[11.5px] text-ink-subtle">closes this</span>
+            </footer>
           </div>
         </div>
       )}

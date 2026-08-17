@@ -12,7 +12,15 @@ import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { allPlans, plansAwaitingReview } from '@/lib/mock/data';
-import { filesCoveredBy, RUN_WORD } from '@/lib/plan';
+import {
+  coverageFileFor,
+  endpointFocusFor,
+  filesCoveredBy,
+  plansForEndpoint,
+  plansForFile,
+  RUN_WORD,
+} from '@/lib/plan';
+import { EndpointFocusHeader, FileFocusHeader } from '@/components/app/coverage-focus';
 import type { TestPlan } from '@/lib/mock/types';
 
 export const metadata = { title: 'Test plans · GritQA' };
@@ -176,11 +184,37 @@ const COLUMNS: Column<TestPlan>[] = [
 export default async function TestPlansPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string }>;
+  searchParams: Promise<{ group?: string; endpoint?: string; file?: string }>;
 }) {
-  const { group: groupParam } = await searchParams;
+  const { group: groupParam, endpoint: endpointParam, file: fileParam } = await searchParams;
   const group: Group = isGroup(groupParam) ? groupParam : 'flat';
-  const sections = sectionsFor(group);
+
+  /* A coverage square or a file name lands here. Focus narrows the list to what
+     touches that one thing, and the grouping control steps aside while it does. */
+  const endpointFocus = endpointFocusFor(endpointParam);
+  const fileFocus = coverageFileFor(fileParam);
+  const focused = Boolean(endpointFocus || fileFocus);
+  const missing = Boolean((endpointParam && !endpointFocus) || (fileParam && !fileFocus));
+
+  const sections = endpointFocus
+    ? [
+        {
+          key: 'focus-endpoint',
+          title: 'Plans that touch it',
+          hint: 'Everything covering this endpoint today',
+          plans: plansForEndpoint(endpointFocus.path),
+        },
+      ]
+    : fileFocus
+      ? [
+          {
+            key: 'focus-file',
+            title: 'Plans that reach into it',
+            hint: 'Everything covering an endpoint in this file',
+            plans: plansForFile(fileFocus.file),
+          },
+        ]
+      : sectionsFor(group);
 
   const counts = {
     draft: allPlans.filter((p) => p.status === 'draft').length,
@@ -225,46 +259,66 @@ export default async function TestPlansPage({
           }
         />
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="-mx-1 max-w-full overflow-x-auto px-1 pb-1">
-            <Segmented
-              className="w-max"
-              label="How to group the plans"
-              active={group}
-              options={[
-                { key: 'flat', label: 'Flat', icon: 'flat', href: '/dashboard/test-plans' },
-                {
-                  key: 'endpoint',
-                  label: 'By endpoint',
-                  icon: 'endpoint',
-                  href: '/dashboard/test-plans?group=endpoint',
-                },
-                {
-                  key: 'file',
-                  label: 'By file',
-                  icon: 'code',
-                  href: '/dashboard/test-plans?group=file',
-                },
-                {
-                  key: 'status',
-                  label: 'By status',
-                  icon: 'filter',
-                  href: '/dashboard/test-plans?group=status',
-                },
-              ]}
-            />
-          </div>
-
-          <p className="nums shrink-0 text-[12.5px] text-ink-subtle">
-            {group === 'flat'
-              ? `${allPlans.length} plans`
-              : `${allPlans.length} plans across ${sections.length} ${
-                  group === 'endpoint' ? 'endpoints' : group === 'file' ? 'files' : 'states'
-                }`}
+        {missing && (
+          <p className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-rule bg-app px-3.5 py-2.5 text-[12.5px] text-ink-muted">
+            <Icon name="alert" size={13} className="text-warn" />
+            That endpoint is not in the index GritQA read, so here is everything instead.
           </p>
-        </div>
+        )}
 
-        {group !== 'flat' && (
+        {endpointFocus && (
+          <EndpointFocusHeader
+            focus={endpointFocus}
+            plans={plansForEndpoint(endpointFocus.path)}
+          />
+        )}
+
+        {!endpointFocus && fileFocus && (
+          <FileFocusHeader file={fileFocus} plans={plansForFile(fileFocus.file)} />
+        )}
+
+        {!focused && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="-mx-1 max-w-full overflow-x-auto px-1 pb-1">
+              <Segmented
+                className="w-max"
+                label="How to group the plans"
+                active={group}
+                options={[
+                  { key: 'flat', label: 'Flat', icon: 'flat', href: '/dashboard/test-plans' },
+                  {
+                    key: 'endpoint',
+                    label: 'By endpoint',
+                    icon: 'endpoint',
+                    href: '/dashboard/test-plans?group=endpoint',
+                  },
+                  {
+                    key: 'file',
+                    label: 'By file',
+                    icon: 'code',
+                    href: '/dashboard/test-plans?group=file',
+                  },
+                  {
+                    key: 'status',
+                    label: 'By status',
+                    icon: 'filter',
+                    href: '/dashboard/test-plans?group=status',
+                  },
+                ]}
+              />
+            </div>
+
+            <p className="nums shrink-0 text-[12.5px] text-ink-subtle">
+              {group === 'flat'
+                ? `${allPlans.length} plans`
+                : `${allPlans.length} plans across ${sections.length} ${
+                    group === 'endpoint' ? 'endpoints' : group === 'file' ? 'files' : 'states'
+                  }`}
+            </p>
+          </div>
+        )}
+
+        {!focused && group !== 'flat' && (
           <p className="mt-3 max-w-[68ch] text-[12.5px] leading-relaxed text-ink-subtle">
             A plan usually touches more than one{' '}
             {group === 'status' ? 'thing' : group === 'endpoint' ? 'endpoint' : 'file'}, so the same
@@ -299,7 +353,9 @@ export default async function TestPlansPage({
                   minWidth={760}
                   empty={
                     <p className="py-6 text-center text-[12.5px] text-ink-subtle">
-                      Nothing in this group.
+                      {focused
+                        ? 'No plan covers this yet — drafting one is the next move.'
+                        : 'Nothing in this group.'}
                     </p>
                   }
                 />

@@ -83,10 +83,10 @@ export function PlanBody({
 
       <Panel
         title="How the steps feed each other"
-        subtitle="Each value is produced once and spent later"
+        subtitle="What each step needs, and which earlier step hands it over"
         bodyClassName="p-0"
       >
-        <VariableChain plan={detail} />
+        <VariableChain plan={detail} stepHrefFor={stepHrefFor} />
       </Panel>
 
       <Panel

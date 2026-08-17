@@ -13,11 +13,13 @@ import { Meter } from '@/components/app/meter';
 import { RunList } from '@/components/app/run-list';
 import { RulesSummary } from '@/components/app/rules-summary';
 import { EmptyState } from '@/components/app/empty-state';
+import { PipelineRail, type Stage } from '@/components/app/pipeline-rail';
 import { ViewFilter, type ViewKey } from '@/components/app/view-filter';
 import { Icon } from '@/components/ui/icon';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
+  allPlans,
   coverageTotals,
   currentProject,
   period,
@@ -54,7 +56,7 @@ const failingWork: WorkItem[] = failedRuns.map((run) => {
     signal: broke ? `${broke.method} ${broke.responseStatus}` : '—',
     run: { total: run.steps.length, passed: run.steps.filter((s) => s.status === 'passed').length },
     cta: 'Inspect',
-    href: '/dashboard/runs',
+    href: `/dashboard/runs/${run.publicId}`,
   };
 });
 
@@ -157,6 +159,7 @@ const metrics: MetricCell[] = [
     delta: `+${passRateDelta}`,
     tone: 'good',
     comparison: `from ${period.passRatePrevious}%`,
+    href: '/dashboard/runs',
   },
   {
     icon: 'runs',
@@ -166,6 +169,7 @@ const metrics: MetricCell[] = [
     delta: `+${period.runs - period.runsPrevious}`,
     tone: 'good',
     comparison: `from ${period.runsPrevious}`,
+    href: '/dashboard/runs',
   },
   {
     icon: 'clock',
@@ -185,6 +189,60 @@ const metrics: MetricCell[] = [
     delta: `+${coverageTotals.approved - period.endpointsCoveredPrevious}`,
     tone: 'good',
     comparison: `from ${period.endpointsCoveredPrevious}`,
+    href: '/dashboard/generate?from=endpoints',
+  },
+];
+
+const approvedPlans = allPlans.filter((p) => p.status === 'approved').length;
+
+/* The five things that happen to a plan, in order, each one a place to stand. */
+const STAGES: Stage[] = [
+  {
+    key: 'read',
+    icon: 'codebase',
+    label: 'Read',
+    value: String(currentProject.endpointCount),
+    unit: 'endpoints',
+    hint: `Found across ${currentProject.fileCount} files on your machine`,
+    href: '/dashboard/test-plans?group=file',
+  },
+  {
+    key: 'drafted',
+    icon: 'sparkle',
+    label: 'Drafted',
+    value: String(plansAwaitingReview.length),
+    unit: 'waiting',
+    hint: 'Written for you, and stuck here until you read them',
+    href: '/dashboard/queue',
+    tone: 'warn',
+  },
+  {
+    key: 'approved',
+    icon: 'check',
+    label: 'You approved',
+    value: String(approvedPlans),
+    unit: 'plans',
+    hint: 'The only plans your machine is allowed to run',
+    href: '/dashboard/test-plans?group=status',
+  },
+  {
+    key: 'ran',
+    icon: 'runs',
+    label: 'Ran',
+    value: String(runStripStats.runs),
+    unit: 'runs',
+    hint: `${runStripStats.total} requests went out in the last 30 days`,
+    href: '/dashboard/runs',
+  },
+  {
+    key: 'broke',
+    icon: 'alert',
+    label: 'Broke',
+    value: String(failedRuns.length),
+    unit: 'runs',
+    hint: 'Each one is either a real bug or a bad test — your call',
+    href: '/dashboard/runs?status=failed',
+    tone: 'fail',
   },
 ];
 
@@ -279,6 +337,15 @@ export default async function OverviewPage({
           )}
         </div>
 
+        <Panel
+          className="mt-4"
+          title="How your tests get made"
+          subtitle="Each stage hands to the next, and one of them is you"
+          bodyClassName="p-0"
+        >
+          <PipelineRail stages={STAGES} />
+        </Panel>
+
         <div className="mt-4">
           <MetricRail cells={metrics} />
         </div>
@@ -288,7 +355,7 @@ export default async function OverviewPage({
             className="xl:col-span-7"
             title="Coverage by file"
             subtitle="One square per endpoint the CLI found"
-            link={{ href: '/dashboard/codebase', label: 'Browse codebase' }}
+            link={{ href: '/dashboard/generate?from=endpoints', label: 'Cover a gap' }}
           >
             <CoverageGrid />
           </Panel>
@@ -302,6 +369,7 @@ export default async function OverviewPage({
                 {runStripStats.passRate}% pass
               </Badge>
             }
+            link={{ href: '/dashboard/runs', label: 'All runs' }}
           >
             <RunMatrix />
 

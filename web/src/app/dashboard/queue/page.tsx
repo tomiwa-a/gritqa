@@ -53,6 +53,10 @@ export default async function QueuePage({
   const step = stepIndex >= 0 ? detail?.steps[stepIndex] : undefined;
 
   const planHref = `${QUEUE}?plan=${selected.publicId}`;
+  const stepHrefFor = (stepId: string) => `${planHref}&step=${stepId}`;
+
+  const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
+  const nextStep = stepIndex >= 0 ? detail?.steps[stepIndex + 1] : undefined;
 
   return (
     <>
@@ -82,7 +86,7 @@ export default async function QueuePage({
           detail={detail}
           cliConnected={currentProject.lastIndexedLabel !== null}
           selectedStepId={step?.id}
-          stepHrefFor={(stepId) => `${planHref}&step=${stepId}`}
+          stepHrefFor={stepHrefFor}
           className="min-w-0 flex-1"
         />
       </div>
@@ -93,6 +97,8 @@ export default async function QueuePage({
           index={stepIndex}
           total={detail.steps.length}
           closeHref={planHref}
+          prevHref={prevStep ? stepHrefFor(prevStep.id) : undefined}
+          nextHref={nextStep ? stepHrefFor(nextStep.id) : undefined}
           failure={detail.previousFailure}
         />
       )}

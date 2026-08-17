@@ -22,7 +22,7 @@ export function RunList({ runs }: { runs: TestExecution[] }) {
         return (
           <li key={run.publicId}>
             <Link
-              href="/dashboard/runs"
+              href={`/dashboard/runs/${run.publicId}`}
               className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-app-hover"
             >
               <StatusDot tone={TONE[run.status]} pulse={run.status === 'running'} />

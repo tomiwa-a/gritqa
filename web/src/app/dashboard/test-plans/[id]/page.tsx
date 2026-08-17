@@ -129,6 +129,11 @@ export default async function PlanDetailPage({
   const stepIndex = detail && stepParam ? detail.steps.findIndex((s) => s.id === stepParam) : -1;
   const step = stepIndex >= 0 ? detail?.steps[stepIndex] : undefined;
   const closeHref = tab === 'steps' ? base : `${base}?tab=${tab}`;
+  const stepHrefFor = (stepId: string) =>
+    tab === 'steps' ? `${base}?step=${stepId}` : `${base}?tab=${tab}&step=${stepId}`;
+
+  const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
+  const nextStep = stepIndex >= 0 ? detail?.steps[stepIndex + 1] : undefined;
 
   return (
     <>
@@ -219,7 +224,7 @@ export default async function PlanDetailPage({
                   plan={plan}
                   detail={detail}
                   selectedStepId={step?.id}
-                  stepHrefFor={(stepId) => `${base}?step=${stepId}`}
+                  stepHrefFor={stepHrefFor}
                 />
               )}
 
@@ -351,6 +356,8 @@ export default async function PlanDetailPage({
           index={stepIndex}
           total={detail.steps.length}
           closeHref={closeHref}
+          prevHref={prevStep ? stepHrefFor(prevStep.id) : undefined}
+          nextHref={nextStep ? stepHrefFor(nextStep.id) : undefined}
           failure={detail.previousFailure}
         />
       )}

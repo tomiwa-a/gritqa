@@ -39,17 +39,51 @@ function Json({ value }: { value: unknown }) {
   );
 }
 
+function Step({ href, dir }: { href?: string; dir: 'prev' | 'next' }) {
+  const label = dir === 'prev' ? 'Previous step' : 'Next step';
+  const chevron = (
+    <Icon name="chevronRight" size={13} className={dir === 'prev' ? 'rotate-180' : undefined} />
+  );
+
+  if (!href) {
+    return (
+      <span
+        aria-hidden
+        className="flex h-6 w-6 items-center justify-center rounded text-ink-subtle/35"
+      >
+        {chevron}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      aria-label={label}
+      title={label}
+      className="flex h-6 w-6 items-center justify-center rounded text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
+    >
+      {chevron}
+    </Link>
+  );
+}
+
 export function StepInspector({
   step,
   index,
   total,
   closeHref,
+  prevHref,
+  nextHref,
   failure,
 }: {
   step: PlanStepSpec;
   index: number;
   total: number;
   closeHref: string;
+  prevHref?: string;
+  nextHref?: string;
   failure?: PlanFailureSeed | null;
 }) {
   const broke = failure?.stepId === step.id;
@@ -64,29 +98,38 @@ export function StepInspector({
       <aside
         aria-label={`Step ${index + 1}: ${step.name}`}
         className={cn(
-          'absolute right-0 bottom-0 left-0 flex max-h-[85vh] flex-col overflow-hidden',
-          'rounded-t-xl border border-rule bg-app-panel shadow-menu',
-          'md:top-0 md:left-auto md:max-h-none md:w-[min(30rem,90vw)] md:rounded-none md:rounded-l-xl md:border-y-0 md:border-r-0',
+          'absolute inset-y-0 right-0 flex w-full flex-col overflow-hidden',
+          'border-l border-rule bg-app-panel shadow-menu',
+          'sm:w-[min(30rem,92vw)] sm:rounded-l-xl',
         )}
       >
-        <header className="flex shrink-0 items-start gap-3 border-b border-rule px-4 py-3.5">
-          <span className="nums mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-rule bg-app font-mono text-[11px] text-ink-subtle">
-            {index + 1}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] font-medium text-ink">{step.name}</p>
-            <p className="nums mt-0.5 font-mono text-[11px] text-ink-subtle">
-              step {index + 1} of {total}
+        <header className="shrink-0 border-b border-rule">
+          <div className="flex items-center gap-1 px-3 pt-2.5">
+            <span className="nums font-mono text-[10.5px] tracking-[0.12em] text-ink-subtle uppercase">
+              step {index + 1} / {total}
+            </span>
+            <span className="ml-auto flex items-center gap-0.5">
+              <Step href={prevHref} dir="prev" />
+              <Step href={nextHref} dir="next" />
+              <Link
+                href={closeHref}
+                scroll={false}
+                aria-label="Close step details"
+                className="ml-1 flex h-6 w-6 items-center justify-center rounded text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
+              >
+                <Icon name="close" size={14} />
+              </Link>
+            </span>
+          </div>
+
+          <div className="flex items-start gap-3 px-4 pt-1.5 pb-3.5">
+            <span className="nums mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-rule bg-app font-mono text-[11px] text-ink-subtle">
+              {index + 1}
+            </span>
+            <p className="min-w-0 flex-1 text-[13.5px] leading-snug font-medium text-ink">
+              {step.name}
             </p>
           </div>
-          <Link
-            href={closeHref}
-            scroll={false}
-            aria-label="Close step details"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
-          >
-            <Icon name="close" size={14} />
-          </Link>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
