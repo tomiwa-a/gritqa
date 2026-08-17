@@ -54,7 +54,6 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	root := cfg.Root()
 	if created {
 		w.Write(term.Line{
 			Kind: term.OK,
@@ -66,17 +65,22 @@ func Run(ctx context.Context, opts Options) error {
 		})
 	}
 
-	w.Write(term.Line{
-		Kind: term.Info,
-		Text: fmt.Sprintf("watching %s on branch %s", cfg.Path, cfg.Branch),
-	})
-
 	if opts.PlanFile != "" {
 		return errors.New("--plan is not wired up yet: the execution engine lands in M2")
 	}
 
-	_ = root
-	return errors.New("reading your project is not wired up yet: the indexer lands in M1")
+	snap, err := read(ctx, w, cfg)
+	if err != nil {
+		return err
+	}
+
+	if opts.Once {
+		return nil
+	}
+
+	_ = snap
+	return errors.New("attaching to " + opts.server() +
+		" is not wired up yet: for now use --once. The attach loop lands in M4")
 }
 
 // resolveConfig finds the project root and loads its config, writing one on
