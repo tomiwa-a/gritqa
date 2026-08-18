@@ -81,6 +81,16 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
+	if err := s.rebuildCache(); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(history)
+	return err
+}
+
+// rebuildCache drops and recreates the cache tables when the schema moved. Run
+// history is deliberately not among them.
+func (s *Store) rebuildCache() error {
 	var have string
 	err := s.db.QueryRow(`SELECT value FROM meta WHERE key = 'schema_version'`).Scan(&have)
 	if err == nil && have == schemaVersion {

@@ -46,6 +46,7 @@ func main() {
 
 	f := cmd.Flags()
 	f.BoolVar(&opts.Once, "once", false, "read and draft, then exit instead of waiting")
+	f.BoolVar(&opts.Draft, "draft", false, "draft plans for what changed, write them to .gritqa/drafts/, exit")
 	f.StringVar(&opts.PlanFile, "plan", "", "run one plan JSON locally, without a server")
 	f.StringVar(&opts.Project, "project", "", "project name, when there is no config yet")
 	f.BoolVar(&opts.Verbose, "verbose", false, "plain unaligned output, for logs")

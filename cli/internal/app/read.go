@@ -14,11 +14,19 @@ import (
 	"github.com/gritqa/cli/internal/term"
 )
 
+// reading is what one index pass produced: the snapshot, what changed since the
+// last pass, and whether there was a last pass at all.
+type reading struct {
+	snap  *index.Snapshot
+	delta index.Delta
+	first bool
+}
+
 // read indexes the project and renders the READ transcript from
 // web/src/components/sections/pillars.tsx. What it reports is only what it
 // actually found: a project whose router it cannot recognise is told so, rather
 // than shown a confident zero.
-func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options) (*index.Snapshot, error) {
+func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options) (*reading, error) {
 	started := time.Now()
 
 	store, err := index.Open(cfg.CachePath())
@@ -85,7 +93,7 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 				term.Count(n, "file", "files"), plural(n, "it", "them")),
 		})
 	}
-	return snap, nil
+	return &reading{snap: snap, delta: delta, first: len(before) == 0}, nil
 }
 
 // extractor is the AI source's client. Reading with the model needs the server,

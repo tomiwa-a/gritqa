@@ -1,0 +1,135 @@
+package draft
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/gritqa/cli/internal/plan"
+)
+
+const system = `You write HTTP test plans for a backend API. You are given the files that just
+changed, the endpoints they register, and the plans that already exist.
+
+Reply with one JSON object and nothing else:
+
+{
+  "name": "short human title",
+  "version": 1,
+  "description": "one sentence on what this plan proves",
+  "baseUrl": "the base url you were given",
+  "variables": {"testEmail": "qa@example.com"},
+  "steps": [
+    {
+      "id": "s1",
+      "name": "what this step does",
+      "description": "why it is here",
+      "dependsOn": [],
+      "request": {
+        "method": "POST",
+        "url": "/checkout/{{checkoutId}}/tax",
+        "headers": {"Authorization": "Bearer {{authToken}}"},
+        "body": {"region": "NG-LA"},
+        "query": {}
+      },
+      "extract": [{"name": "authToken", "path": "$.data.token", "source": "body"}],
+      "assertions": [
+        {"type": "status", "operator": "equals", "target": "status", "expected": 200},
+        {"type": "bodyField", "operator": "equals", "target": "data.tax_total", "expected": "{{taxTotal}}"}
+      ],
+      "onFailure": "abort",
+      "retry": {"maxAttempts": 2, "delayMs": 250}
+    }
+  ]
+}
+
+Rules:
+- No field other than the ones above. No markdown fence, no prose, no comments.
+- type is one of status, bodyField, header, responseTime.
+- operator is one of equals, notEquals, contains, notContains, exists, lt, gt.
+  Everything except exists needs "expected".
+- extract paths are written $.a.b, bodyField targets are written a.b. source is
+  body or header, and a header path is the header name.
+- {{name}} reads a variable in any url, header, body value, query value or
+  expected value. Only a variable the plan seeds or an earlier step extracts.
+- url is relative to baseUrl and starts with /.
+- Build every piece of state you need through the API: POST the order, extract
+  its id, then read it back. Never assume a row already exists, and never write
+  SQL.
+- onFailure abort stops the run; continue keeps independent steps going. Use
+  abort for the steps everything else depends on.
+- Test what the changed code actually does, including the case it would get
+  wrong. Do not repeat a plan that already exists.
+- If the endpoints need a logged-in user, sign in first and extract the token.`
+
+type message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func messages(req Request) []message {
+	return []message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: brief(req)},
+	}
+}
+
+func brief(req Request) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Project: %s\nBase URL: %s\n", req.Project, req.BaseURL)
+
+	if len(req.Endpoints) > 0 {
+		b.WriteString("\nEndpoints these files register:\n")
+		for _, e := range req.Endpoints {
+			fmt.Fprintf(&b, "- %s (%s", e.Signature, e.File)
+			if e.Handler != "" {
+				fmt.Fprintf(&b, ", %s", e.Handler)
+			}
+			if e.NeedsAuth {
+				b.WriteString(", behind auth")
+			}
+			b.WriteString(")\n")
+		}
+	}
+
+	if len(req.Existing) > 0 {
+		b.WriteString("\nPlans that already exist:\n")
+		for _, p := range req.Existing {
+			fmt.Fprintf(&b, "- %s: %s\n", p.Name, strings.Join(p.Endpoints, ", "))
+		}
+	}
+
+	b.WriteString("\nFiles that changed:\n")
+	for _, f := range req.Files {
+		fmt.Fprintf(&b, "\n--- %s (%s)\n%s\n", f.Path, f.Language, f.Content)
+	}
+	return b.String()
+}
+
+// Parse reads the model's reply as a plan. A prose-wrapped object is unwrapped,
+// but nothing is coerced: a plan that will not validate is reported rather than
+// patched into something runnable.
+func Parse(raw string) (*plan.Plan, error) {
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return nil, errors.New("the reply had no JSON object in it")
+	}
+	return plan.Parse([]byte(raw[start : end+1]))
+}
+
+func correction(err error) string {
+	return "That did not validate: " + err.Error() +
+		"\nSend the whole plan again as one corrected JSON object."
+}
+
+// finish fills in what the model is not the authority on.
+func finish(p *plan.Plan, req Request) *plan.Plan {
+	if p.Version == 0 {
+		p.Version = 1
+	}
+	if p.BaseURL == "" {
+		p.BaseURL = req.BaseURL
+	}
+	return p
+}

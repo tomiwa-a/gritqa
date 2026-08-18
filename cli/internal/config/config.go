@@ -61,6 +61,30 @@ type Run struct {
 	Migrate string            `yaml:"migrate,omitempty"`
 	Seed    string            `yaml:"seed,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
+	Model   *Model            `yaml:"model,omitempty"`
+}
+
+// Model is the endpoint drafting talks to. It must speak the OpenAI chat
+// completions API — Anthropic's own /v1/messages is not it, so reaching Claude
+// means a compatibility proxy. The key never lives here: GRITQA_API_KEY holds it.
+type Model struct {
+	Endpoint string `yaml:"endpoint"`
+	Name     string `yaml:"name"`
+}
+
+const defaultModelEndpoint = "https://api.openai.com/v1"
+
+// ModelOpts returns the drafting endpoint and model name as configured.
+func (r *Run) ModelOpts() Model {
+	if r == nil || r.Model == nil {
+		return Model{Endpoint: defaultModelEndpoint}
+	}
+	out := *r.Model
+	if out.Endpoint == "" {
+		out.Endpoint = defaultModelEndpoint
+	}
+	out.Endpoint = strings.TrimRight(out.Endpoint, "/")
+	return out
 }
 
 var ErrNotFound = errors.New("no .gritqa/config.yaml found")
@@ -156,6 +180,12 @@ func (c *Config) Save() error {
 // CachePath is the SQLite index cache, alongside the config but gitignored.
 func (c *Config) CachePath() string {
 	return filepath.Join(c.root, Dir, "cache.db")
+}
+
+// DraftsPath holds the plans the model wrote, before a server exists to keep
+// them.
+func (c *Config) DraftsPath() string {
+	return filepath.Join(c.root, Dir, "drafts")
 }
 
 // BaseURL is where test steps are pointed.

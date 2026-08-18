@@ -18,6 +18,7 @@ const defaultServer = "https://app.gritqa.dev"
 
 type Options struct {
 	Once       bool
+	Draft      bool
 	PlanFile   string
 	Project    string
 	Verbose    bool
@@ -66,19 +67,21 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	if opts.PlanFile != "" {
-		return errors.New("--plan is not wired up yet: the execution engine lands in M2")
+		return runPlan(ctx, w, cfg, opts)
 	}
 
-	snap, err := read(ctx, w, cfg, opts)
+	got, err := read(ctx, w, cfg, opts)
 	if err != nil {
 		return err
 	}
 
+	if opts.Draft {
+		return draftPlans(ctx, w, cfg, got)
+	}
 	if opts.Once {
 		return nil
 	}
 
-	_ = snap
 	return errors.New("attaching to " + opts.server() +
 		" is not wired up yet: for now use --once. The attach loop lands in M4")
 }
