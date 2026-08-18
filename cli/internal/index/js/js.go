@@ -227,27 +227,6 @@ func (f *file) target(arg []lexical.Token) (lexical.Ref, string, bool) {
 	return lexical.Ref{}, "", false
 }
 
-func describe(arg []lexical.Token) string {
-	if n := lexical.Name(arg); n != "" {
-		return "<" + n + ">"
-	}
-	return "<expr>"
-}
-
-func names(args [][]lexical.Token) []string {
-	var out []string
-	for _, a := range args {
-		if n := lexical.Name(a); n != "" {
-			out = append(out, n)
-			continue
-		}
-		if c, ok := lexical.Ctor(a); ok {
-			out = append(out, c.Name)
-		}
-	}
-	return out
-}
-
 func isDot(t lexical.Token) bool { return isPunct(t, ".") }
 
 func isPunct(t lexical.Token, text string) bool {

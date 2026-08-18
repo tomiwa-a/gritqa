@@ -89,7 +89,7 @@ func (f *file) verb(c lexical.Call, s *scope, method string) {
 	}
 	if n := len(handlers); n > 0 {
 		d.Handler = lexical.Name(handlers[n-1])
-		d.Middleware = names(handlers[:n-1])
+		d.Middleware = lexical.Names(handlers[:n-1])
 	}
 	s.owner.Decls = append(s.owner.Decls, d)
 }
@@ -101,7 +101,7 @@ func (f *file) use(c lexical.Call, s *scope) {
 	at, child, spec := f.mountArg(c)
 	if at < 0 {
 		if _, literal := lexical.Str(c.Arg(0)); !literal {
-			s.owner.Middleware = append(s.owner.Middleware, names(c.Args)...)
+			s.owner.Middleware = append(s.owner.Middleware, lexical.Names(c.Args)...)
 		}
 		return
 	}
@@ -114,7 +114,7 @@ func (f *file) use(c lexical.Call, s *scope) {
 		}
 		prefix, known = p, ok
 	}
-	f.attach(s, child, spec, prefix, !known, c.Line, names(c.Args[:at]))
+	f.attach(s, child, spec, prefix, !known, c.Line, lexical.Names(c.Args[:at]))
 }
 
 // register is Fastify's mount. The prefix lives in an options object, and an
@@ -130,7 +130,7 @@ func (f *file) register(c lexical.Call, s *scope) {
 		if v, found := lexical.Kwarg(c.Args[1:], "prefix"); found {
 			prefix, known = f.str(v)
 		} else if !isObject(c.Arg(1)) {
-			prefix, known = "/"+describe(c.Arg(1)), false
+			prefix, known = "/"+lexical.Describe(c.Arg(1)), false
 		}
 	}
 	f.attach(s, child, spec, prefix, !known, c.Line, nil)
@@ -193,7 +193,7 @@ func (f *file) str(v []lexical.Token) (string, bool) {
 	if s, ok := f.consts()[lexical.Name(v)]; ok {
 		return s, true
 	}
-	return "/" + describe(v), false
+	return "/" + lexical.Describe(v), false
 }
 
 func (f *file) attach(s *scope, child lexical.Ref, spec, prefix string,

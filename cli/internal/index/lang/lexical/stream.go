@@ -137,7 +137,7 @@ func Assigns(toks []Token) []Assign {
 		out = append(out, Assign{
 			Name:  toks[i-1].Text,
 			Line:  toks[i-1].Line,
-			Value: statement(toks, i+1),
+			Value: Statement(toks, i+1),
 		})
 	}
 	return out
@@ -153,11 +153,11 @@ func Ctor(value []Token) (Call, bool) {
 	return calls[0], true
 }
 
-// statement takes the tokens of one value. It ends at a semicolon, at a comma
+// Statement takes the tokens of one value. It ends at a semicolon, at a comma
 // or bracket it does not own, or at the first token on a later line outside
 // brackets — which is what stands in for a terminator in two languages that
 // mostly do without one.
-func statement(toks []Token, from int) []Token {
+func Statement(toks []Token, from int) []Token {
 	if from >= len(toks) {
 		return nil
 	}
@@ -231,7 +231,7 @@ func Kwarg(args [][]Token, name string) ([]Token, bool) {
 			if isPunct(arg[i+2], "=") {
 				continue
 			}
-			return statement(arg[i+2:], 0), true
+			return Statement(arg[i+2:], 0), true
 		}
 	}
 	return nil, false
@@ -244,6 +244,31 @@ func StrKwarg(args [][]Token, name string) (string, bool) {
 		return "", false
 	}
 	return Str(v)
+}
+
+// Describe names the expression a path could not be read from. The angle
+// brackets keep it from reading like a real path segment.
+func Describe(toks []Token) string {
+	if n := Name(toks); n != "" {
+		return "<" + n + ">"
+	}
+	return "<expr>"
+}
+
+// Names renders the arguments that name something — a middleware list, a
+// dependency list — skipping the ones that are inline functions.
+func Names(args [][]Token) []string {
+	var out []string
+	for _, a := range args {
+		if n := Name(a); n != "" {
+			out = append(out, n)
+			continue
+		}
+		if c, ok := Ctor(a); ok {
+			out = append(out, c.Name)
+		}
+	}
+	return out
 }
 
 func isDot(t Token) bool { return isPunct(t, ".") }

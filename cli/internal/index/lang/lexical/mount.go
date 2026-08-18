@@ -52,6 +52,7 @@ type Mount struct {
 	Prefix     string
 	Middleware []string
 	Unresolved bool // the prefix could not be read
+	Override   bool // this prefix replaces the child's own, as Flask's register_blueprint does
 }
 
 // Graph is a project's owners and mounts, gathered file by file.
@@ -142,7 +143,7 @@ func (g *Graph) Resolve() (found, unresolved []routes.Route) {
 	var out, bad []routes.Route
 	for _, o := range g.Owners {
 		if o.Root {
-			g.walk(o, "", nil, false, children, map[Ref]bool{}, &out, &bad)
+			g.walk(o, "", nil, false, false, children, map[Ref]bool{}, &out, &bad)
 			continue
 		}
 		if mounted[o.Ref] {
@@ -150,7 +151,7 @@ func (g *Graph) Resolve() (found, unresolved []routes.Route) {
 		}
 		// Never mounted anywhere GritQA could see, so the prefix above these
 		// routes is unknowable. The marker names the router to go and look at.
-		g.walk(o, "/<"+o.name()+">", nil, true, children, map[Ref]bool{}, &out, &bad)
+		g.walk(o, "/<"+o.name()+">", nil, true, false, children, map[Ref]bool{}, &out, &bad)
 	}
 
 	sortByFile(out)
@@ -158,7 +159,7 @@ func (g *Graph) Resolve() (found, unresolved []routes.Route) {
 	return out, bad
 }
 
-func (g *Graph) walk(o *Owner, prefix string, middleware []string, unknown bool,
+func (g *Graph) walk(o *Owner, prefix string, middleware []string, unknown, override bool,
 	children map[Ref][]Mount, seen map[Ref]bool, out, bad *[]routes.Route) {
 
 	if seen[o.Ref] {
@@ -168,6 +169,9 @@ func (g *Graph) walk(o *Owner, prefix string, middleware []string, unknown bool,
 	defer delete(seen, o.Ref)
 
 	base := routes.Join(prefix, o.Prefix)
+	if override {
+		base = routes.Join(prefix, "")
+	}
 	unknown = unknown || o.Unresolved
 	mw := concat(middleware, o.Middleware)
 
@@ -193,7 +197,7 @@ func (g *Graph) walk(o *Owner, prefix string, middleware []string, unknown bool,
 			continue
 		}
 		g.walk(child, routes.Join(base, m.Prefix), concat(mw, m.Middleware),
-			unknown || m.Unresolved, children, seen, out, bad)
+			unknown || m.Unresolved, m.Override, children, seen, out, bad)
 	}
 }
 

@@ -28,7 +28,7 @@ func (f *file) readControllers() {
 			current = f.controller(c, pending)
 			pending = nil
 		case c.Name == "UseGuards" || c.Name == "UseInterceptors":
-			pending = append(pending, names(c.Args)...)
+			pending = append(pending, lexical.Names(c.Args)...)
 		default:
 			method, ok := decorators[c.Name]
 			if !ok || current == nil {
@@ -78,7 +78,7 @@ func (f *file) decoratorPath(c lexical.Call) (string, bool) {
 	if s, ok := f.consts()[lexical.Name(c.Arg(0))]; ok {
 		return routes.Normalize(s), true
 	}
-	return "/" + describe(c.Arg(0)), false
+	return "/" + lexical.Describe(c.Arg(0)), false
 }
 
 // className reads the class a controller decorator is attached to, skipping the
