@@ -434,6 +434,61 @@ end
 	}
 }
 
+// kept is the store's half of the AI source, in memory.
+type kept struct{ rows map[string][]routes.Route }
+
+func (k *kept) Extracted(hash string) ([]routes.Route, bool, error) {
+	rs, ok := k.rows[hash]
+	return rs, ok, nil
+}
+
+func (k *kept) SaveExtracted(hash, _ string, rs []routes.Route) error {
+	if k.rows == nil {
+		k.rows = map[string][]routes.Route{}
+	}
+	k.rows[hash] = rs
+	return nil
+}
+
+// A key is how the model is reached, not how the cache is. Forgetting to export
+// one used to overwrite a live index with nothing — 243 endpoints to zero — and
+// the source-level test missed it because the files never got that far.
+func TestReadKeepsCachedEndpointsWithoutAKey(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"Gemfile":          "source 'https://rubygems.org'\ngem 'rails', '~> 7.1'\n",
+		"config/routes.rb": "Rails.application.routes.draw do\n  resources :orders\nend\n",
+	})
+
+	ex := &recorder{give: map[string][]routes.Route{
+		"config/routes.rb": {{Method: "GET", Path: "/orders", Line: 2, Handler: "orders#index"}},
+	}}
+	cache := &kept{}
+
+	warm, err := Read(context.Background(), root, Options{AI: true, Extract: ex, Cache: cache})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join(sigs(warm), "\n")
+	if want != "config/routes.rb GET /orders" {
+		t.Fatalf("the first read is the premise, and it is wrong: %q", want)
+	}
+
+	// Same repo, same cache, no extractor at all.
+	cold, err := Read(context.Background(), root, Options{AI: true, Cache: cache})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(sigs(cold), "\n"); got != want {
+		t.Errorf("without a key: got %q, want the cached %q", got, want)
+	}
+	if cold.Uploaded != 0 {
+		t.Errorf("uploaded = %d, want 0: there is no key to upload with", cold.Uploaded)
+	}
+	if cold.Source != source.AI {
+		t.Errorf("source = %q, want the model: the cache holds what it read", cold.Source)
+	}
+}
+
 // The prefix a project actually mounts at is often a constant in another module.
 // FastAPI's prefix=settings.API_V1_STR is the shape the official template ships,
 // and reading it wrong takes the whole tree below it down.

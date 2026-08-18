@@ -104,7 +104,11 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 
 	out, err := scan(ctx, pass{
 		root: root, project: project,
-		wantRoutes: res.Empty(), wantAI: res.Empty() && opts.AI && opts.Extract != nil,
+		// The cache can answer on its own, so a missing key must not stop the file
+		// bodies being collected: without this a keyless run reports no endpoints
+		// and overwrites the ones it already had.
+		wantRoutes: res.Empty(),
+		wantAI:     res.Empty() && opts.AI && (opts.Extract != nil || opts.Cache != nil),
 	}, paths)
 	if err != nil {
 		return nil, err
