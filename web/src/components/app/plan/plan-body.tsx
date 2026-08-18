@@ -5,7 +5,6 @@ import { VariableChain } from './variable-chain';
 import { Provenance } from './provenance';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
-import { PlanConversation } from './plan-conversation';
 import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
@@ -15,7 +14,6 @@ export function PlanBody({
   detail,
   selectedStepId,
   stepHrefFor,
-  diffHrefFor,
   fullHref,
   className,
 }: {
@@ -23,8 +21,6 @@ export function PlanBody({
   detail: TestPlanDetail | undefined;
   selectedStepId?: string;
   stepHrefFor: (stepId: string) => string;
-  /** Where a version's changes are read, for the conversation's diff links. */
-  diffHrefFor: (version: number) => string;
   fullHref?: string;
   className?: string;
 }) {
@@ -48,8 +44,6 @@ export function PlanBody({
             )}
           </p>
         </Panel>
-
-        <PlanConversation plan={plan} detail={detail} diffHrefFor={diffHrefFor} />
       </div>
     );
   }
@@ -115,9 +109,6 @@ export function PlanBody({
           failure={detail.previousFailure}
         />
       </Panel>
-
-      {/* Last, because you read the plan and then you answer it. */}
-      <PlanConversation plan={plan} detail={detail} diffHrefFor={diffHrefFor} />
     </div>
   );
 }

@@ -50,7 +50,11 @@ export function RunTriage({
             <Icon name="alert" size={13} className="text-fail" />
             The code was wrong
           </Button>
-          <Link href={refineHref} className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
+          <Link
+            href={refineHref}
+            scroll={false}
+            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+          >
             <Icon name="plan" size={13} className="text-warn" />
             The test was wrong
           </Link>

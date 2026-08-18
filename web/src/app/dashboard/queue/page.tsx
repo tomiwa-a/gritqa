@@ -11,17 +11,13 @@ import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { currentProject, plansAwaitingReview } from '@/lib/mock/data';
 import { planDetailFor } from '@/lib/mock/plans';
-import { parseOverlay, type PageParams } from '@/lib/overlay';
+import { askToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
 
 const QUEUE = '/dashboard/queue';
 
-export default async function QueuePage({
-  searchParams,
-}: {
-  searchParams: Promise<PageParams>;
-}) {
+export default async function QueuePage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
   const planParam = typeof params.plan === 'string' ? params.plan : undefined;
   const stepParam = typeof params.step === 'string' ? params.step : undefined;
@@ -65,6 +61,13 @@ export default async function QueuePage({
   /* One panel at a time: a drawer or the wizard parks the step inspector. */
   const overlay = parseOverlay(typeof params.open === 'string' ? params.open : undefined);
 
+  /* Pin the plan on the way in, so the reader behind the panel cannot drift. */
+  const askHref = withOverlay(
+    QUEUE,
+    { ...params, plan: selected.publicId },
+    askToken(selected.publicId),
+  );
+
   const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
   const nextStep = stepIndex >= 0 ? detail?.steps[stepIndex + 1] : undefined;
 
@@ -100,7 +103,7 @@ export default async function QueuePage({
           cliConnected={currentProject.lastIndexedLabel !== null}
           selectedStepId={step?.id}
           stepHrefFor={stepHrefFor}
-          askHref={`${planHref}#ask`}
+          askHref={askHref}
           className="min-w-0 flex-1"
         />
       </div>

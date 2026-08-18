@@ -8,28 +8,33 @@ import { MethodBadge } from '@/components/ui/method-badge';
 import { allPlans, currentProject } from '@/lib/mock/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runsForPlan } from '@/lib/runs';
-import { runToken } from '@/lib/overlay';
+import { askToken, runToken } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
-const STATUS: Record<TestPlan['status'], { badge: 'draft' | 'approved' | 'archived'; word: string }> =
-  {
-    draft: { badge: 'draft', word: 'Waiting for your review' },
-    approved: { badge: 'approved', word: 'Approved' },
-    archived: { badge: 'archived', word: 'Archived' },
-  };
+const STATUS: Record<
+  TestPlan['status'],
+  { badge: 'draft' | 'approved' | 'archived'; word: string }
+> = {
+  draft: { badge: 'draft', word: 'Waiting for your review' },
+  approved: { badge: 'approved', word: 'Approved' },
+  archived: { badge: 'archived', word: 'Archived' },
+};
 
 /**
- * What the plan is and what you can do about it. The steps, the diff, the raw
- * JSON and the refine thread all live on the plan's page.
+ * What the plan is and what you can do about it. The steps, the diff and the raw
+ * JSON live on the plan's page; the conversation is a panel of its own.
  */
 export function PlanPreview({
   id,
   closeHref,
   runDrawerHref,
+  askDrawerHref,
 }: {
   id: string;
   closeHref: string;
   runDrawerHref?: (token: string) => string;
+  /** Swaps this panel for the conversation, so asking stays one click deep. */
+  askDrawerHref?: (token: string) => string;
 }) {
   const plan = allPlans.find((p) => p.publicId === id);
   if (!plan) return null;
@@ -37,6 +42,10 @@ export function PlanPreview({
   const status = STATUS[plan.status];
   const cliConnected = currentProject.lastIndexedLabel !== null;
   const base = `/dashboard/test-plans/${plan.publicId}`;
+
+  /* The third outcome, and it reads like the other two rather than a trip.
+     Without a panel to swap to, the plan's own page carries the same button. */
+  const askHref = askDrawerHref ? askDrawerHref(askToken(plan.publicId)) : base;
 
   const lastRun = runsForPlan(plan.publicId)[0];
   const lastRunHref = lastRun
@@ -67,25 +76,29 @@ export function PlanPreview({
                   <Icon name="check" size={14} />
                   Approve
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-decision="reject"
-                  data-plan={plan.publicId}
-                >
+                <Button variant="ghost" size="sm" data-decision="reject" data-plan={plan.publicId}>
                   <Icon name="archive" size={14} />
                   Send back
                 </Button>
               </div>
               <Link
-                href={`/dashboard/queue?plan=${plan.publicId}`}
+                href={askHref}
+                scroll={false}
+                title="Say what should change, and read the new version"
                 className={buttonVariants({
                   variant: 'secondary',
                   size: 'sm',
                   className: 'w-full',
                 })}
               >
-                <Icon name="plan" size={14} />
+                <Icon name="sparkle" size={14} />
+                Ask for a change
+              </Link>
+              <Link
+                href={`/dashboard/queue?plan=${plan.publicId}`}
+                className="mt-0.5 flex items-center justify-center gap-1.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
+              >
+                <Icon name="plan" size={13} />
                 Read it step by step
               </Link>
             </>
@@ -105,15 +118,27 @@ export function PlanPreview({
                 <Icon name="runs" size={14} />
                 Ask to run
               </Button>
+              {/* Archived plans are kept for the record, never redrafted. */}
+              {plan.status === 'approved' && (
+                <Link
+                  href={askHref}
+                  scroll={false}
+                  title="Say what should change, and read the new version"
+                  className={buttonVariants({
+                    variant: 'secondary',
+                    size: 'sm',
+                    className: 'w-full',
+                  })}
+                >
+                  <Icon name="sparkle" size={14} />
+                  Ask for a change
+                </Link>
+              )}
               <Link
                 href={base}
-                className={buttonVariants({
-                  variant: 'secondary',
-                  size: 'sm',
-                  className: 'w-full',
-                })}
+                className="mt-0.5 flex items-center justify-center gap-1.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
               >
-                <Icon name="plan" size={14} />
+                <Icon name="plan" size={13} />
                 Open the full plan
               </Link>
             </>

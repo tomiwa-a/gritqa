@@ -36,13 +36,11 @@ export function PlanReader({
   cliConnected: boolean;
   selectedStepId?: string;
   stepHrefFor: (stepId: string) => string;
-  /** This page's own URL plus #ask — the conversation is right below. */
+  /** Opens the conversation panel over this page. */
   askHref: string;
   className?: string;
 }) {
   const fullHref = `/dashboard/test-plans/${plan.publicId}`;
-  const diffHrefFor = (version: number) =>
-    version > 1 ? `${fullHref}?tab=diff&v=${version}` : `${fullHref}?tab=diff`;
 
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
@@ -105,7 +103,6 @@ export function PlanReader({
           detail={detail}
           selectedStepId={selectedStepId}
           stepHrefFor={stepHrefFor}
-          diffHrefFor={diffHrefFor}
           fullHref={fullHref}
         />
       </div>

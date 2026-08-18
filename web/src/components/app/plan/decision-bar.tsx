@@ -18,7 +18,7 @@ export function DecisionBar({
 }: {
   planId: string;
   cliConnected: boolean;
-  /** Points at the conversation on this page — asking is not a trip elsewhere. */
+  /** Opens the conversation panel over this page — asking is not a trip elsewhere. */
   refineHref: string;
   showKeys?: boolean;
   className?: string;
@@ -49,6 +49,7 @@ export function DecisionBar({
         {/* The third outcome, and it acts here like the other two. */}
         <Link
           href={refineHref}
+          scroll={false}
           title="Say what should change, and read the new version"
           className={buttonVariants({ variant: 'secondary', size: 'sm' })}
         >

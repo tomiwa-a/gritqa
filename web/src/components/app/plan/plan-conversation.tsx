@@ -1,10 +1,10 @@
-import { Panel } from '@/components/app/panel';
+import { Drawer } from '../drawer';
 import { Badge } from '@/components/ui/badge';
 import { RevisionThread, TurnRow } from './revision-thread';
 import { RefineComposer } from './refine-composer';
-import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
-import { user } from '@/lib/mock/data';
-import { cn } from '@/lib/cn';
+import { allPlans, user } from '@/lib/mock/data';
+import { planDetailFor } from '@/lib/mock/plans';
+import type { TestPlan } from '@/lib/mock/types';
 
 /**
  * What a plan is, when nothing about the asking was recorded: the trigger and
@@ -31,19 +31,14 @@ function OpeningTurn({ plan, author }: { plan: TestPlan; author: string }) {
         whenLabel={plan.createdLabel}
         mine={false}
         meta={
-          <>
-            <Badge
-              variant="outline"
-              size="sm"
-              mono
-              className="nums border-punch-red/40 bg-app-panel text-punch-red"
-            >
-              v{plan.version}
-            </Badge>
-            <span className="text-[11px] whitespace-nowrap text-punch-red">
-              What you&rsquo;re reading
-            </span>
-          </>
+          <Badge
+            variant="outline"
+            size="sm"
+            mono
+            className="nums border-punch-red/40 bg-app-panel text-punch-red"
+          >
+            v{plan.version}
+          </Badge>
         }
       >
         <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
@@ -62,20 +57,18 @@ function OpeningTurn({ plan, author }: { plan: TestPlan; author: string }) {
 }
 
 /**
- * Reviewing a plan is answering it, so the exchange that produced it and the
- * box you reply in are the same place — the last thing you read before deciding.
+ * Asking for a change is one of the three things you can do with a draft, so it
+ * behaves like the other two: it happens where you are reading. The panel slides
+ * over the plan instead of sending you off to find a text box.
+ *
+ * The exchange scrolls, and the box you answer in is pinned underneath it —
+ * because your answer is the next turn, not a separate tool.
  */
-export function PlanConversation({
-  plan,
-  detail,
-  diffHrefFor,
-  className,
-}: {
-  plan: TestPlan;
-  detail: TestPlanDetail | undefined;
-  diffHrefFor: (version: number) => string;
-  className?: string;
-}) {
+export function PlanConversation({ id, closeHref }: { id: string; closeHref: string }) {
+  const plan = allPlans.find((p) => p.publicId === id);
+  if (!plan) return null;
+
+  const detail = planDetailFor(plan.publicId);
   const revisions = detail?.revisions ?? [];
   /* An archived plan is kept for the record, so there is nothing to ask for. */
   const canAsk = plan.status !== 'archived';
@@ -85,18 +78,29 @@ export function PlanConversation({
       ? 2
       : 1;
 
+  /* Comparing two versions side by side needs the width, so that stays a page. */
+  const diffHrefFor = (version: number) => {
+    const diff = `/dashboard/test-plans/${plan.publicId}?tab=diff`;
+    return version > 1 ? `${diff}&v=${version}` : diff;
+  };
+
   return (
-    <Panel
-      id="ask"
-      className={cn('scroll-mt-20', className)}
-      title="How this plan got here"
-      subtitle="What was asked for, what came back, and what to change next"
-      meta={
-        <span className="nums shrink-0 font-mono text-[11.5px] text-ink-subtle">
-          {turns} turn{turns === 1 ? '' : 's'}
-        </span>
+    <Drawer
+      id="plan-conversation"
+      closeHref={closeHref}
+      label="plan conversation"
+      eyebrow={`Conversation · ${turns} turn${turns === 1 ? '' : 's'}`}
+      title={plan.name}
+      footer={
+        canAsk ? (
+          <RefineComposer nextVersion={plan.version + 1} />
+        ) : (
+          <p className="text-[12px] leading-relaxed text-ink-subtle">
+            This plan is archived. It is kept for the record and never redrafted — copy it into a
+            new plan if you want to take it further.
+          </p>
+        )
       }
-      bodyClassName="p-0"
     >
       {revisions.length > 0 ? (
         <RevisionThread
@@ -109,17 +113,6 @@ export function PlanConversation({
       ) : (
         <OpeningTurn plan={plan} author={user.name} />
       )}
-
-      {canAsk ? (
-        <div className="border-t border-rule">
-          <RefineComposer nextVersion={plan.version + 1} />
-        </div>
-      ) : (
-        <p className="border-t border-rule px-4 py-3.5 text-[12.5px] leading-relaxed text-ink-subtle">
-          This plan is archived. It is kept for the record and never redrafted — copy it into a new
-          plan if you want to take it further.
-        </p>
-      )}
-    </Panel>
+    </Drawer>
   );
 }

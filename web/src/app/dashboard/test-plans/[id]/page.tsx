@@ -19,7 +19,7 @@ import { allPlans, currentProject } from '@/lib/mock/data';
 import { planDetailFor } from '@/lib/mock/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runsForPlan } from '@/lib/runs';
-import { parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
+import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
 const TABS = ['steps', 'diff', 'raw'] as const;
@@ -48,10 +48,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 function SettledBar({
   plan,
   cliConnected,
+  askHref,
   runHref,
 }: {
   plan: TestPlan;
   cliConnected: boolean;
+  /** Opens the conversation panel over this page. */
+  askHref: string;
   /** Where the last-run readout goes — a preview over this page, when there is a run. */
   runHref?: string;
 }) {
@@ -86,7 +89,8 @@ function SettledBar({
         </Button>
 
         <Link
-          href={`/dashboard/test-plans/${plan.publicId}#ask`}
+          href={askHref}
+          scroll={false}
           title="Say what should change, and read the new version"
           className={buttonVariants({ variant: 'secondary', size: 'sm' })}
         >
@@ -155,6 +159,7 @@ export default async function PlanDetailPage({
 
   /* One drawer at a time: a preview opening here parks the step inspector. */
   const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
+  const askHref = withOverlay(base, query, askToken(plan.publicId));
   const newestRun = runsForPlan(plan.publicId)[0];
   const runPreviewHref = newestRun
     ? withOverlay(base, query, runToken(newestRun.publicId))
@@ -245,10 +250,15 @@ export default async function PlanDetailPage({
               <DecisionBar
                 planId={plan.publicId}
                 cliConnected={cliConnected}
-                refineHref={`${base}#ask`}
+                refineHref={askHref}
               />
             ) : (
-              <SettledBar plan={plan} cliConnected={cliConnected} runHref={runPreviewHref} />
+              <SettledBar
+                plan={plan}
+                cliConnected={cliConnected}
+                askHref={askHref}
+                runHref={runPreviewHref}
+              />
             )}
           </div>
         </header>
@@ -283,7 +293,6 @@ export default async function PlanDetailPage({
               detail={detail}
               selectedStepId={step?.id}
               stepHrefFor={stepHrefFor}
-              diffHrefFor={diffHrefFor}
             />
           )}
 

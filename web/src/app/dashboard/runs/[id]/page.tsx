@@ -14,7 +14,7 @@ import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { brokeAt, runRowFor, runsForPlan } from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
-import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
+import { askToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 const BADGE = {
   passed: 'pass',
@@ -51,14 +51,13 @@ export default async function RunDetailPage({
 
   const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
-  /* Leaves this report, because the conversation lives with the plan. */
-  const refineHref = `${planHref}#ask`;
+  /* The conversation is about the plan, but it opens here — the evidence for
+     what you want changed is on this page. */
+  const refineHref = withOverlay(path, query, askToken(run.planPublicId));
   const siblings = runsForPlan(run.planPublicId).filter((r) => r.publicId !== run.publicId);
 
   /* Checking the plan or a sibling run should not cost you this report. */
-  const planPreviewHref = plan
-    ? withOverlay(path, query, planToken(plan.publicId))
-    : planHref;
+  const planPreviewHref = plan ? withOverlay(path, query, planToken(plan.publicId)) : planHref;
   const openRun = (publicId: string) => withOverlay(path, query, runToken(publicId));
 
   return (
@@ -174,8 +173,8 @@ export default async function RunDetailPage({
             bodyClassName="p-4"
           >
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              This run is older than the reports kept on hand, so only its shape survives: {run.steps}{' '}
-              steps, {run.passed} of them green.{' '}
+              This run is older than the reports kept on hand, so only its shape survives:{' '}
+              {run.steps} steps, {run.passed} of them green.{' '}
               {broke
                 ? 'Which step broke is recorded, but not what came back.'
                 : 'Nothing failed in it.'}
@@ -228,6 +227,7 @@ export default async function RunDetailPage({
 
             <Link
               href={refineHref}
+              scroll={false}
               title="Say what should change about the plan behind this run"
               className={buttonVariants({ variant: 'ghost', size: 'sm' })}
             >
