@@ -153,10 +153,10 @@ func Ctor(value []Token) (Call, bool) {
 	return calls[0], true
 }
 
-// statement takes the tokens of one value. It ends at a semicolon, at a bracket
-// it does not own, or at the first token on a later line outside brackets —
-// which is what stands in for a terminator in two languages that mostly do
-// without one.
+// statement takes the tokens of one value. It ends at a semicolon, at a comma
+// or bracket it does not own, or at the first token on a later line outside
+// brackets — which is what stands in for a terminator in two languages that
+// mostly do without one.
 func statement(toks []Token, from int) []Token {
 	if from >= len(toks) {
 		return nil
@@ -177,7 +177,7 @@ func statement(toks []Token, from int) []Token {
 					return toks[from:i]
 				}
 				depth--
-			case ";":
+			case ";", ",":
 				if depth == 0 {
 					return toks[from:i]
 				}

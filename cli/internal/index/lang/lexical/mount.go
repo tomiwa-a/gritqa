@@ -2,6 +2,7 @@ package lexical
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/gritqa/cli/internal/index/routes"
 )
@@ -40,12 +41,15 @@ type Owner struct {
 	Unresolved bool // the declared prefix could not be read
 }
 
-// Mount attaches a child owner into a parent at a prefix.
+// Mount attaches a child owner into a parent at a prefix. Spec is the module
+// the child was imported from, when it came from another file; Link turns it
+// into the child's path once the whole file list is known.
 type Mount struct {
 	Parent     Ref
 	Child      Ref
-	Prefix     string
+	Spec       string
 	Line       int
+	Prefix     string
 	Middleware []string
 	Unresolved bool // the prefix could not be read
 }
@@ -63,6 +67,31 @@ func (g *Graph) Empty() bool    { return len(g.Owners) == 0 }
 func (g *Graph) Merge(o *Graph) {
 	g.Owners = append(g.Owners, o.Owners...)
 	g.Mounts = append(g.Mounts, o.Mounts...)
+}
+
+// Link resolves the module specifiers mounts were declared with. A mount whose
+// module is not in the index is dropped: the routes under it are then reported
+// as unmounted, which is the honest answer, rather than given a guessed prefix.
+func (g *Graph) Link(im *Imports) {
+	kept := g.Mounts[:0]
+	for _, m := range g.Mounts {
+		if m.Spec != "" {
+			resolved, ok := resolve(im, m)
+			if !ok {
+				continue
+			}
+			m.Child.File = resolved
+		}
+		kept = append(kept, m)
+	}
+	g.Mounts = kept
+}
+
+func resolve(im *Imports, m Mount) (string, bool) {
+	if strings.HasSuffix(m.Parent.File, ".py") {
+		return im.Python(m.Parent.File, m.Spec)
+	}
+	return im.JS(m.Parent.File, m.Spec)
 }
 
 // Find returns the owner a ref points at. A ref with no name asks for the file's
