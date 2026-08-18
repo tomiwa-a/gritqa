@@ -5,12 +5,12 @@ import { cn } from '@/lib/cn';
 import type { ReactNode } from 'react';
 
 /**
- * Centered, for making something. Wider than a drawer because the things you make
- * here have lists to pick from. Becomes a bottom sheet on a phone.
+ * A square box, sized like the rest of the app: a little wider than the drawer,
+ * never a takeover. The height is fixed rather than grown from the content, so
+ * stepping through a wizard does not make the box jump around underneath you —
+ * long content scrolls in the body instead.
  *
- * The panel is a flex child, never positioned. Its width and height are one
- * `min()` each rather than a small-screen rule a breakpoint has to undo, so the
- * worst a missing variant can cost is a square corner — not the whole card.
+ * Anything that does not fit belongs on a page, not in here.
  */
 export function Modal({
   id,
@@ -18,8 +18,7 @@ export function Modal({
   label,
   eyebrow,
   title,
-  subtitle,
-  rail,
+  progress,
   footer,
   children,
 }: {
@@ -28,9 +27,8 @@ export function Modal({
   label: string;
   eyebrow: string;
   title: string;
-  subtitle?: string;
-  /** Optional step indicator under the header. */
-  rail?: ReactNode;
+  /** Step counter for a wizard, drawn as a hairline. Bounded on purpose. */
+  progress?: { current: number; total: number };
   footer?: ReactNode;
   children: ReactNode;
 }) {
@@ -45,44 +43,51 @@ export function Modal({
         aria-label={label}
         tabIndex={-1}
         className={cn(
-          'animate-sheet relative flex max-h-[min(46rem,88dvh)] w-full max-w-[44rem] flex-col',
+          'animate-sheet relative flex h-[min(30rem,88dvh)] w-full max-w-[30rem] flex-col',
           'overflow-hidden rounded-t-xl border border-rule bg-app-panel shadow-menu outline-none',
           'sm:animate-modal sm:rounded-xl',
         )}
       >
-        <header className="flex shrink-0 items-start gap-3 border-b border-rule-soft px-4 py-3.5 sm:px-5">
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[9.5px] tracking-[0.14em] text-ink-subtle uppercase">
-              {eyebrow}
-            </p>
-            <h2 className="mt-1 text-[15px] leading-tight font-semibold tracking-[-0.01em] text-ink">
-              {title}
-            </h2>
-            {subtitle && (
-              <p className="mt-1 text-[12.5px] leading-relaxed text-ink-muted">{subtitle}</p>
-            )}
+        <header className="shrink-0 border-b border-rule-soft px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-[9.5px] tracking-[0.14em] text-ink-subtle uppercase">
+                {eyebrow}
+              </p>
+              <h2 className="mt-1 text-[15px] leading-tight font-semibold tracking-[-0.01em] text-ink">
+                {title}
+              </h2>
+            </div>
+
+            <Link
+              href={closeHref}
+              scroll={false}
+              aria-label={`Close ${label}`}
+              className="-mt-0.5 -mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
+            >
+              <Icon name="close" size={14} />
+            </Link>
           </div>
 
-          <Link
-            href={closeHref}
-            scroll={false}
-            aria-label={`Close ${label}`}
-            className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors duration-150 hover:bg-app-hover hover:text-ink"
-          >
-            <Icon name="close" size={14} />
-          </Link>
+          {progress && (
+            <div aria-hidden="true" className="mt-2.5 flex gap-1">
+              {Array.from({ length: progress.total }, (_, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'h-[3px] flex-1 rounded-full',
+                    i < progress.current ? 'bg-ink' : 'bg-rule',
+                  )}
+                />
+              ))}
+            </div>
+          )}
         </header>
-
-        {rail && (
-          <div className="shrink-0 border-b border-rule-soft bg-app px-4 py-3 sm:px-5">{rail}</div>
-        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 
         {footer && (
-          <div className="shrink-0 border-t border-rule bg-app-panel px-4 py-3 sm:px-5">
-            {footer}
-          </div>
+          <div className="shrink-0 border-t border-rule bg-app-panel px-4 py-2.5">{footer}</div>
         )}
       </div>
     </div>

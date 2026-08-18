@@ -109,12 +109,13 @@ export function EndpointPicker({
                       <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">
                         {e.path}
                       </span>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        <span className={cn('h-2 w-2 rounded-full', COVERAGE_FILL[e.state])} />
-                        <span className="hidden text-[11.5px] text-ink-subtle sm:inline">
-                          {COVERAGE_LABEL[e.state]}
-                        </span>
-                      </span>
+                      {/* The box is 30rem wide, so coverage is a dot with a
+                          name on it rather than a column of repeated words. */}
+                      <span
+                        className={cn('h-2 w-2 shrink-0 rounded-full', COVERAGE_FILL[e.state])}
+                        title={COVERAGE_LABEL[e.state]}
+                      />
+                      <span className="sr-only">{COVERAGE_LABEL[e.state]}</span>
                     </button>
                   </li>
                 );
