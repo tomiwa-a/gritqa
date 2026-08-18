@@ -37,6 +37,7 @@ func Extract(path string, src []byte) (*lexical.Graph, []lang.ID) {
 	f.readOwners()
 	f.readDecorators()
 	f.readCalls()
+	f.publish()
 
 	for _, o := range f.declared {
 		f.graph.Add(o)
@@ -127,6 +128,28 @@ func (f *file) str(v []lexical.Token) (string, bool) {
 		}
 	}
 	return "/" + lexical.Describe(v), false
+}
+
+// publish hands this module's path constants to the graph, since a prefix is
+// often written in one module and used in another.
+func (f *file) publish() {
+	for name, v := range f.consts() {
+		if strings.HasPrefix(v, "/") {
+			f.graph.Bind(lexical.Const{Name: name, Value: convert(v)})
+		}
+	}
+}
+
+// prefix reads a value that should be a router prefix. A name this module does
+// not bind is handed on as a reference: the constant may live elsewhere.
+func (f *file) prefix(v []lexical.Token) (path, ref string, unresolved bool) {
+	if p, known := f.str(v); known {
+		return p, "", false
+	}
+	if n := lexical.Name(v); n != "" {
+		return "", n, false
+	}
+	return "", "", true
 }
 
 // consts are the module's string-valued bindings, which is where a prefix

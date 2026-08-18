@@ -106,15 +106,19 @@ func (f *file) use(c lexical.Call, s *scope) {
 		return
 	}
 
-	prefix, known := "", true
+	prefix, ref, unknown := "", "", false
 	if at > 0 {
-		p, ok, isRoute := f.pathOf(c.Arg(0))
-		if !isRoute {
-			return
+		if _, literal := lexical.Str(c.Arg(0)); literal {
+			p, _, isRoute := f.pathOf(c.Arg(0))
+			if !isRoute {
+				return
+			}
+			prefix = p
+		} else {
+			prefix, ref, unknown = f.prefix(c.Arg(0))
 		}
-		prefix, known = p, ok
 	}
-	f.attach(s, child, spec, prefix, !known, c.Line, lexical.Names(c.Args[:at]))
+	f.attach(s, child, spec, prefix, ref, unknown, c.Line, lexical.Names(c.Args[:at]))
 }
 
 // register is Fastify's mount. The prefix lives in an options object, and an
@@ -125,15 +129,15 @@ func (f *file) register(c lexical.Call, s *scope) {
 		return
 	}
 
-	prefix, known := "", true
+	prefix, ref, unknown := "", "", false
 	if len(c.Args) > 1 {
 		if v, found := lexical.Kwarg(c.Args[1:], "prefix"); found {
-			prefix, known = f.str(v)
+			prefix, ref, unknown = f.prefix(v)
 		} else if !isObject(c.Arg(1)) {
-			prefix, known = "/"+lexical.Describe(c.Arg(1)), false
+			prefix, ref, unknown = f.prefix(c.Arg(1))
 		}
 	}
-	f.attach(s, child, spec, prefix, !known, c.Line, nil)
+	f.attach(s, child, spec, prefix, ref, unknown, c.Line, nil)
 }
 
 // routeObject is Fastify's other spelling: { method, url, handler }. A method it
@@ -196,7 +200,7 @@ func (f *file) str(v []lexical.Token) (string, bool) {
 	return "/" + lexical.Describe(v), false
 }
 
-func (f *file) attach(s *scope, child lexical.Ref, spec, prefix string,
+func (f *file) attach(s *scope, child lexical.Ref, spec, prefix, ref string,
 	unknown bool, line int, middleware []string) {
 
 	f.graph.Attach(lexical.Mount{
@@ -204,18 +208,50 @@ func (f *file) attach(s *scope, child lexical.Ref, spec, prefix string,
 		Child:      child,
 		Spec:       spec,
 		Prefix:     routes.Join(s.prefix, prefix),
+		PrefixRef:  ref,
 		Line:       line,
 		Middleware: middleware,
 		Unresolved: unknown || s.unknown,
 	})
 }
 
+// publish hands this file's path constants to the graph, since a prefix is often
+// written in one module and used in another.
+func (f *file) publish() {
+	for name, v := range f.consts() {
+		if strings.HasPrefix(v, "/") {
+			f.graph.Bind(lexical.Const{Name: name, Value: v})
+		}
+	}
+}
+
+// prefix reads a value that should be a mount prefix. A name this file does not
+// bind is handed on as a reference: the constant may live elsewhere.
+func (f *file) prefix(v []lexical.Token) (path, ref string, unresolved bool) {
+	if p, known := f.str(v); known {
+		return p, "", false
+	}
+	if n := lexical.Name(v); n != "" {
+		return "", n, false
+	}
+	return "", "", true
+}
+
 // mountArg finds which argument names a router, and so whether this call mounts
-// one at all.
+// one at all. Only argument 0 can be the prefix, so a later argument wins it: a
+// prefix written as an imported constant otherwise reads as the router itself.
 func (f *file) mountArg(c lexical.Call) (int, lexical.Ref, string) {
 	for i, arg := range c.Args {
+		if i == 0 && len(c.Args) > 1 {
+			continue
+		}
 		if ref, spec, ok := f.target(arg); ok {
 			return i, ref, spec
+		}
+	}
+	if len(c.Args) > 1 {
+		if ref, spec, ok := f.target(c.Arg(0)); ok {
+			return 0, ref, spec
 		}
 	}
 	return -1, lexical.Ref{}, ""

@@ -433,3 +433,109 @@ end
 		t.Errorf("source = %q, want the model", snap.Source)
 	}
 }
+
+// The prefix a project actually mounts at is often a constant in another module.
+// FastAPI's prefix=settings.API_V1_STR is the shape the official template ships,
+// and reading it wrong takes the whole tree below it down.
+func TestReadResolvesAPrefixDeclaredInAnotherModule(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"requirements.txt": "fastapi==0.111.0\n",
+		"package.json":     `{"dependencies": {"express": "^4.19.0"}}`,
+
+		"app/core/config.py": `class Settings(BaseSettings):
+    API_V1_STR: str = "/api/v1"
+
+settings = Settings()
+`,
+		"app/main.py": `from fastapi import FastAPI
+from .api import router
+from .core.config import settings
+
+app = FastAPI()
+app.include_router(router.api, prefix=settings.API_V1_STR)
+`,
+		"app/api/router.py": `from fastapi import APIRouter
+
+api = APIRouter(prefix="/orders")
+
+@api.get("")
+def list_orders():
+    return []
+`,
+
+		"src/paths.js": `const MOUNT = '/v2';
+
+module.exports = { MOUNT };
+`,
+		"src/app.js": `const express = require('express');
+const { MOUNT } = require('./paths');
+const users = require('./users');
+
+const app = express();
+app.use(MOUNT, users);
+`,
+		"src/users.js": `const { Router } = require('express');
+
+const router = Router();
+router.get('/users', list);
+
+module.exports = router;
+`,
+	})
+
+	snap, err := Read(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"app/api/router.py GET /api/v1/orders",
+		"src/users.js GET /v2/users",
+	}
+	if got := sigs(snap); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got:\n  %s\nwant:\n  %s",
+			strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+	if n := snap.UnresolvedCount(); n != 0 {
+		t.Errorf("unresolved = %v", unresolved(snap))
+	}
+}
+
+// Two modules disagreeing about a name is not a prefix anyone can trust, so the
+// routes under it are reported rather than given one of the two.
+func TestReadWillNotGuessAPrefixTwoModulesDisagreeOn(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"requirements.txt": "fastapi==0.111.0\n",
+		"a.py":             "PREFIX = \"/one\"\n",
+		"b.py":             "PREFIX = \"/two\"\n",
+
+		"main.py": `from fastapi import FastAPI
+from .routers import orders
+from .a import PREFIX
+
+app = FastAPI()
+app.include_router(orders.router, prefix=PREFIX)
+`,
+		"routers/orders.py": `from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/orders")
+def list_orders():
+    return []
+`,
+	})
+
+	snap, err := Read(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := sigs(snap); len(got) != 0 {
+		t.Errorf("got %v, want nothing resolved", got)
+	}
+	want := "routers/orders.py GET /<PREFIX>/orders"
+	if got := unresolved(snap); strings.Join(got, "\n") != want {
+		t.Errorf("unresolved = %v, want %q", got, want)
+	}
+}

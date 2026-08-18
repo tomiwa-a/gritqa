@@ -38,7 +38,8 @@ type Owner struct {
 	Exported   bool // this is what the file hands to whoever mounts it
 	Middleware []string
 	Decls      []Decl
-	Unresolved bool // the declared prefix could not be read
+	Unresolved bool   // the declared prefix could not be read
+	PrefixRef  string // a name the prefix was written as, resolved by Link
 }
 
 // Mount attaches a child owner into a parent at a prefix. Spec is the module
@@ -50,24 +51,35 @@ type Mount struct {
 	Spec       string
 	Line       int
 	Prefix     string
+	PrefixRef  string // a name the prefix was written as, resolved by Link
 	Middleware []string
 	Unresolved bool // the prefix could not be read
 	Override   bool // this prefix replaces the child's own, as Flask's register_blueprint does
+}
+
+// Const is a path a file binds to a name. A prefix is often written in one module
+// and used in another, so the binding only pays off once every file is in.
+type Const struct {
+	Name  string
+	Value string
 }
 
 // Graph is a project's owners and mounts, gathered file by file.
 type Graph struct {
 	Owners []*Owner
 	Mounts []Mount
+	Consts []Const
 }
 
 func (g *Graph) Add(o *Owner)   { g.Owners = append(g.Owners, o) }
 func (g *Graph) Attach(m Mount) { g.Mounts = append(g.Mounts, m) }
+func (g *Graph) Bind(c Const)   { g.Consts = append(g.Consts, c) }
 func (g *Graph) Empty() bool    { return len(g.Owners) == 0 }
 
 func (g *Graph) Merge(o *Graph) {
 	g.Owners = append(g.Owners, o.Owners...)
 	g.Mounts = append(g.Mounts, o.Mounts...)
+	g.Consts = append(g.Consts, o.Consts...)
 }
 
 // Link resolves the module specifiers mounts were declared with. A mount whose
@@ -86,6 +98,45 @@ func (g *Graph) Link(im *Imports) {
 		kept = append(kept, m)
 	}
 	g.Mounts = kept
+	g.fill()
+}
+
+// fill resolves a prefix named in another module — FastAPI's
+// prefix=settings.API_V1_STR is the usual shape. Only a project-unique binding
+// counts: two files disagreeing about a name leaves the routes reported, since a
+// guessed prefix invents endpoints nobody can call.
+func (g *Graph) fill() {
+	known := map[string]string{}
+	for _, c := range g.Consts {
+		if seen, ok := known[c.Name]; ok && seen != c.Value {
+			known[c.Name] = ""
+			continue
+		}
+		known[c.Name] = c.Value
+	}
+
+	for _, o := range g.Owners {
+		o.Prefix, o.Unresolved = fillOne(known, o.Prefix, o.PrefixRef, o.Unresolved)
+	}
+	for i := range g.Mounts {
+		m := &g.Mounts[i]
+		m.Prefix, m.Unresolved = fillOne(known, m.Prefix, m.PrefixRef, m.Unresolved)
+	}
+}
+
+func fillOne(known map[string]string, prefix, ref string, unresolved bool) (string, bool) {
+	if ref == "" {
+		return prefix, unresolved
+	}
+	// A dotted name reaches through an object, so the binding is the last segment.
+	name := ref
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
+	if v := known[name]; v != "" {
+		return routes.Join(prefix, v), unresolved
+	}
+	return routes.Join(prefix, "/<"+ref+">"), true
 }
 
 func resolve(im *Imports, m Mount) (string, bool) {

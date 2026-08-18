@@ -134,13 +134,40 @@ func Assigns(toks []Token) []Assign {
 		if i+1 < len(toks) && (isPunct(toks[i+1], "=") || isPunct(toks[i+1], ">")) {
 			continue
 		}
+		name := bound(toks, i)
 		out = append(out, Assign{
-			Name:  toks[i-1].Text,
-			Line:  toks[i-1].Line,
+			Name:  name.Text,
+			Line:  name.Line,
 			Value: Statement(toks, i+1),
 		})
 	}
 	return out
+}
+
+// bound is the name an "=" binds. A type annotation sits between the two, so
+// API_V1_STR: str = "/api/v1" and const r: Router = Router() bind the name
+// before the colon rather than the type after it.
+func bound(toks []Token, eq int) Token {
+	j := eq - 1
+	for j > 0 && annotation(toks[j]) {
+		j--
+	}
+	if isPunct(toks[j], ":") && j > 0 && toks[j-1].Kind == Ident &&
+		!(j > 1 && toks[j-2].Kind == Ident && toks[j-2].Text == "case") {
+		return toks[j-1]
+	}
+	return toks[eq-1]
+}
+
+func annotation(t Token) bool {
+	if t.Kind == Ident {
+		return true
+	}
+	switch t.Text {
+	case ".", "|", "<", ">", "[", "]", "?":
+		return t.Kind == Punct
+	}
+	return false
 }
 
 // Ctor reads the call a value is built from, which is how a router announces

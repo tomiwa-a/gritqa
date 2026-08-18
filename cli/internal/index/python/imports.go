@@ -219,8 +219,8 @@ func (f *file) readOwners() {
 		case rootOwner:
 			f.add(&lexical.Owner{Ref: f.ref(a.Name), Root: true, Middleware: depends(c.Args)})
 		case routerOwner:
-			prefix, unresolved := f.prefixOf(c)
-			f.add(&lexical.Owner{Ref: f.ref(a.Name), Prefix: prefix,
+			prefix, ref, unresolved := f.prefixOf(c)
+			f.add(&lexical.Owner{Ref: f.ref(a.Name), Prefix: prefix, PrefixRef: ref,
 				Middleware: depends(c.Args), Unresolved: unresolved})
 		case viewsetRouter:
 			f.drf[a.Name] = true
@@ -232,14 +232,13 @@ func (f *file) readOwners() {
 
 // prefixOf reads a router's own prefix. An unreadable one is not no prefix: it
 // poisons every path below it, which is what Unresolved carries.
-func (f *file) prefixOf(c lexical.Call) (string, bool) {
+func (f *file) prefixOf(c lexical.Call) (path, ref string, unresolved bool) {
 	for _, key := range []string{"prefix", "url_prefix"} {
 		if v, ok := lexical.Kwarg(c.Args, key); ok {
-			p, known := f.str(v)
-			return p, !known
+			return f.prefix(v)
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // depends reads FastAPI's dependencies=[Depends(x)], which is where an auth

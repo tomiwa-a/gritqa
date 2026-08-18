@@ -45,6 +45,7 @@ func Extract(path string, src []byte, project []lang.ID) (*lexical.Graph, []lang
 	f.readControllers()
 	f.readCalls()
 	f.readExports()
+	f.publish()
 
 	for _, o := range f.declared {
 		f.graph.Add(o)

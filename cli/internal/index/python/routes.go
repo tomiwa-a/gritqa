@@ -97,15 +97,15 @@ func (f *file) mount(c lexical.Call, o *lexical.Owner, key string, override bool
 		return
 	}
 
-	prefix, known := "", true
+	prefix, ref, unknown := "", "", false
 	v, given := lexical.Kwarg(c.Args, key)
 	if given {
-		prefix, known = f.str(v)
+		prefix, ref, unknown = f.prefix(v)
 	}
 	f.graph.Attach(lexical.Mount{
 		Parent: o.Ref, Child: child, Spec: spec, Line: c.Line,
-		Prefix: prefix, Middleware: depends(c.Args),
-		Unresolved: !known, Override: override && given,
+		Prefix: prefix, PrefixRef: ref, Middleware: depends(c.Args),
+		Unresolved: unknown, Override: override && given,
 	})
 }
 

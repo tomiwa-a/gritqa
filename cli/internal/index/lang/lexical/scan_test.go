@@ -210,3 +210,35 @@ func TestKwargReadsBothSeparators(t *testing.T) {
 		t.Errorf("js prefix = %q (%v)", p, ok)
 	}
 }
+
+// A type annotation sits between the name and the value in both languages, and
+// reading the type as the name loses the router as well as the constant.
+func TestAssignsBindTheNameNotTheType(t *testing.T) {
+	got := map[string]string{}
+	for _, a := range Assigns(Scan(Python, []byte(`
+API_V1_STR: str = "/api/v1"
+TAGS: list[str] = []
+timeout: Optional[int] = 30
+`))) {
+		s, _ := Str(a.Value)
+		got[a.Name] = s
+	}
+	if got["API_V1_STR"] != "/api/v1" {
+		t.Errorf("python annotated binding = %v", got)
+	}
+	if _, ok := got["str"]; ok {
+		t.Error("str is the type, not the name")
+	}
+
+	var names []string
+	for _, a := range Assigns(Scan(JS, []byte(`
+const router: Router = express.Router()
+const prefix: string = '/v1'
+switch (k) { case FALLBACK: prefix = '/v2' }
+`))) {
+		names = append(names, a.Name)
+	}
+	if strings.Join(names, ",") != "router,prefix,prefix" {
+		t.Errorf("got %v", names)
+	}
+}
