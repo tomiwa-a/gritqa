@@ -114,19 +114,26 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	return &reading{snap: snap, delta: delta, first: len(before) == 0}, nil
 }
 
-// extractor is the AI source's client: the user's own key when they have one,
-// otherwise the server that holds it for them.
+// extractor is the AI source's client: the user's own credentials when they
+// have any, otherwise the server that holds them.
 func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extractor {
-	if os.Getenv(model.KeyEnv) != "" {
-		m := cfg.Run.ModelOpts()
-		c, err := model.New(m.Endpoint, m.Name)
-		if err == nil {
-			return &source.Local{Model: c}
+	m := cfg.Run.ModelOpts()
+	c, err := model.New(m.Endpoint, m.Name, credentials(m))
+	switch {
+	case err == nil:
+		if m.TokenCommand != "" && os.Getenv(model.KeyEnv) != "" {
+			w.Write(term.Line{
+				Kind: term.Info,
+				Text: "using run.model.token_command; " + model.KeyEnv + " is ignored",
+			})
 		}
-		if errors.Is(err, model.ErrNoModel) {
-			err = fmt.Errorf("reading with the model needs a model name — add "+
-				"run.model.name to your config, or export %s", model.ModelEnv)
-		}
+		return &source.Local{Model: c}
+	case errors.Is(err, model.ErrNoModel):
+		w.Write(term.Line{Kind: term.Info, Text: "endpoints.ai is on, but reading with the " +
+			"model needs a model name — add run.model.name to your config, or export " +
+			model.ModelEnv})
+		return nil
+	case !errors.Is(err, model.ErrNoKey):
 		w.Write(term.Line{Kind: term.Info, Text: "endpoints.ai is on, but " + err.Error()})
 		return nil
 	}
@@ -139,8 +146,8 @@ func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extracto
 	if err != nil {
 		w.Write(term.Line{
 			Kind: term.Info,
-			Text: "endpoints.ai is on, but reading with the model needs either " +
-				model.KeyEnv + " in your environment or a login first",
+			Text: "endpoints.ai is on, but reading with the model needs " +
+				model.KeyEnv + ", a run.model.token_command, or a login first",
 		})
 		return nil
 	}
@@ -219,4 +226,9 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// credentials maps run.model onto the transport's view of where a bearer lives.
+func credentials(m config.Model) model.Credentials {
+	return model.Credentials{Command: m.TokenCommand, TTL: m.TTL()}
 }

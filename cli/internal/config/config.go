@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -66,10 +67,26 @@ type Run struct {
 
 // Model is the endpoint drafting talks to. It must speak the OpenAI chat
 // completions API — Anthropic's own /v1/messages is not it, so reaching Claude
-// means a compatibility proxy. The key never lives here: GRITQA_API_KEY holds it.
+// means a compatibility proxy. No key ever lives here: GRITQA_API_KEY holds a
+// static one, and TokenCommand mints a short-lived one.
 type Model struct {
 	Endpoint string `yaml:"endpoint"`
 	Name     string `yaml:"name"`
+	// TokenCommand prints a bearer on stdout. Vertex AI and anything else that
+	// mints hour-long tokens needs this: a key exported once is stale by the
+	// second run. It wins over GRITQA_API_KEY.
+	TokenCommand string `yaml:"token_command,omitempty"`
+	// TokenTTL is how long a minted token is reused, "45m" when unset. An
+	// expired one is recovered from regardless, so this only saves calls.
+	TokenTTL string `yaml:"token_ttl,omitempty"`
+}
+
+func (m Model) TTL() time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(m.TokenTTL))
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }
 
 const defaultModelEndpoint = "https://api.openai.com/v1"

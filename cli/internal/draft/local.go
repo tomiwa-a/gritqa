@@ -18,14 +18,15 @@ type Local struct {
 	*model.Client
 }
 
-// NewLocal reads the key from the environment. With no key there is no
-// drafting, exactly as the settings page promises.
-func NewLocal(endpoint, name string) (*Local, error) {
-	c, err := model.New(endpoint, name)
+// NewLocal drafts with whatever credentials the project has. With none there is
+// no drafting, exactly as the settings page promises.
+func NewLocal(endpoint, name string, creds model.Credentials) (*Local, error) {
+	c, err := model.New(endpoint, name, creds)
 	switch {
 	case errors.Is(err, model.ErrNoKey):
-		return nil, fmt.Errorf("drafting needs a model key — export %s. "+
-			"Without one you can still write plans by hand and GritQA will run them", model.KeyEnv)
+		return nil, fmt.Errorf("drafting needs a model key — export %s, or set "+
+			"run.model.token_command. Without one you can still write plans by hand "+
+			"and GritQA will run them", model.KeyEnv)
 	case errors.Is(err, model.ErrNoModel):
 		return nil, fmt.Errorf("drafting needs a model name — add run.model.name to your "+
 			"config, or export %s", model.ModelEnv)

@@ -45,7 +45,7 @@ func fakeAPI(t *testing.T, reply ...string) (*Local, func() []chatBody) {
 	t.Cleanup(srv.Close)
 
 	l := &Local{Client: &model.Client{
-		Endpoint: srv.URL, Model: "gpt-4.1", Key: "sk-test", HTTP: srv.Client(),
+		Endpoint: srv.URL, Model: "gpt-4.1", Auth: model.Static("sk-test"), HTTP: srv.Client(),
 	}}
 	return l, func() []chatBody {
 		mu.Lock()
@@ -109,7 +109,7 @@ func TestDraftGivesUpRatherThanGuess(t *testing.T) {
 func TestNewLocalWithoutAKey(t *testing.T) {
 	t.Setenv(model.KeyEnv, "")
 
-	_, err := NewLocal("https://api.openai.com/v1", "gpt-4.1")
+	_, err := NewLocal("https://api.openai.com/v1", "gpt-4.1", model.Credentials{})
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -124,7 +124,7 @@ func TestNewLocalNeedsAModelName(t *testing.T) {
 	t.Setenv(model.KeyEnv, "sk-test")
 	t.Setenv(model.ModelEnv, "")
 
-	_, err := NewLocal("https://api.openai.com/v1", "")
+	_, err := NewLocal("https://api.openai.com/v1", "", model.Credentials{})
 	if err == nil || !strings.Contains(err.Error(), "run.model.name") {
 		t.Fatalf("err = %v", err)
 	}

@@ -37,7 +37,7 @@ func localAPI(t *testing.T, reply string) (*Local, func() string) {
 	t.Cleanup(srv.Close)
 
 	l := &Local{Model: &model.Client{
-		Endpoint: srv.URL, Model: "m", Key: "sk-test", HTTP: srv.Client(),
+		Endpoint: srv.URL, Model: "m", Auth: model.Static("sk-test"), HTTP: srv.Client(),
 	}}
 	return l, func() string { return sent }
 }

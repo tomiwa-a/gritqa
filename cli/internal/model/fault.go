@@ -18,7 +18,7 @@ var ErrRefused = errors.New("refused the key")
 // fault turns a bad status into something the user can act on. The likely
 // mistake is an sk-ant- key against api.anthropic.com, which speaks
 // /v1/messages and 404s the only call GritQA makes.
-func fault(url, endpoint string, code int, body []byte) error {
+func fault(url, endpoint, source string, code int, body []byte) error {
 	detail := apiError(body)
 
 	switch {
@@ -26,19 +26,19 @@ func fault(url, endpoint string, code int, body []byte) error {
 		return fmt.Errorf("%s has no chat completions endpoint — GritQA speaks the "+
 			"OpenAI chat API, so an Anthropic base URL needs a compatibility proxy in front", url)
 	case code == http.StatusUnauthorized, code == http.StatusForbidden:
-		return refused(endpoint, detail)
+		return refused(endpoint, source, detail)
 	case code == http.StatusBadRequest && strings.Contains(string(body), "response_format"):
 		return errJSONMode
 	// Google answers a bad key with 400, not 401, so without this a wrong key
 	// costs one call per file instead of one call in total.
 	case code == http.StatusBadRequest && badKey(detail):
-		return refused(endpoint, detail)
+		return refused(endpoint, source, detail)
 	}
 	return fmt.Errorf("%s answered %d%s", url, code, detail)
 }
 
-func refused(endpoint, detail string) error {
-	return fmt.Errorf("%s %w in %s%s", endpoint, ErrRefused, KeyEnv, detail)
+func refused(endpoint, source, detail string) error {
+	return fmt.Errorf("%s %w from %s%s", endpoint, ErrRefused, source, detail)
 }
 
 // badKey matches only phrases that can mean nothing else: a 400 read as a

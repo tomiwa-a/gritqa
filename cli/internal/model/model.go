@@ -1,5 +1,5 @@
 // Package model is the OpenAI-compatible transport. Drafting, endpoint
-// extraction and repair all reach the same endpoint with the same key.
+// extraction and repair all reach the same endpoint the same way.
 package model
 
 import (
@@ -26,8 +26,16 @@ var (
 type Client struct {
 	Endpoint string
 	Model    string
-	Key      string
+	Auth     Token
 	HTTP     *http.Client
+}
+
+// Credentials is where the bearer comes from. Command wins over the
+// environment: an endpoint that mints hour-long tokens makes an exported one
+// the value most likely to have expired.
+type Credentials struct {
+	Command string
+	TTL     time.Duration
 }
 
 type Message struct {
@@ -35,12 +43,11 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// New reads the key from the environment, and the model name from there too when
-// the config names none.
-func New(endpoint, name string) (*Client, error) {
-	key := strings.TrimSpace(os.Getenv(KeyEnv))
-	if key == "" {
-		return nil, ErrNoKey
+// New reads the model name from the environment when the config names none.
+func New(endpoint, name string, creds Credentials) (*Client, error) {
+	auth, err := creds.token()
+	if err != nil {
+		return nil, err
 	}
 	if name == "" {
 		name = strings.TrimSpace(os.Getenv(ModelEnv))
@@ -48,7 +55,17 @@ func New(endpoint, name string) (*Client, error) {
 	if name == "" {
 		return nil, ErrNoModel
 	}
-	return &Client{Endpoint: strings.TrimRight(endpoint, "/"), Model: name, Key: key}, nil
+	return &Client{Endpoint: strings.TrimRight(endpoint, "/"), Model: name, Auth: auth}, nil
+}
+
+func (c Credentials) token() (Token, error) {
+	if line := strings.TrimSpace(c.Command); line != "" {
+		return &Command{Line: line, TTL: c.TTL}, nil
+	}
+	if key := strings.TrimSpace(os.Getenv(KeyEnv)); key != "" {
+		return Static(key), nil
+	}
+	return nil, ErrNoKey
 }
 
 func (c *Client) client() *http.Client {

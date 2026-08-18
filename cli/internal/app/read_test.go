@@ -98,3 +98,39 @@ func TestExtractorNeedsAModelName(t *testing.T) {
 		t.Errorf("got %q", out.String())
 	}
 }
+
+// A token command needs no key and no login, and a stale export lying around
+// must not be picked over it silently.
+func TestExtractorPrefersATokenCommand(t *testing.T) {
+	isolate(t)
+	t.Setenv(model.KeyEnv, "sk-exported-an-hour-ago")
+
+	cfg := modelConfig(t)
+	cfg.Run.Model.TokenCommand = "printf minted"
+
+	var out bytes.Buffer
+	got := extractor(term.New(&out), Options{}, cfg)
+
+	if _, ok := got.(*source.Local); !ok {
+		t.Fatalf("got %T, want the local extractor", got)
+	}
+	if !strings.Contains(out.String(), "token_command") {
+		t.Errorf("%q does not say which bearer is in use", out.String())
+	}
+}
+
+func TestATokenCommandAloneIsEnough(t *testing.T) {
+	isolate(t)
+	t.Setenv(model.KeyEnv, "")
+
+	cfg := modelConfig(t)
+	cfg.Run.Model.TokenCommand = "printf minted"
+
+	var out bytes.Buffer
+	if got := extractor(term.New(&out), Options{}, cfg); got == nil {
+		t.Fatalf("got nothing, want the local extractor: %q", out.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("nothing is wrong, so nothing should be said: %q", out.String())
+	}
+}

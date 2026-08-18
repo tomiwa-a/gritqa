@@ -46,7 +46,7 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 	}
 
 	opts := cfg.Run.ModelOpts()
-	drafter, err := draft.NewLocal(opts.Endpoint, opts.Name)
+	drafter, err := draft.NewLocal(opts.Endpoint, opts.Name, credentials(opts))
 	if err != nil {
 		return err
 	}

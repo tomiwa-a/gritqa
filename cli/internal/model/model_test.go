@@ -49,7 +49,7 @@ func fakeAPI(t *testing.T, path string, script ...func(w http.ResponseWriter)) (
 	}))
 	t.Cleanup(srv.Close)
 
-	return &Client{Endpoint: srv.URL + path, Model: "gpt-4.1", Key: "sk-test", HTTP: srv.Client()}, rec
+	return &Client{Endpoint: srv.URL + path, Model: "gpt-4.1", Auth: Static("sk-test"), HTTP: srv.Client()}, rec
 }
 
 func (a *api) calls() []chatRequest {
@@ -227,7 +227,7 @@ func TestRetryAfterReadsWhatTheEndpointAsked(t *testing.T) {
 func TestNewWithoutAKey(t *testing.T) {
 	t.Setenv(KeyEnv, "")
 
-	if _, err := New("https://api.openai.com/v1", "gpt-4.1"); err != ErrNoKey {
+	if _, err := New("https://api.openai.com/v1", "gpt-4.1", Credentials{}); err != ErrNoKey {
 		t.Fatalf("err = %v, want ErrNoKey", err)
 	}
 }
@@ -236,7 +236,7 @@ func TestNewReadsTheEnvironment(t *testing.T) {
 	t.Setenv(KeyEnv, "sk-test")
 	t.Setenv(ModelEnv, "llama3")
 
-	c, err := New("http://localhost:11434/v1/", "")
+	c, err := New("http://localhost:11434/v1/", "", Credentials{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestNewNeedsAModelName(t *testing.T) {
 	t.Setenv(KeyEnv, "sk-test")
 	t.Setenv(ModelEnv, "")
 
-	if _, err := New("https://api.openai.com/v1", ""); err != ErrNoModel {
+	if _, err := New("https://api.openai.com/v1", "", Credentials{}); err != ErrNoModel {
 		t.Fatalf("err = %v, want ErrNoModel", err)
 	}
 }

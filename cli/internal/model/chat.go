@@ -63,29 +63,39 @@ func (c *Client) request(msgs []Message, jsonMode bool) chatRequest {
 	return r
 }
 
-// post sends one completion, retrying once on a rate limit or a server error,
-// waiting as long as the endpoint asked for when it said.
+// post sends one completion, retrying once on a rate limit, a server error, or
+// a bearer that expired between two calls. It waits as long as the endpoint
+// asked for when it said.
 func (c *Client) post(ctx context.Context, body []byte) (string, error) {
 	var last error
 	wait := retryDelay
 	for attempt := 1; attempt <= attempts; attempt++ {
-		if attempt > 1 {
+		if attempt > 1 && wait > 0 {
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
 			case <-time.After(wait):
 			}
 		}
+
 		out, again, asked, err := c.send(ctx, body)
 		if err == nil {
 			return out, nil
 		}
 		last = err
-		if !again {
+
+		switch {
+		case again:
+			if asked > 0 {
+				wait = asked
+			}
+		// A minted token expires mid-session. Dropping it and asking once more
+		// is the difference between a resident process that outlives its bearer
+		// and one that dies after an hour.
+		case errors.Is(err, ErrRefused) && c.Auth.Stale():
+			wait = 0
+		default:
 			return "", err
-		}
-		if asked > 0 {
-			wait = asked
 		}
 	}
 	return "", last
@@ -94,12 +104,17 @@ func (c *Client) post(ctx context.Context, body []byte) (string, error) {
 func (c *Client) send(ctx context.Context, body []byte) (content string, again bool, asked time.Duration, err error) {
 	url := c.Endpoint + "/chat/completions"
 
+	bearer, err := c.Auth.Token(ctx)
+	if err != nil {
+		return "", false, 0, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", false, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.Key)
+	req.Header.Set("Authorization", "Bearer "+bearer)
 
 	res, err := c.client().Do(req)
 	if err != nil {
@@ -113,7 +128,8 @@ func (c *Client) send(ctx context.Context, body []byte) (content string, again b
 	}
 	if res.StatusCode != http.StatusOK {
 		again := res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500
-		return "", again, retryAfter(res.Header, raw), fault(url, c.Endpoint, res.StatusCode, raw)
+		return "", again, retryAfter(res.Header, raw),
+			fault(url, c.Endpoint, c.Auth.String(), res.StatusCode, raw)
 	}
 
 	var out chatResponse
