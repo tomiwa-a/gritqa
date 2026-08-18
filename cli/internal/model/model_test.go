@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -160,6 +161,66 @@ func TestCompleteExplainsARefusedKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid api key") {
 		t.Errorf("the endpoint's own words are worth keeping: %q", err)
+	}
+}
+
+// Google answers a bad key with 400 INVALID_ARGUMENT inside a JSON array. Read
+// as an ordinary 400 it would cost a call per file and lose the message.
+func TestCompleteReadsGoogleARefusal(t *testing.T) {
+	body := `[{"error":{"code":400,"message":"Invalid Auth key.","status":"INVALID_ARGUMENT"}}]`
+	c, rec := fakeAPI(t, "", fails(400, body))
+
+	_, err := c.Complete(context.Background(), hello())
+	if !errors.Is(err, ErrRefused) {
+		t.Fatalf("err = %v, want ErrRefused", err)
+	}
+	if !strings.Contains(err.Error(), "Invalid Auth key.") {
+		t.Errorf("the endpoint's own words are worth keeping: %q", err)
+	}
+	if n := len(rec.calls()); n != 1 {
+		t.Errorf("%d calls, want 1: a refusal must not be retried", n)
+	}
+}
+
+// The other direction, and the one that matters more: a 400 that is not about
+// the key must stay recoverable, or one bad file ends the whole pass.
+func TestAnOrdinaryBadRequestIsNotARefusal(t *testing.T) {
+	body := `[{"error":{"code":400,"message":"models/gemini-9 is not found","status":"NOT_FOUND"}}]`
+	c, _ := fakeAPI(t, "", fails(400, body))
+
+	_, err := c.Complete(context.Background(), hello())
+	if err == nil || errors.Is(err, ErrRefused) {
+		t.Fatalf("err = %v, want a plain failure", err)
+	}
+	if !strings.Contains(err.Error(), "gemini-9 is not found") {
+		t.Errorf("%q loses the reason", err)
+	}
+}
+
+// The real body Google sends on a quota 429. A flat 2s backoff retries straight
+// into the same window; the endpoint says how long to wait, so wait that long.
+func TestRetryAfterReadsWhatTheEndpointAsked(t *testing.T) {
+	quota := `[{"error":{"code":429,"message":"You exceeded your current quota",` +
+		`"status":"RESOURCE_EXHAUSTED","details":[` +
+		`{"@type":"type.googleapis.com/google.rpc.Help","links":[]},` +
+		`{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"6.613045898s"}]}}]`
+
+	for _, tc := range []struct {
+		name string
+		head http.Header
+		body string
+		want time.Duration
+	}{
+		{"google's body", nil, quota, 6613045898 * time.Nanosecond},
+		{"the standard header wins", http.Header{"Retry-After": {"9"}}, quota, 9 * time.Second},
+		{"nothing asked", nil, `{"error":{"message":"slow down"}}`, 0},
+		{"an absurd delay is capped", nil,
+			`{"error":{"details":[{"retryDelay":"3600s"}]}}`, maxWait},
+		{"not json at all", nil, "gateway timeout", 0},
+	} {
+		if got := retryAfter(tc.head, []byte(tc.body)); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
