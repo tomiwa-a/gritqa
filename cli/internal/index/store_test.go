@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gritqa/cli/internal/index/routes"
 )
 
 func TestStoreRoundTripsASnapshot(t *testing.T) {
@@ -228,4 +230,46 @@ func open(t *testing.T, root string) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+// A gateway-keyed extraction is not keyed by any file hash, so the pruner has to
+// judge it by the version it belongs to. Judging it by the key deleted all 24 of
+// them at the end of the very run that wrote them.
+func TestAGatewayKeyedExtractionSurvivesTheSave(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(filepath.Join(root, ".gritqa", "cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	file := File{Path: "controllers/a.php", Language: "php", Hash: "a"}
+	rs := []routes.Route{{Method: "GET", Path: "/index.php?controller=a", File: file.Path}}
+	if err := s.SaveExtracted("composite-of-a-and-the-gateway", file.Hash, rs); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(&Snapshot{Root: root, Files: []File{file}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := s.Extracted("composite-of-a-and-the-gateway")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || len(got) != 1 {
+		t.Fatalf("ok = %v, got %+v — the extraction was pruned", ok, got)
+	}
+
+	// Editing the file retires its version, and the extraction goes with it.
+	moved := file
+	moved.Hash = "a2"
+	if err := s.Save(&Snapshot{Root: root, Files: []File{moved}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err = s.Extracted("composite-of-a-and-the-gateway"); err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Error("the file changed, so its extraction should be gone")
+	}
 }

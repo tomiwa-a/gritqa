@@ -20,7 +20,7 @@ import (
 
 // schemaVersion guards the cache. It is only a cache, so a mismatch rebuilds
 // rather than migrates.
-const schemaVersion = "3"
+const schemaVersion = "4"
 
 const schema = `
 CREATE TABLE files (
@@ -43,9 +43,12 @@ CREATE TABLE routes (
   PRIMARY KEY (file, method, path)
 );
 
--- One model extraction per file version, so an unchanged file is free.
+-- One model extraction per file version, so an unchanged file is free. hash is
+-- the cache key, which covers the gateway sent with the file; file_hash is the
+-- version it belongs to, and the only thing the pruner can judge it by.
 CREATE TABLE extractions (
   hash       TEXT PRIMARY KEY,
+  file_hash  TEXT NOT NULL,
   endpoints  TEXT NOT NULL
 );
 
@@ -187,7 +190,7 @@ func (s *Store) Save(snap *Snapshot) error {
 	}
 
 	if _, err := tx.Exec(
-		`DELETE FROM extractions WHERE hash NOT IN (SELECT hash FROM files)`); err != nil {
+		`DELETE FROM extractions WHERE file_hash NOT IN (SELECT hash FROM files)`); err != nil {
 		return err
 	}
 
@@ -290,13 +293,14 @@ func (s *Store) Extracted(hash string) ([]routes.Route, bool, error) {
 	return rs, true, nil
 }
 
-func (s *Store) SaveExtracted(hash string, rs []routes.Route) error {
+func (s *Store) SaveExtracted(hash, fileHash string, rs []routes.Route) error {
 	raw, err := json.Marshal(rs)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT OR REPLACE INTO extractions (hash, endpoints) VALUES (?, ?)`, hash, string(raw))
+		`INSERT OR REPLACE INTO extractions (hash, file_hash, endpoints) VALUES (?, ?, ?)`,
+		hash, fileHash, string(raw))
 	return err
 }
 

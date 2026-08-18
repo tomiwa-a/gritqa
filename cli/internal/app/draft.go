@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/draft"
@@ -17,12 +20,13 @@ import (
 	"github.com/gritqa/cli/internal/term"
 )
 
-// fileCap bounds one drafting call. Twelve changed files is already a large
-// push; past that the plan would be about everything, which is about nothing.
-const fileCap = 12
+// fileCap bounds one drafting pass. A hand-rolled API can carry thirty endpoint
+// files; past that the pass costs more than the plans are worth.
+const fileCap = 30
 
-// draftPlans asks the model for a plan covering what changed and writes it to
-// .gritqa/drafts/.
+// draftPlans asks the model for one plan per endpoint file and writes them to
+// .gritqa/drafts/. Per file, not per push: twenty-five controllers described in
+// one plan is a plan about nothing.
 func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *reading) error {
 	w.Write(term.Line{Kind: term.Blank})
 
@@ -41,8 +45,8 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 			filepath.Join(config.Dir, config.Name))
 	}
 
-	model := cfg.Run.ModelOpts()
-	drafter, err := draft.NewLocal(model.Endpoint, model.Name)
+	opts := cfg.Run.ModelOpts()
+	drafter, err := draft.NewLocal(opts.Endpoint, opts.Name)
 	if err != nil {
 		return err
 	}
@@ -52,64 +56,122 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 		left, files = len(files)-fileCap, files[:fileCap]
 	}
 
-	req, err := request(cfg, got, files, base)
+	reqs, err := requests(cfg, got, files, base)
 	if err != nil {
 		return err
 	}
 
 	w.Write(term.Line{
 		Kind: term.Info,
-		Text: fmt.Sprintf("drafting from %s, asking %s",
-			term.Count(len(files), "file", "files"), model.Name),
+		Text: fmt.Sprintf("drafting from %s, one plan each, asking %s",
+			term.Count(len(files), "file", "files"), opts.Name),
 	})
 	if left > 0 {
 		w.Write(term.Line{
 			Kind: term.Info,
-			Text: fmt.Sprintf("%s changed as well and %s left out of this draft",
+			Text: fmt.Sprintf("%s changed as well and %s left out of this pass",
 				term.Count(left, "file", "files"), plural(left, "was", "were")),
 		})
 	}
 
-	p, err := drafter.Draft(ctx, req)
-	if err != nil {
-		return err
-	}
+	w.Write(term.Line{Kind: term.Blank})
+	w.Write(term.Line{Kind: term.Out, Text: "what it drafted"})
 
-	path, err := writeDraft(cfg, p)
-	if err != nil {
-		return err
+	wrote := 0
+	for i, d := range fan(ctx, drafter, reqs) {
+		last := i == len(reqs)-1
+		if d.err != nil {
+			w.Write(term.Line{
+				Kind: term.Tree, Text: files[i] + " — " + d.err.Error(),
+				Status: term.Failed, Last: last,
+			})
+			continue
+		}
+		if _, err := writeDraft(cfg, d.plan); err != nil {
+			return err
+		}
+		wrote++
+		w.Write(term.Line{
+			Kind: term.Tree, Text: d.plan.Name, Status: term.Pass, Last: last,
+			Meta: fmt.Sprintf("%s, %s",
+				term.Count(len(d.plan.Steps), "step", "steps"),
+				term.Count(d.plan.AssertionCount(), "check", "checks")),
+		})
 	}
 
 	w.Write(term.Line{Kind: term.Blank})
+	if wrote == 0 {
+		return errors.New("nothing was drafted")
+	}
 	w.Write(term.Line{
 		Kind: term.OK,
-		Text: "drafted " + p.Name,
-		Meta: fmt.Sprintf("%s, %s",
-			term.Count(len(p.Steps), "step", "steps"),
-			term.Count(p.AssertionCount(), "check", "checks")),
+		Text: fmt.Sprintf("wrote %s to %s",
+			term.Count(wrote, "plan", "plans"), filepath.Join(config.Dir, "drafts")),
 	})
-	w.Write(term.Line{Kind: term.Info, Text: "wrote " + path})
-	w.Write(term.Line{Kind: term.Info, Text: "run it with gritqa --plan " + path})
+	w.Write(term.Line{Kind: term.Info, Text: "run one with gritqa --plan <file>"})
 	return nil
+}
+
+type drafted struct {
+	plan *plan.Plan
+	err  error
+}
+
+// fan drafts concurrently, bounded the way source.FromAI bounds extraction. One
+// file the model cannot draft for does not cost the rest of the pass.
+func fan(ctx context.Context, d draft.Drafter, reqs []draft.Request) []drafted {
+	out := make([]drafted, len(reqs))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+
+	for range min(runtime.GOMAXPROCS(0), 4) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				p, err := d.Draft(ctx, reqs[i])
+				out[i] = drafted{plan: p, err: err}
+			}
+		}()
+	}
+
+	for i := range reqs {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return stopped(out)
+		case jobs <- i:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return out
+}
+
+func stopped(out []drafted) []drafted {
+	for i := range out {
+		if out[i].plan == nil && out[i].err == nil {
+			out[i].err = errors.New("the pass stopped before this file")
+		}
+	}
+	return out
 }
 
 // candidates are the changed files that register an endpoint. On a first index
 // nothing has changed yet, so every route file is fair game.
 func candidates(got *reading) []string {
-	registers := make(map[string]bool, len(got.snap.Routes))
-	for _, r := range got.snap.Routes {
-		registers[r.File] = true
+	files := routeFiles(got.snap)
+	if got.first {
+		return files
+	}
+
+	registers := make(map[string]bool, len(files))
+	for _, f := range files {
+		registers[f] = true
 	}
 
 	var out []string
-	if got.first {
-		for f := range registers {
-			out = append(out, f)
-		}
-		sort.Strings(out)
-		return out
-	}
-
 	for _, group := range [][]string{got.delta.Added, got.delta.Changed} {
 		for _, f := range group {
 			if registers[f] {
@@ -121,37 +183,71 @@ func candidates(got *reading) []string {
 	return out
 }
 
-func request(cfg *config.Config, got *reading, files []string, base string) (draft.Request, error) {
-	wanted := make(map[string]bool, len(files))
-	for _, f := range files {
-		wanted[f] = true
-	}
-
-	out := draft.Request{Project: cfg.Project, BaseURL: base, Existing: existing(cfg)}
-
-	for _, f := range files {
-		b, err := os.ReadFile(filepath.Join(cfg.Root(), f))
-		if err != nil {
-			return draft.Request{}, err
+func routeFiles(snap *index.Snapshot) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range snap.Routes {
+		if !seen[r.File] {
+			seen[r.File] = true
+			out = append(out, r.File)
 		}
-		out.Files = append(out.Files, draft.File{
-			Path:     f,
-			Language: languageOf(got.snap, f),
-			Content:  string(b),
+	}
+	sort.Strings(out)
+	return out
+}
+
+func requests(cfg *config.Config, got *reading, files []string, base string) ([]draft.Request, error) {
+	have := existing(cfg)
+
+	// Every endpoint, not just this file's: a plan for a guarded controller has to
+	// be able to sign in first, and the login lives somewhere else.
+	var endpoints []draft.Endpoint
+	for _, r := range got.snap.Routes {
+		endpoints = append(endpoints, draft.Endpoint{
+			Signature: r.Signature(),
+			File:      r.File,
+			Handler:   r.Handler,
+			NeedsAuth: r.NeedsAuth(),
 		})
 	}
 
-	for _, r := range got.snap.Routes {
-		if wanted[r.File] {
-			out.Endpoints = append(out.Endpoints, draft.Endpoint{
-				Signature: r.Signature(),
-				File:      r.File,
-				Handler:   r.Handler,
-				NeedsAuth: r.NeedsAuth(),
+	out := make([]draft.Request, 0, len(files))
+	for _, f := range files {
+		req := draft.Request{
+			Project:   cfg.Project,
+			BaseURL:   base,
+			Focus:     f,
+			Endpoints: endpoints,
+			Existing:  have,
+		}
+		for _, path := range []string{f, support(got.snap, f)} {
+			if path == "" {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(cfg.Root(), path))
+			if err != nil {
+				return nil, err
+			}
+			req.Files = append(req.Files, draft.File{
+				Path: path, Language: languageOf(got.snap, path), Content: string(b),
 			})
 		}
+		out = append(out, req)
 	}
 	return out, nil
+}
+
+var signIn = regexp.MustCompile(`(?i)auth|login|session|token`)
+
+// support is the one extra file worth paying for: how to log in. Without it a
+// plan for a guarded endpoint has no way to get a token and every step 401s.
+func support(snap *index.Snapshot, focus string) string {
+	for _, f := range routeFiles(snap) {
+		if f != focus && signIn.MatchString(f) {
+			return f
+		}
+	}
+	return ""
 }
 
 // existing lists the drafts already on disk, so the model is not asked for a

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gritqa/cli/internal/model"
 	"github.com/gritqa/cli/internal/plan"
 )
 
@@ -58,17 +59,15 @@ Rules:
   SQL.
 - onFailure abort stops the run; continue keeps independent steps going. Use
   abort for the steps everything else depends on.
-- Test what the changed code actually does, including the case it would get
-  wrong. Do not repeat a plan that already exists.
-- If the endpoints need a logged-in user, sign in first and extract the token.`
+- Test what the code actually does, including the case it would get wrong. Do
+  not repeat a plan that already exists.
+- If the endpoints need a logged-in user, sign in first and extract the token.
+- You may be shown endpoints and a file beyond the one you are writing for. They
+  are there so the plan can sign in and build the state it needs; the plan itself
+  tests the file you were told to write for.`
 
-type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-func messages(req Request) []message {
-	return []message{
+func messages(req Request) []model.Message {
+	return []model.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: brief(req)},
 	}
@@ -77,9 +76,12 @@ func messages(req Request) []message {
 func brief(req Request) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Project: %s\nBase URL: %s\n", req.Project, req.BaseURL)
+	if req.Focus != "" {
+		fmt.Fprintf(&b, "Write the plan for: %s\n", req.Focus)
+	}
 
 	if len(req.Endpoints) > 0 {
-		b.WriteString("\nEndpoints these files register:\n")
+		b.WriteString("\nEndpoints this project serves:\n")
 		for _, e := range req.Endpoints {
 			fmt.Fprintf(&b, "- %s (%s", e.Signature, e.File)
 			if e.Handler != "" {
@@ -99,7 +101,7 @@ func brief(req Request) string {
 		}
 	}
 
-	b.WriteString("\nFiles that changed:\n")
+	b.WriteString("\nSource:\n")
 	for _, f := range req.Files {
 		fmt.Fprintf(&b, "\n--- %s (%s)\n%s\n", f.Path, f.Language, f.Content)
 	}

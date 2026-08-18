@@ -43,7 +43,9 @@ type Snapshot struct {
 	Unresolved []routes.Route
 	Frameworks []lang.ID
 	Unparsed   []string
-	Uploaded   int // files sent to the server to be read
+	Uploaded   int // files sent to the model to be read
+	Unread     int // files the model could not read
+	Uncached   int // files read but not cached, so they will be read again
 
 	// Source is where the endpoints came from, and Detail which file said so.
 	Source       source.Kind
@@ -160,11 +162,22 @@ func extract(ctx context.Context, snap *Snapshot, opts Options, root string, out
 		})
 	}
 
+	// The gateway routes to the rest, so it goes with each of them: neither half
+	// of a front-controller URL is in one file.
+	if g := source.Gateway(files); g >= 0 {
+		with := []source.File{files[g]}
+		for i := range files {
+			if i != g {
+				files[i].Context = with
+			}
+		}
+	}
+
 	res, err := source.FromAI(ctx, opts.Extract, opts.Cache, files)
 	if err != nil {
 		return err
 	}
-	snap.Uploaded = res.Uploaded
+	snap.Uploaded, snap.Unread, snap.Uncached = res.Uploaded, res.Unread, res.Uncached
 
 	if len(res.Routes) > 0 {
 		snap.Routes = groupByFile(append(snap.Routes, res.Routes...))

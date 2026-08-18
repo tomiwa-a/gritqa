@@ -13,12 +13,15 @@ type Drafter interface {
 	Draft(ctx context.Context, req Request) (*plan.Plan, error)
 }
 
-// Request is what the model needs and nothing more: the files that changed, the
-// endpoints they register, and the plans that already exist so a new one does
-// not repeat them.
+// Request is what the model needs and nothing more: the file the plan is for,
+// every endpoint the project serves so the plan can sign in before it calls a
+// guarded one, and the plans that already exist so a new one does not repeat them.
 type Request struct {
-	Project   string
-	BaseURL   string
+	Project string
+	BaseURL string
+	// Focus is the file this plan is for. Files may carry one more — how to log
+	// in — because a plan that cannot authenticate proves nothing.
+	Focus     string
 	Files     []File
 	Endpoints []Endpoint
 	Existing  []Existing

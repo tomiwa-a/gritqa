@@ -2,7 +2,10 @@ package source
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -11,9 +14,14 @@ import (
 	"sync"
 
 	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/model"
 )
 
-// Extractor reads one file's endpoints. The server holds the model key.
+// ErrRefused is a key the endpoint would not accept — the model's own or the
+// server's. It ends a pass, where any other failure only skips its file.
+var ErrRefused = model.ErrRefused
+
+// Extractor reads one file's endpoints, with the user's own key or the server's.
 type Extractor interface {
 	Extract(ctx context.Context, f File) ([]routes.Route, error)
 }
@@ -21,7 +29,7 @@ type Extractor interface {
 // Cache keys an extraction on the file's hash: one call per file version.
 type Cache interface {
 	Extracted(hash string) ([]routes.Route, bool, error)
-	SaveExtracted(hash string, rs []routes.Route) error
+	SaveExtracted(hash, fileHash string, rs []routes.Route) error
 }
 
 type File struct {
@@ -29,12 +37,52 @@ type File struct {
 	Language string
 	Hash     string
 	Content  []byte
+	// Context is sent with the file but never extracted from: the gateway that
+	// routes to it. A controller alone does not know the URL it answers on.
+	Context []File
+}
+
+// key identifies this extraction. Context is part of it, or editing the gateway
+// would leave every file it routes to holding a stale URL.
+func (f File) key() string {
+	if len(f.Context) == 0 {
+		return f.Hash
+	}
+	sum := sha256.New()
+	sum.Write([]byte(f.Hash))
+	for _, c := range f.Context {
+		sum.Write([]byte(c.Hash))
+	}
+	return hex.EncodeToString(sum.Sum(nil))
+}
+
+// Gateway finds the file that routes to the others — a PHP front controller, a
+// JS route table — and returns its index, or -1. It is the file that names the
+// most of its siblings, and naming one is coincidence, so two is the floor.
+func Gateway(files []File) int {
+	best, most := -1, 1
+	for i, f := range files {
+		src := string(f.Content)
+		n := 0
+		for j, other := range files {
+			if i == j {
+				continue
+			}
+			if strings.Contains(src, path.Base(other.Path)) {
+				n++
+			}
+		}
+		if n > most {
+			best, most = i, n
+		}
+	}
+	return best
 }
 
 // FromAI is the last rung of the ladder, and the only one that sends source off
-// the machine. A file the server cannot read is skipped.
+// the machine. A file the model cannot read is skipped.
 func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Result, error) {
-	if ex == nil || len(files) == 0 {
+	if len(files) == 0 {
 		return Result{}, nil
 	}
 
@@ -43,7 +91,7 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 
 	for i, f := range files {
 		if cache != nil {
-			rs, ok, err := cache.Extracted(f.Hash)
+			rs, ok, err := cache.Extracted(f.key())
 			if err != nil {
 				return Result{}, err
 			}
@@ -55,9 +103,15 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 		todo = append(todo, i)
 	}
 
-	sent, err := run(ctx, ex, cache, files, todo, found)
-	if err != nil {
-		return Result{}, err
+	// Without a key the model is out of reach, but what it already read is not:
+	// an unchanged repo keeps its endpoints instead of reporting none.
+	var sent, unread, uncached int
+	if ex != nil {
+		var err error
+		sent, unread, uncached, err = run(ctx, ex, cache, files, todo, found)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 
 	var out []routes.Route
@@ -65,29 +119,40 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 		out = append(out, rs...)
 	}
 	if len(out) == 0 {
-		return Result{Uploaded: sent}, nil
+		return Result{Uploaded: sent, Unread: unread, Uncached: uncached}, nil
 	}
-	return Result{Kind: AI, Routes: out, Uploaded: sent}, nil
+	return Result{Kind: AI, Routes: out, Uploaded: sent, Unread: unread, Uncached: uncached}, nil
 }
 
+// run returns how many files were read, how many the model could not, and how
+// many were read but could not be cached.
 func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []int,
-	found [][]routes.Route) (int, error) {
+	found [][]routes.Route) (int, int, int, error) {
 
 	if len(todo) == 0 {
-		return 0, nil
+		return 0, 0, 0, nil
 	}
 
-	// The first call goes alone, so a bad token fails before the repo uploads.
+	// The first call goes alone, so a refused key fails before the repo uploads.
+	// Anything else — a timeout, a reply that will not parse — costs one file, the
+	// same as it does in the workers below.
 	first := files[todo[0]]
+	sent, unread, uncached := 1, 0, 0
 	rs, err := ex.Extract(ctx, first)
-	if err != nil {
-		return 0, fmt.Errorf("could not read %s with the model: %w", first.Path, err)
+	switch {
+	case errors.Is(err, ErrRefused):
+		return 0, 0, 0, fmt.Errorf("could not read %s with the model: %w", first.Path, err)
+	case err != nil:
+		sent, unread = 0, 1
+	default:
+		found[todo[0]] = keep(rs, first.Path)
+		if err := save(cache, first, found[todo[0]]); err != nil {
+			uncached++
+		}
 	}
-	found[todo[0]] = keep(rs, first.Path)
-	save(cache, first.Hash, found[todo[0]])
 
 	var mu sync.Mutex
-	sent := 1
+	var refused error
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 
@@ -96,14 +161,30 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
+				mu.Lock()
+				stop := refused != nil
+				mu.Unlock()
+				if stop {
+					continue
+				}
+
 				f := files[i]
 				rs, err := ex.Extract(ctx, f)
 				if err != nil {
+					mu.Lock()
+					unread++
+					if errors.Is(err, ErrRefused) && refused == nil {
+						refused = fmt.Errorf("could not read %s with the model: %w", f.Path, err)
+					}
+					mu.Unlock()
 					continue
 				}
+
 				found[i] = keep(rs, f.Path)
 				mu.Lock()
-				save(cache, f.Hash, found[i])
+				if err := save(cache, f, found[i]); err != nil {
+					uncached++
+				}
 				sent++
 				mu.Unlock()
 			}
@@ -115,19 +196,25 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
-			return sent, ctx.Err()
+			return sent, unread, uncached, ctx.Err()
 		case jobs <- i:
 		}
 	}
 	close(jobs)
 	wg.Wait()
-	return sent, nil
+	if refused != nil {
+		return sent, unread, uncached, refused
+	}
+	return sent, unread, uncached, nil
 }
 
-func save(cache Cache, hash string, rs []routes.Route) {
-	if cache != nil {
-		_ = cache.SaveExtracted(hash, rs)
+// save reports its failure rather than hiding it: the routes are still good, but
+// the file will be read again next run, which is what the cache exists to avoid.
+func save(cache Cache, f File, rs []routes.Route) error {
+	if cache == nil {
+		return nil
 	}
+	return cache.SaveExtracted(f.key(), f.Hash, rs)
 }
 
 // keep filters what the model returned. It is the one source that can invent an
@@ -210,6 +297,9 @@ var markers = []string{
 	"#[get", "#[post", "#[put", "#[patch", "#[delete",
 	"get '", "get \"", "post '", "post \"", "put '", "put \"",
 	"patch '", "patch \"", "delete '", "delete \"",
+	// A hand-rolled PHP front controller routes on the query string, and the file
+	// that defines that convention is usually called index.php.
+	"$_GET[", "$_POST[", "$_SERVER[",
 }
 
 // Client is the CLI's half of /api/cli/extract.
@@ -221,10 +311,16 @@ type Client struct {
 }
 
 type extractRequest struct {
-	Project  string `json:"project"`
-	Path     string `json:"path"`
-	Language string `json:"language"`
-	Content  string `json:"content"`
+	Project  string        `json:"project"`
+	Path     string        `json:"path"`
+	Language string        `json:"language"`
+	Content  string        `json:"content"`
+	Context  []contextFile `json:"context,omitempty"`
+}
+
+type contextFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type extractResponse struct {
@@ -232,8 +328,13 @@ type extractResponse struct {
 }
 
 func (c *Client) Extract(ctx context.Context, f File) ([]routes.Route, error) {
+	var with []contextFile
+	for _, cf := range f.Context {
+		with = append(with, contextFile{Path: cf.Path, Content: string(cf.Content)})
+	}
 	body, err := json.Marshal(extractRequest{
-		Project: c.Project, Path: f.Path, Language: f.Language, Content: string(f.Content),
+		Project: c.Project, Path: f.Path, Language: f.Language,
+		Content: string(f.Content), Context: with,
 	})
 	if err != nil {
 		return nil, err
@@ -257,7 +358,11 @@ func (c *Client) Extract(ctx context.Context, f File) ([]routes.Route, error) {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, fmt.Errorf("%s %w", c.Server, ErrRefused)
+	default:
 		return nil, fmt.Errorf("%s said %s", c.Server, res.Status)
 	}
 

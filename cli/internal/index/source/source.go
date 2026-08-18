@@ -33,7 +33,9 @@ type Result struct {
 	Detail     string
 	Routes     []routes.Route
 	Unresolved []routes.Route
-	Uploaded   int // files sent to the server for extraction
+	Uploaded   int // files sent to the model for extraction
+	Unread     int // files the model could not read, so their endpoints are missing
+	Uncached   int // files read but not cached, so they will be read again
 }
 
 func (r Result) Empty() bool { return r.Kind == None }

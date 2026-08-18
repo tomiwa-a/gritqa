@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/source"
+	"github.com/gritqa/cli/internal/model"
 	"github.com/gritqa/cli/internal/term"
 )
 
@@ -31,7 +34,8 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 
 	store, err := index.Open(cfg.CachePath())
 	if err != nil {
-		return nil, fmt.Errorf("could not open the index cache: %w", err)
+		return nil, fmt.Errorf("could not open the index cache: %w — it holds nothing "+
+			"you cannot rebuild, so delete %s* and run again", err, cfg.CachePath())
 	}
 	defer store.Close()
 
@@ -82,8 +86,22 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	if snap.Uploaded > 0 {
 		w.Write(term.Line{
 			Kind: term.Info,
-			Text: fmt.Sprintf("%s went to the server to be read",
+			Text: fmt.Sprintf("%s went to the model to be read",
 				term.Count(snap.Uploaded, "file", "files")),
+		})
+	}
+	if snap.Unread > 0 {
+		w.Write(term.Line{
+			Kind: term.Info,
+			Text: fmt.Sprintf("the model could not read %s, so any endpoints in %s are missing",
+				term.Count(snap.Unread, "file", "files"), plural(snap.Unread, "it", "them")),
+		})
+	}
+	if snap.Uncached > 0 {
+		w.Write(term.Line{
+			Kind: term.Info,
+			Text: fmt.Sprintf("%s could not be cached, so %s will be read again next run",
+				term.Count(snap.Uncached, "file", "files"), plural(snap.Uncached, "it", "they")),
 		})
 	}
 	if n := len(snap.Unparsed); n > 0 {
@@ -96,9 +114,23 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	return &reading{snap: snap, delta: delta, first: len(before) == 0}, nil
 }
 
-// extractor is the AI source's client. Reading with the model needs the server,
-// which is what holds the key.
+// extractor is the AI source's client: the user's own key when they have one,
+// otherwise the server that holds it for them.
 func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extractor {
+	if os.Getenv(model.KeyEnv) != "" {
+		m := cfg.Run.ModelOpts()
+		c, err := model.New(m.Endpoint, m.Name)
+		if err == nil {
+			return &source.Local{Model: c}
+		}
+		if errors.Is(err, model.ErrNoModel) {
+			err = fmt.Errorf("reading with the model needs a model name — add "+
+				"run.model.name to your config, or export %s", model.ModelEnv)
+		}
+		w.Write(term.Line{Kind: term.Info, Text: "endpoints.ai is on, but " + err.Error()})
+		return nil
+	}
+
 	store, err := creds.Open()
 	if err != nil {
 		return nil
@@ -107,7 +139,8 @@ func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extracto
 	if err != nil {
 		w.Write(term.Line{
 			Kind: term.Info,
-			Text: "endpoints.ai is on, but reading with the model needs a login first",
+			Text: "endpoints.ai is on, but reading with the model needs either " +
+				model.KeyEnv + " in your environment or a login first",
 		})
 		return nil
 	}
