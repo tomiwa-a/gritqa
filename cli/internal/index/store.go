@@ -20,7 +20,7 @@ import (
 
 // schemaVersion guards the cache. It is only a cache, so a mismatch rebuilds
 // rather than migrates.
-const schemaVersion = "2"
+const schemaVersion = "3"
 
 const schema = `
 CREATE TABLE files (
@@ -41,6 +41,12 @@ CREATE TABLE routes (
   unresolved INTEGER NOT NULL DEFAULT 0,
   seq        INTEGER NOT NULL,
   PRIMARY KEY (file, method, path)
+);
+
+-- One model extraction per file version, so an unchanged file is free.
+CREATE TABLE extractions (
+  hash       TEXT PRIMARY KEY,
+  endpoints  TEXT NOT NULL
 );
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -81,7 +87,7 @@ func (s *Store) migrate() error {
 		return nil
 	}
 
-	for _, t := range []string{"files", "routes", "meta"} {
+	for _, t := range []string{"files", "routes", "extractions", "meta"} {
 		if _, err := s.db.Exec(`DROP TABLE IF EXISTS ` + t); err != nil {
 			return err
 		}
@@ -170,6 +176,11 @@ func (s *Store) Save(snap *Snapshot) error {
 		}
 	}
 
+	if _, err := tx.Exec(
+		`DELETE FROM extractions WHERE hash NOT IN (SELECT hash FROM files)`); err != nil {
+		return err
+	}
+
 	for k, v := range map[string]string{
 		"indexed_at":    time.Now().UTC().Format(time.RFC3339),
 		"source":        string(snap.Source),
@@ -250,6 +261,33 @@ func (s *Store) Load(root string) (*Snapshot, error) {
 	}
 	snap.Frameworks = splitIDs(fw)
 	return snap, nil
+}
+
+func (s *Store) Extracted(hash string) ([]routes.Route, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT endpoints FROM extractions WHERE hash = ?`, hash).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	var rs []routes.Route
+	if err := json.Unmarshal([]byte(raw), &rs); err != nil {
+		return nil, false, nil
+	}
+	return rs, true, nil
+}
+
+func (s *Store) SaveExtracted(hash string, rs []routes.Route) error {
+	raw, err := json.Marshal(rs)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT OR REPLACE INTO extractions (hash, endpoints) VALUES (?, ?)`, hash, string(raw))
+	return err
 }
 
 func joinIDs(ids []lang.ID) string {

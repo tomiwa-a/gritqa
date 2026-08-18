@@ -69,7 +69,7 @@ func Run(ctx context.Context, opts Options) error {
 		return errors.New("--plan is not wired up yet: the execution engine lands in M2")
 	}
 
-	snap, err := read(ctx, w, cfg)
+	snap, err := read(ctx, w, cfg, opts)
 	if err != nil {
 		return err
 	}

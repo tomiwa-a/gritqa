@@ -31,6 +31,9 @@ type Options struct {
 	List []string
 	Spec string
 	AI   bool
+
+	Extract source.Extractor // nil until the user opts in
+	Cache   source.Cache
 }
 
 type Snapshot struct {
@@ -40,6 +43,7 @@ type Snapshot struct {
 	Unresolved []routes.Route
 	Frameworks []lang.ID
 	Unparsed   []string
+	Uploaded   int // files sent to the server to be read
 
 	// Source is where the endpoints came from, and Detail which file said so.
 	Source       source.Kind
@@ -53,6 +57,14 @@ type outcome struct {
 	frameworks []lang.ID
 	graph      *lexical.Graph // the languages read lexically, resolved project-wide
 	unparsed   bool
+	dark       bool // no static extractor, so a candidate for the model
+}
+
+type pass struct {
+	root       string
+	project    []lang.ID
+	wantRoutes bool
+	wantAI     bool
 }
 
 // List returns the source files worth indexing, repo-relative and in path
@@ -88,7 +100,10 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 	// having declared the dependency.
 	project := lang.Detect(root)
 
-	out, err := scan(ctx, root, paths, res.Empty(), project)
+	out, err := scan(ctx, pass{
+		root: root, project: project,
+		wantRoutes: res.Empty(), wantAI: res.Empty() && opts.AI && opts.Extract != nil,
+	}, paths)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +137,42 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 	case len(snap.Routes) > 0:
 		snap.Source = source.Static
 	}
+
+	if err := extract(ctx, snap, opts, root, out); err != nil {
+		return nil, err
+	}
 	return snap, nil
+}
+
+// extract asks the model about the files no other source could answer for.
+func extract(ctx context.Context, snap *Snapshot, opts Options, root string, out []outcome) error {
+	var files []source.File
+	for _, o := range out {
+		if o.file == nil || !o.dark {
+			continue
+		}
+		body, _, _, err := read(filepath.Join(root, filepath.FromSlash(o.file.Path)))
+		if err != nil || body == nil {
+			continue
+		}
+		files = append(files, source.File{
+			Path: o.file.Path, Language: o.file.Language, Hash: o.file.Hash, Content: body,
+		})
+	}
+
+	res, err := source.FromAI(ctx, opts.Extract, opts.Cache, files)
+	if err != nil {
+		return err
+	}
+	snap.Uploaded = res.Uploaded
+
+	if len(res.Routes) > 0 {
+		snap.Routes = groupByFile(append(snap.Routes, res.Routes...))
+		if snap.Source == source.None {
+			snap.Source = res.Kind
+		}
+	}
+	return nil
 }
 
 // resolve finishes the paths a single file could not: an Express router or a
@@ -146,7 +196,7 @@ func groupByFile(rs []routes.Route) []routes.Route {
 	return rs
 }
 
-func scan(ctx context.Context, root string, paths []string, wantRoutes bool, project []lang.ID) ([]outcome, error) {
+func scan(ctx context.Context, p pass, paths []string) ([]outcome, error) {
 	out := make([]outcome, len(paths))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -156,7 +206,7 @@ func scan(ctx context.Context, root string, paths []string, wantRoutes bool, pro
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				out[i] = inspect(root, paths[i], wantRoutes, project)
+				out[i] = p.inspect(paths[i])
 			}
 		}()
 	}
@@ -175,10 +225,10 @@ func scan(ctx context.Context, root string, paths []string, wantRoutes bool, pro
 	return out, nil
 }
 
-func inspect(root, rel string, wantRoutes bool, project []lang.ID) outcome {
+func (p pass) inspect(rel string) outcome {
 	var o outcome
 
-	body, hash, size, err := read(filepath.Join(root, filepath.FromSlash(rel)))
+	body, hash, size, err := read(filepath.Join(p.root, filepath.FromSlash(rel)))
 	if err != nil {
 		return o
 	}
@@ -188,7 +238,10 @@ func inspect(root, rel string, wantRoutes bool, project []lang.ID) outcome {
 	if body == nil {
 		return o
 	}
-	wantRoutes = wantRoutes && !isTest(rel)
+	wantRoutes := p.wantRoutes && !isTest(rel)
+	if wantRoutes && p.wantAI && dark(language) {
+		o.dark = source.Candidate(rel, body)
+	}
 
 	switch language {
 	case "go":
@@ -207,7 +260,7 @@ func inspect(root, rel string, wantRoutes bool, project []lang.ID) outcome {
 	// fragment instead of routes.
 	case "javascript", "typescript":
 		if wantRoutes {
-			o.graph, o.frameworks = js.Extract(rel, body, project)
+			o.graph, o.frameworks = js.Extract(rel, body, p.project)
 		}
 	case "python":
 		if wantRoutes {
@@ -215,6 +268,15 @@ func inspect(root, rel string, wantRoutes bool, project []lang.ID) outcome {
 		}
 	}
 	return o
+}
+
+// dark reports whether a language has no static extractor.
+func dark(language string) bool {
+	switch language {
+	case "", "go", "javascript", "typescript", "python", "sql":
+		return false
+	}
+	return true
 }
 
 // isTest reports whether a file is a test. Tests import net/http, spin up

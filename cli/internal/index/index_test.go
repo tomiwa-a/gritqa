@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/routes"
 	"github.com/gritqa/cli/internal/index/source"
 )
@@ -371,5 +372,64 @@ def list_drafts():
 	want := "routers/drafts.py GET /<router>/drafts"
 	if got := unresolved(snap); strings.Join(got, "\n") != want {
 		t.Errorf("unresolved = %v, want %q", got, want)
+	}
+}
+
+type recorder struct {
+	give map[string][]routes.Route
+	seen []string
+}
+
+func (r *recorder) Extract(_ context.Context, f source.File) ([]routes.Route, error) {
+	r.seen = append(r.seen, f.Path)
+	return r.give[f.Path], nil
+}
+
+// The model is asked only about the files no other source could answer for, and
+// only when the user opted in.
+func TestReadAsksTheModelAboutLanguagesItCannotParse(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"Gemfile": "source 'https://rubygems.org'\ngem 'rails', '~> 7.1'\n",
+
+		"config/routes.rb": `Rails.application.routes.draw do
+  resources :orders
+end
+`,
+		"app/models/order.rb": "class Order < ApplicationRecord\n  has_many :items\nend\n",
+
+		// A language with a static extractor is never sent up, wherever it sits.
+		"scripts/api/report.py": "def main():\n    print(\"ok\")\n",
+	})
+
+	ex := &recorder{give: map[string][]routes.Route{
+		"config/routes.rb": {{Method: "GET", Path: "/orders", Line: 2, Handler: "orders#index"}},
+	}}
+
+	off, err := Read(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.seen) != 0 || off.Uploaded != 0 {
+		t.Errorf("nothing should leave the machine unless endpoints.ai is on: %v", ex.seen)
+	}
+	if len(off.Frameworks) != 1 || off.Frameworks[0] != lang.Rails {
+		t.Errorf("frameworks = %v, want [rails]", off.Frameworks)
+	}
+
+	snap, err := Read(context.Background(), root, Options{AI: true, Extract: ex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ex.seen, ",") != "config/routes.rb" {
+		t.Errorf("sent %v, want only the file that could hold a route", ex.seen)
+	}
+	if got := sigs(snap); strings.Join(got, "\n") != "config/routes.rb GET /orders" {
+		t.Errorf("got %v", got)
+	}
+	if snap.Uploaded != 1 {
+		t.Errorf("uploaded = %d, want 1", snap.Uploaded)
+	}
+	if snap.Source != source.AI {
+		t.Errorf("source = %q, want the model", snap.Source)
 	}
 }

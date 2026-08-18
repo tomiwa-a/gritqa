@@ -22,6 +22,7 @@ const (
 	List   Kind = "your config"
 	Spec   Kind = "your API spec"
 	Static Kind = "your source"
+	AI     Kind = "the model"
 )
 
 // Result is what one source found. Unresolved holds endpoints that were
@@ -32,6 +33,7 @@ type Result struct {
 	Detail     string
 	Routes     []routes.Route
 	Unresolved []routes.Route
+	Uploaded   int // files sent to the server for extraction
 }
 
 func (r Result) Empty() bool { return r.Kind == None }

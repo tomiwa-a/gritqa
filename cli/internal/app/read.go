@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gritqa/cli/internal/config"
+	"github.com/gritqa/cli/internal/creds"
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/index/lang"
 	"github.com/gritqa/cli/internal/index/source"
@@ -17,7 +18,7 @@ import (
 // web/src/components/sections/pillars.tsx. What it reports is only what it
 // actually found: a project whose router it cannot recognise is told so, rather
 // than shown a confident zero.
-func read(ctx context.Context, w *term.Writer, cfg *config.Config) (*index.Snapshot, error) {
+func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options) (*index.Snapshot, error) {
 	started := time.Now()
 
 	store, err := index.Open(cfg.CachePath())
@@ -41,11 +42,12 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config) (*index.Snaps
 	})
 
 	ep := cfg.EndpointOpts()
-	snap, err := index.ReadPaths(ctx, cfg.Root(), paths, index.Options{
-		List: ep.List,
-		Spec: ep.Spec,
-		AI:   ep.AI,
-	})
+	io := index.Options{List: ep.List, Spec: ep.Spec, AI: ep.AI}
+	if ep.AI {
+		io.Extract, io.Cache = extractor(w, opts, cfg), store
+	}
+
+	snap, err := index.ReadPaths(ctx, cfg.Root(), paths, io)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +71,13 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config) (*index.Snaps
 	if len(before) == 0 {
 		w.Write(term.Line{Kind: term.Info, Text: "from here on it only re-reads what you change"})
 	}
+	if snap.Uploaded > 0 {
+		w.Write(term.Line{
+			Kind: term.Info,
+			Text: fmt.Sprintf("%s went to the server to be read",
+				term.Count(snap.Uploaded, "file", "files")),
+		})
+	}
 	if n := len(snap.Unparsed); n > 0 {
 		w.Write(term.Line{
 			Kind: term.Info,
@@ -77,6 +86,24 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config) (*index.Snaps
 		})
 	}
 	return snap, nil
+}
+
+// extractor is the AI source's client. Reading with the model needs the server,
+// which is what holds the key.
+func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extractor {
+	store, err := creds.Open()
+	if err != nil {
+		return nil
+	}
+	entry, err := store.Get(opts.server())
+	if err != nil {
+		w.Write(term.Line{
+			Kind: term.Info,
+			Text: "endpoints.ai is on, but reading with the model needs a login first",
+		})
+		return nil
+	}
+	return &source.Client{Server: opts.server(), Token: entry.Token, Project: cfg.Project}
 }
 
 func findings(snap *index.Snapshot) []term.Line {
@@ -111,7 +138,8 @@ func findings(snap *index.Snapshot) []term.Line {
 	return lines
 }
 
-const escapeHatch = "point me at an OpenAPI file with endpoints.spec, or list them under endpoints.list"
+const escapeHatch = "point me at an OpenAPI file with endpoints.spec, list them under " +
+	"endpoints.list, or let me read them with endpoints.ai"
 
 // origin names where the endpoints came from, since a spec and a source scan are
 // very different claims about the same numbers.
