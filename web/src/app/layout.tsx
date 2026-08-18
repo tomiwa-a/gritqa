@@ -1,38 +1,40 @@
-import type { Metadata } from "next";
-import { Outfit, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Outfit, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
+import './globals.css';
 
 const outfit = Outfit({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  variable: '--font-heading',
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
 });
 
 const plusJakartaSans = Plus_Jakarta_Sans({
-  variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  variable: '--font-body',
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
 });
 
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  variable: '--font-mono',
+  subsets: ['latin'],
+  weight: ['400', '500'],
 });
 
 export const metadata: Metadata = {
-  title: "GritQA — Your backend gets tested. You just approve it.",
+  title: 'GritQA — Your backend gets tested. You just approve it.',
   description:
-    "GritQA drafts integration tests for whatever you just changed, waits for you to approve them, then runs them against a real database on your machine. Nothing runs until you say so.",
+    'GritQA drafts integration tests for whatever you just changed, waits for you to approve them, then runs them against a real database on your machine. Nothing runs until you say so.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${outfit.variable} ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      /* globals.css sets scroll-behavior: smooth; this tells the router the smoothness
+         is deliberate, so it stops warning and still jumps instantly between routes. */
+      data-scroll-behavior="smooth"
+      className={`${outfit.variable} ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}
+    >
       <body className="min-h-screen antialiased">
         <a
           href="#main"

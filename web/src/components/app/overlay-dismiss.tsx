@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { lockScroll } from '@/lib/scroll-lock';
 
 const FOCUSABLE = [
   'a[href]',
@@ -34,8 +35,7 @@ export function OverlayDismiss({
     const opener = document.activeElement;
     panel()?.focus();
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockScroll();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -70,7 +70,7 @@ export function OverlayDismiss({
 
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = previousOverflow;
+      releaseScroll();
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, [closeHref, panelId, router]);

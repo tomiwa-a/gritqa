@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { lockScroll } from '@/lib/scroll-lock';
 import { Container } from '@/components/ui/container';
 import { Button, ButtonLink } from '@/components/ui/button';
 import { Wordmark } from '@/components/ui/wordmark';
@@ -28,10 +29,10 @@ export function Navbar() {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      releaseScroll();
     };
   }, [open]);
 
@@ -67,7 +68,12 @@ export function Navbar() {
               Sign in
             </ButtonLink>
 
-            <ButtonLink href="#waitlist" variant="primary" size="sm" className="hidden sm:inline-flex">
+            <ButtonLink
+              href="#waitlist"
+              variant="primary"
+              size="sm"
+              className="hidden sm:inline-flex"
+            >
               Get early access
             </ButtonLink>
 
@@ -80,7 +86,14 @@ export function Navbar() {
               onClick={() => setOpen((v) => !v)}
             >
               <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
-              <svg viewBox="0 0 16 16" aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 {open ? (
                   <path d="m4 4 8 8M12 4l-8 8" strokeLinecap="round" />
                 ) : (

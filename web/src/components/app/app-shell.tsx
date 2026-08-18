@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
 import { Sidebar } from './sidebar';
+import { lockScroll } from '@/lib/scroll-lock';
 
 const ShellContext = createContext<{ openMobileNav: () => void } | null>(null);
 
@@ -20,10 +21,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!mobileOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMobileOpen(false);
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    const releaseScroll = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      releaseScroll();
     };
   }, [mobileOpen]);
 
