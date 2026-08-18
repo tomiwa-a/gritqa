@@ -41,11 +41,34 @@ export function EndpointPicker({
   const toggleFile = (file: PickerFile) => {
     const keys = file.endpoints.map((e) => e.key);
     const all = keys.every((k) => picked.includes(k));
-    setPicked((prev) => (all ? prev.filter((k) => !keys.includes(k)) : [...new Set([...prev, ...keys])]));
+    setPicked((prev) =>
+      all ? prev.filter((k) => !keys.includes(k)) : [...new Set([...prev, ...keys])],
+    );
   };
 
   return (
     <div className="flex flex-col">
+      {/* What you have picked, not what to do about it — advancing the wizard
+          belongs to the one button in the footer, and saying it twice is worse
+          than saying it once. */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-rule bg-app-panel/95 px-4 py-2.5 backdrop-blur-sm">
+        <p className="nums shrink-0 text-[12px] font-medium text-ink">
+          {picked.length === 0 ? 'Nothing picked yet' : `${picked.length} picked`}
+        </p>
+
+        {picked.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => setPicked([])}>
+            Clear
+          </Button>
+        )}
+
+        <p className="text-[11.5px] leading-snug text-ink-subtle">
+          {picked.length === 0
+            ? 'Pick the endpoints the drafts should cover.'
+            : 'GritQA reads these together, so one plan can cover several of them in order.'}
+        </p>
+      </div>
+
       {files.map((file) => {
         const keys = file.endpoints.map((e) => e.key);
         const chosen = keys.filter((k) => has(k)).length;
@@ -100,35 +123,6 @@ export function EndpointPicker({
           </section>
         );
       })}
-
-      <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-rule bg-app-panel/95 px-4 py-3 backdrop-blur-sm">
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={picked.length === 0}
-          title={
-            picked.length === 0
-              ? 'Pick at least one endpoint first'
-              : `Draft plans covering ${picked.length} endpoints`
-          }
-        >
-          <Icon name="sparkle" size={14} />
-          Draft plans
-          {picked.length > 0 && <span className="nums">· {picked.length}</span>}
-        </Button>
-
-        {picked.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => setPicked([])}>
-            Clear
-          </Button>
-        )}
-
-        <p className="text-[11.5px] leading-snug text-ink-subtle">
-          {picked.length === 0
-            ? 'Nothing picked yet.'
-            : 'GritQA reads these together, so one plan can cover several of them in order.'}
-        </p>
-      </div>
     </div>
   );
 }

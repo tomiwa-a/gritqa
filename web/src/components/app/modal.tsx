@@ -7,6 +7,10 @@ import type { ReactNode } from 'react';
 /**
  * Centered, for making something. Wider than a drawer because the things you make
  * here have lists to pick from. Becomes a bottom sheet on a phone.
+ *
+ * The panel is a flex child, never positioned. Its width and height are one
+ * `min()` each rather than a small-screen rule a breakpoint has to undo, so the
+ * worst a missing variant can cost is a square corner — not the whole card.
  */
 export function Modal({
   id,
@@ -31,7 +35,7 @@ export function Modal({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-40 sm:flex sm:items-center sm:justify-center sm:p-6">
+    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center sm:p-6">
       <OverlayDismiss closeHref={closeHref} label={`Close ${label}`} panelId={id} />
 
       <div
@@ -41,10 +45,9 @@ export function Modal({
         aria-label={label}
         tabIndex={-1}
         className={cn(
-          'animate-sheet absolute inset-x-0 bottom-0 flex max-h-[88vh] flex-col overflow-hidden',
-          'rounded-t-xl border border-rule bg-app-panel shadow-menu outline-none',
-          'sm:animate-modal sm:relative sm:inset-auto sm:max-h-[min(46rem,86vh)]',
-          'sm:w-[min(44rem,92vw)] sm:rounded-xl',
+          'animate-sheet relative flex max-h-[min(46rem,88dvh)] w-full max-w-[44rem] flex-col',
+          'overflow-hidden rounded-t-xl border border-rule bg-app-panel shadow-menu outline-none',
+          'sm:animate-modal sm:rounded-xl',
         )}
       >
         <header className="flex shrink-0 items-start gap-3 border-b border-rule-soft px-4 py-3.5 sm:px-5">

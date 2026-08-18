@@ -6,7 +6,8 @@ import { CommitHistory } from './commit-history';
 import { CommitSearch } from './commit-search';
 import { EndpointPicker, type PickerFile } from './endpoint-picker';
 import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';import { Icon, type IconName } from '@/components/ui/icon';
+import { buttonVariants } from '@/components/ui/button';
+import { Icon, type IconName } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
 import { cn } from '@/lib/cn';
@@ -305,11 +306,7 @@ export function GenerateModal({
                     {door.hint}
                   </span>
                 </span>
-                <Icon
-                  name="chevronRight"
-                  size={14}
-                  className="mt-1.5 shrink-0 text-rule-strong"
-                />
+                <Icon name="chevronRight" size={14} className="mt-1.5 shrink-0 text-rule-strong" />
               </Link>
             </li>
           ))}
@@ -409,8 +406,8 @@ export function GenerateModal({
             {focus && (
               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 pb-2.5 text-[12.5px] text-ink-muted sm:px-5">
                 <span>
-                  Narrowed to{' '}
-                  <span className="font-mono text-[11.5px] text-ink">{focus.file}</span>, with{' '}
+                  Narrowed to <span className="font-mono text-[11.5px] text-ink">{focus.file}</span>
+                  , with{' '}
                   <span className="font-mono text-[11.5px] text-ink">
                     {focus.method} {focus.path}
                   </span>{' '}
