@@ -45,13 +45,13 @@ var Frameworks = []Framework{
 	{ID: Echo, Language: "go", Dep: "github.com/labstack/echo", Static: true},
 	{ID: Fiber, Language: "go", Dep: "github.com/gofiber/fiber", Static: true},
 
-	{ID: Express, Language: "javascript", Dep: "express"},
-	{ID: Fastify, Language: "javascript", Dep: "fastify"},
-	{ID: NestJS, Language: "typescript", Dep: "@nestjs/core"},
+	{ID: Express, Language: "javascript", Dep: "express", Static: true},
+	{ID: Fastify, Language: "javascript", Dep: "fastify", Static: true},
+	{ID: NestJS, Language: "typescript", Dep: "@nestjs/core", Static: true},
 
-	{ID: FastAPI, Language: "python", Dep: "fastapi"},
-	{ID: Flask, Language: "python", Dep: "flask"},
-	{ID: Django, Language: "python", Dep: "django"},
+	{ID: FastAPI, Language: "python", Dep: "fastapi", Static: true},
+	{ID: Flask, Language: "python", Dep: "flask", Static: true},
+	{ID: Django, Language: "python", Dep: "django", Static: true},
 
 	{ID: Rails, Language: "ruby", Dep: "rails"},
 	{ID: Laravel, Language: "php", Dep: "laravel/framework"},

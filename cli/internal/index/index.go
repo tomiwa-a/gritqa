@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -9,7 +10,10 @@ import (
 	"sync"
 
 	"github.com/gritqa/cli/internal/index/golang"
+	"github.com/gritqa/cli/internal/index/js"
 	"github.com/gritqa/cli/internal/index/lang"
+	"github.com/gritqa/cli/internal/index/lang/lexical"
+	"github.com/gritqa/cli/internal/index/python"
 	"github.com/gritqa/cli/internal/index/routes"
 	"github.com/gritqa/cli/internal/index/source"
 )
@@ -47,6 +51,7 @@ type outcome struct {
 	routes     []routes.Route
 	unresolved []routes.Route
 	frameworks []lang.ID
+	graph      *lexical.Graph // the languages read lexically, resolved project-wide
 	unparsed   bool
 }
 
@@ -78,13 +83,19 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 		return nil, err
 	}
 
-	out, err := scan(ctx, root, paths, res.Empty())
+	// The manifests are read before the file pass, because a Fastify plugin file
+	// imports nothing: what makes its router parameter a router is the project
+	// having declared the dependency.
+	project := lang.Detect(root)
+
+	out, err := scan(ctx, root, paths, res.Empty(), project)
 	if err != nil {
 		return nil, err
 	}
 
 	snap := &Snapshot{Root: root}
-	ids := lang.Detect(root)
+	ids := append([]lang.ID(nil), project...)
+	graph := &lexical.Graph{}
 
 	for _, o := range out {
 		if o.file == nil {
@@ -94,11 +105,15 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 		snap.Routes = append(snap.Routes, o.routes...)
 		snap.Unresolved = append(snap.Unresolved, o.unresolved...)
 		ids = append(ids, o.frameworks...)
+		if o.graph != nil {
+			graph.Merge(o.graph)
+		}
 		if o.unparsed {
 			snap.Unparsed = append(snap.Unparsed, o.file.Path)
 		}
 	}
 	snap.Frameworks = lang.Order(ids)
+	resolve(snap, graph, paths)
 
 	switch {
 	case !res.Empty():
@@ -110,7 +125,28 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 	return snap, nil
 }
 
-func scan(ctx context.Context, root string, paths []string, wantRoutes bool) ([]outcome, error) {
+// resolve finishes the paths a single file could not: an Express router or a
+// Django URLconf is usually mounted from somewhere else, so the mount graph is
+// only complete once every file has been read.
+func resolve(snap *Snapshot, graph *lexical.Graph, paths []string) {
+	if graph.Empty() {
+		return
+	}
+	graph.Link(lexical.NewImports(paths))
+
+	found, unresolved := graph.Resolve()
+	snap.Routes = groupByFile(append(snap.Routes, found...))
+	snap.Unresolved = groupByFile(append(snap.Unresolved, unresolved...))
+}
+
+// groupByFile keeps a file's endpoints contiguous, which is what the coverage
+// grid groups on. The order within a file is left to whoever extracted it.
+func groupByFile(rs []routes.Route) []routes.Route {
+	sort.SliceStable(rs, func(i, j int) bool { return rs[i].File < rs[j].File })
+	return rs
+}
+
+func scan(ctx context.Context, root string, paths []string, wantRoutes bool, project []lang.ID) ([]outcome, error) {
 	out := make([]outcome, len(paths))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -120,7 +156,7 @@ func scan(ctx context.Context, root string, paths []string, wantRoutes bool) ([]
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				out[i] = inspect(root, paths[i], wantRoutes)
+				out[i] = inspect(root, paths[i], wantRoutes, project)
 			}
 		}()
 	}
@@ -139,7 +175,7 @@ func scan(ctx context.Context, root string, paths []string, wantRoutes bool) ([]
 	return out, nil
 }
 
-func inspect(root, rel string, wantRoutes bool) outcome {
+func inspect(root, rel string, wantRoutes bool, project []lang.ID) outcome {
 	var o outcome
 
 	body, hash, size, err := read(filepath.Join(root, filepath.FromSlash(rel)))
@@ -149,25 +185,50 @@ func inspect(root, rel string, wantRoutes bool) outcome {
 
 	language := Language(rel)
 	o.file = &File{Path: rel, Language: language, Size: size, Hash: hash}
-	if language != "go" || body == nil {
+	if body == nil {
 		return o
 	}
+	wantRoutes = wantRoutes && !isTest(rel)
 
-	f, err := golang.Parse(rel, body)
-	if err != nil {
-		o.unparsed = true
-		return o
-	}
+	switch language {
+	case "go":
+		f, err := golang.Parse(rel, body)
+		if err != nil {
+			o.unparsed = true
+			return o
+		}
+		o.file.Symbols = golang.Counts(f.Symbols())
+		o.frameworks = f.Frameworks()
+		if wantRoutes {
+			o.routes, o.unresolved = f.Routes()
+		}
 
-	o.file.Symbols = golang.Counts(f.Symbols())
-	o.frameworks = f.Frameworks()
-
-	// Tests import net/http and register handlers against it; those are not the
-	// project's endpoints.
-	if wantRoutes && !strings.HasSuffix(rel, "_test.go") {
-		o.routes, o.unresolved = f.Routes()
+	// Neither of these can finish a path on its own, so they contribute a graph
+	// fragment instead of routes.
+	case "javascript", "typescript":
+		if wantRoutes {
+			o.graph, o.frameworks = js.Extract(rel, body, project)
+		}
+	case "python":
+		if wantRoutes {
+			o.graph, o.frameworks = python.Extract(rel, body)
+		}
 	}
 	return o
+}
+
+// isTest reports whether a file is a test. Tests import net/http, spin up
+// fixture apps and register handlers against them; none of that is the
+// project's endpoints.
+func isTest(rel string) bool {
+	base := path.Base(rel)
+	switch {
+	case strings.HasSuffix(base, "_test.go"),
+		strings.HasSuffix(base, "_test.py"),
+		strings.HasPrefix(base, "test_"):
+		return true
+	}
+	return strings.Contains(base, ".test.") || strings.Contains(base, ".spec.")
 }
 
 func (s *Snapshot) FileCount() int       { return len(s.Files) }

@@ -83,14 +83,14 @@ func TestOrderFollowsTheTable(t *testing.T) {
 }
 
 func TestReadableSeparatesWhatCanBeParsed(t *testing.T) {
-	if !Readable([]ID{Django, Chi}) {
+	if !Readable([]ID{Rails, Chi}) {
 		t.Error("chi is readable")
 	}
-	if Readable([]ID{Django, Rails}) {
-		t.Error("neither Django nor Rails is readable yet")
+	if Readable([]ID{Rails, Spring}) {
+		t.Error("neither Rails nor Spring is readable yet")
 	}
-	if got := Unreadable([]ID{Chi, Django, Rails}); !equal(got, []ID{Django, Rails}) {
-		t.Errorf("got %v, want [django rails]", got)
+	if got := Unreadable([]ID{Chi, Django, Rails, Spring}); !equal(got, []ID{Rails, Spring}) {
+		t.Errorf("got %v, want [rails spring]", got)
 	}
 }
 

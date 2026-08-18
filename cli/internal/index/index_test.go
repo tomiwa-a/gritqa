@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/index/source"
 )
 
 func TestReadIndexesGoSourceAndItsRoutes(t *testing.T) {
@@ -254,10 +257,119 @@ func paths(s *Snapshot) []string {
 	return out
 }
 
-func sigs(s *Snapshot) []string {
-	out := make([]string, len(s.Routes))
-	for i, r := range s.Routes {
+func sigs(s *Snapshot) []string       { return each(s.Routes) }
+func unresolved(s *Snapshot) []string { return each(s.Unresolved) }
+
+func each(rs []routes.Route) []string {
+	out := make([]string, len(rs))
+	for i, r := range rs {
 		out[i] = r.File + " " + r.Signature()
 	}
 	return out
+}
+
+// Two languages, one index. Express needs a project-wide pass to finish its
+// paths, and the result still has to be grouped by file for the coverage grid.
+func TestReadComposesLexicalRoutesAcrossFiles(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"go.mod":       "module example.com/api\n",
+		"package.json": `{"dependencies": {"express": "^4.19.0"}}`,
+
+		"cmd/api/main.go": `package main
+
+import "net/http"
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", ok)
+}
+`,
+		"src/app.js": `const express = require('express');
+const orders = require('./routes/orders');
+
+const app = express();
+app.use('/v1/orders', orders);
+app.get('/health', handleHealth);
+`,
+		"src/routes/orders.js": `const { Router } = require('express');
+
+const router = Router();
+router.get('/', list);
+router.post('/', create);
+
+module.exports = router;
+`,
+		// A fixture app in a test registers a route that is not the project's.
+		"src/app.test.js": `const express = require('express');
+
+const app = express();
+app.get('/internal/only', handler);
+`,
+	})
+
+	snap, err := Read(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"cmd/api/main.go GET /metrics",
+		"src/app.js GET /health",
+		"src/routes/orders.js GET /v1/orders",
+		"src/routes/orders.js POST /v1/orders",
+	}
+	if got := sigs(snap); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got:\n  %s\nwant:\n  %s",
+			strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+	if got := snap.Frameworks; len(got) != 2 || got[0] != "net/http" || got[1] != "express" {
+		t.Errorf("frameworks = %v, want [net/http express]", got)
+	}
+	if snap.Source != source.Static {
+		t.Errorf("source = %q, want static", snap.Source)
+	}
+}
+
+// Python takes the same route through the indexer, and a router nothing mounts
+// is reported rather than silently dropped.
+func TestReadReportsPythonRoutesItCouldNotMount(t *testing.T) {
+	root := newProject(t, map[string]string{
+		"requirements.txt": "fastapi==0.111.0\n",
+
+		"main.py": `from fastapi import FastAPI
+from .routers import orders
+
+app = FastAPI()
+app.include_router(orders.router, prefix="/v1")
+`,
+		"routers/orders.py": `from fastapi import APIRouter
+
+router = APIRouter(prefix="/orders")
+
+@router.get("")
+def list_orders():
+    return []
+`,
+		"routers/drafts.py": `from fastapi import APIRouter
+
+router = APIRouter(prefix="/drafts")
+
+@router.get("")
+def list_drafts():
+    return []
+`,
+	})
+
+	snap, err := Read(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := sigs(snap); strings.Join(got, "\n") != "routers/orders.py GET /v1/orders" {
+		t.Errorf("got %v", got)
+	}
+	want := "routers/drafts.py GET /<router>/drafts"
+	if got := unresolved(snap); strings.Join(got, "\n") != want {
+		t.Errorf("unresolved = %v, want %q", got, want)
+	}
 }
