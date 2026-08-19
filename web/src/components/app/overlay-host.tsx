@@ -2,6 +2,8 @@ import { GenerateModal } from './generate/generate-modal';
 import { PlanConversation } from './plan/plan-conversation';
 import { PlanPreview } from './plan/plan-preview';
 import { RunPreview } from './run-preview';
+import { RuleDrawer } from './rules/rule-drawer';
+import { RuleEditor } from './rules/rule-editor';
 import { parseOverlay, withOverlay, withoutOverlay, type PageParams } from '@/lib/overlay';
 
 /**
@@ -23,6 +25,15 @@ export function OverlayHost({ params, pathname }: { params: PageParams; pathname
 
   if (token.kind === 'ask') {
     return <PlanConversation id={token.id} closeHref={closeHref} />;
+  }
+
+  if (token.kind === 'rule') {
+    /* One token, two jobs: reading a rule is a panel, writing one is a box. */
+    return token.id === 'new' ? (
+      <RuleEditor closeHref={closeHref} />
+    ) : (
+      <RuleDrawer id={token.id} closeHref={closeHref} />
+    );
   }
 
   if (token.kind === 'run') {

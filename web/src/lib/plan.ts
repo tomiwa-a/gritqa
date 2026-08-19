@@ -1,4 +1,5 @@
 import { allPlans, coverage, rules } from '@/lib/mock/data';
+import { planDetailFor } from '@/lib/mock/plans';
 import type {
   CoverageFile,
   CoverageState,
@@ -36,8 +37,7 @@ export function variablesUsedBy(step: PlanStepSpec): string[] {
 }
 
 export type VariableOrigin =
-  | { kind: 'seed' }
-  | { kind: 'step'; stepId: string; index: number; path: string };
+  { kind: 'seed' } | { kind: 'step'; stepId: string; index: number; path: string };
 
 export type VariableLink = {
   name: string;
@@ -165,7 +165,12 @@ export function endpointFocusFor(key: string | undefined): EndpointFocus | null 
   for (const file of coverage) {
     for (const endpoint of file.endpoints) {
       if (endpointKey(endpoint) === key) {
-        return { method: endpoint.method, path: endpoint.path, file: file.file, state: endpoint.state };
+        return {
+          method: endpoint.method,
+          path: endpoint.path,
+          file: file.file,
+          state: endpoint.state,
+        };
       }
     }
   }
@@ -186,10 +191,12 @@ export function plansForFile(file: string): TestPlan[] {
 }
 
 export function coverageTotalsOf(endpoints: { state: CoverageState }[]) {
-  return endpoints.reduce(
-    (acc, e) => ({ ...acc, [e.state]: acc[e.state] + 1 }),
-    { approved: 0, draft: 0, failing: 0, none: 0 } as Record<CoverageState, number>,
-  );
+  return endpoints.reduce((acc, e) => ({ ...acc, [e.state]: acc[e.state] + 1 }), {
+    approved: 0,
+    draft: 0,
+    failing: 0,
+    none: 0,
+  } as Record<CoverageState, number>);
 }
 
 /**
@@ -203,9 +210,51 @@ export function rulesFor(plan: TestPlanDetail): TestingRule[] {
   return rules.filter((rule) => {
     if (!rule.isActive) return false;
     if (rule.category !== 'mock') return true;
-    const target = rule.detail.match(/target (\w+)/)?.[1];
+    const target = mockTargetOf(rule);
     return target ? surface.includes(target) : false;
   });
+}
+
+/** The service a mock rule stands in for, as its own detail line names it. */
+export function mockTargetOf(rule: TestingRule): string | null {
+  return rule.detail.match(/target (\w+)/)?.[1] ?? null;
+}
+
+/** How far a rule reaches, and how much of that is knowable. */
+export type RuleReach = {
+  /** Plans this rule is shaping, as far as the record can show. */
+  plans: TestPlan[];
+  /** Plans with no steps on record, so the rule could not be checked against them. */
+  unknown: number;
+};
+
+/**
+ * `rulesFor` read the other way round: which plans a rule is shaping right now.
+ *
+ * The two categories answer differently, and collapsing them would be a lie.
+ * Ordering, assertion and fixture rules are imposed on every draft whatever it
+ * contains, so their reach is every plan and needs no steps to know. A mock rule
+ * only applies where a plan actually reaches its target, which can only be read
+ * off the steps -- so plans without them are counted as unknown rather than
+ * being claimed either way.
+ */
+export function reachOf(rule: TestingRule): RuleReach {
+  if (!rule.isActive) return { plans: [], unknown: 0 };
+  if (rule.category !== 'mock') return { plans: allPlans, unknown: 0 };
+
+  const plans: TestPlan[] = [];
+  let unknown = 0;
+
+  for (const plan of allPlans) {
+    const detail = planDetailFor(plan.publicId);
+    if (!detail) {
+      unknown += 1;
+      continue;
+    }
+    if (rulesFor(detail).some((r) => r.publicId === rule.publicId)) plans.push(plan);
+  }
+
+  return { plans, unknown };
 }
 
 /** The plan as the CLI receives it, in the shape the runner expects. */

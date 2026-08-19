@@ -1,26 +1,20 @@
 import Link from 'next/link';
-import { Icon, type IconName } from '@/components/ui/icon';
+import { Icon } from '@/components/ui/icon';
+import { CATEGORY, CATEGORY_ORDER } from './rules/categories';
 import { rules } from '@/lib/mock/data';
-import type { RuleCategory } from '@/lib/mock/types';
-
-const CATEGORIES: { key: RuleCategory; label: string; icon: IconName; blurb: string }[] = [
-  { key: 'ordering', label: 'Ordering', icon: 'runs', blurb: 'What runs before what' },
-  { key: 'mock', label: 'Mocks', icon: 'mock', blurb: 'Who answers instead of the real service' },
-  { key: 'assertion', label: 'Assertions', icon: 'check', blurb: 'What every step must hold to' },
-  { key: 'fixture', label: 'Fixtures', icon: 'database', blurb: 'The values each run is given' },
-];
 
 export function RulesSummary() {
   return (
     <ul className="divide-y divide-rule-soft">
-      {CATEGORIES.map((c) => {
-        const all = rules.filter((r) => r.category === c.key);
+      {CATEGORY_ORDER.map((key) => {
+        const c = CATEGORY[key];
+        const all = rules.filter((r) => r.category === key);
         const off = all.filter((r) => !r.isActive).length;
 
         return (
-          <li key={c.key}>
+          <li key={key}>
             <Link
-              href="/dashboard/rules"
+              href={`/dashboard/rules?category=${key}`}
               className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-app-hover"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-rule bg-app text-ink-muted">

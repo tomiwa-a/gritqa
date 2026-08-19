@@ -4,10 +4,10 @@
  * leaves the rest of the URL — and so the filter you were looking at — alone.
  */
 
-export type OverlayKind = 'plan' | 'run' | 'ask' | 'generate';
+export type OverlayKind = 'plan' | 'run' | 'ask' | 'rule' | 'generate';
 
 export type OverlayToken =
-  { kind: 'plan' | 'run' | 'ask'; id: string } | { kind: 'generate'; id: null };
+  { kind: 'plan' | 'run' | 'ask' | 'rule'; id: string } | { kind: 'generate'; id: null };
 
 /** Params an overlay owns. Everything else on the URL belongs to the page. */
 export const OVERLAY_PARAMS = ['open', 'g', 'from', 'state', 'since', 'q', 'only'] as const;
@@ -24,7 +24,7 @@ export function parseOverlay(open: string | undefined): OverlayToken | null {
   const kind = open.slice(0, at);
   const id = open.slice(at + 1);
   if (!id) return null;
-  if (kind === 'plan' || kind === 'run' || kind === 'ask') return { kind, id };
+  if (kind === 'plan' || kind === 'run' || kind === 'ask' || kind === 'rule') return { kind, id };
   return null;
 }
 
@@ -39,6 +39,11 @@ export function runToken(publicId: string) {
 /** The conversation about a plan, opened over whatever page you are reading. */
 export function askToken(planPublicId: string) {
   return `ask:${planPublicId}`;
+}
+
+/** One rule and what it is shaping. `rule:new` writes a rule instead of reading one. */
+export function ruleToken(publicId: string) {
+  return `rule:${publicId}`;
 }
 
 function search(params: PageParams, drop: readonly string[]) {

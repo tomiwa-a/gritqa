@@ -1,16 +1,12 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
+import { CATEGORY } from '../rules/categories';
 import { rulesFor } from '@/lib/plan';
 import type { RuleCategory, TestPlanDetail } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
-const CATEGORY: Record<RuleCategory, { label: string; hint: string; className: string }> = {
-  ordering: { label: 'Order', hint: 'what runs before what', className: 'text-series-1' },
-  assertion: { label: 'Checks', hint: 'added to every step', className: 'text-series-2' },
-  mock: { label: 'Mocks', hint: 'stood in for a provider', className: 'text-series-4' },
-  fixture: { label: 'Values', hint: 'reused across plans', className: 'text-series-3' },
-};
-
+/* Its own order, not the Rules page's: on a plan, what ran and what was checked
+   are the two things you read first, and mocks are a detail of how. */
 const ORDER: RuleCategory[] = ['ordering', 'assertion', 'mock', 'fixture'];
 
 export function RulesApplied({ plan, className }: { plan: TestPlanDetail; className?: string }) {
@@ -20,7 +16,10 @@ export function RulesApplied({ plan, className }: { plan: TestPlanDetail; classN
     return (
       <p className={cn('px-4 py-3.5 text-[12.5px] text-ink-muted', className)}>
         No rules were active when this was drafted, so nothing was imposed on it.{' '}
-        <Link href="/dashboard/rules" className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink">
+        <Link
+          href="/dashboard/rules"
+          className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
+        >
           Set some up
         </Link>{' '}
         and the next draft will follow them.
@@ -44,14 +43,14 @@ export function RulesApplied({ plan, className }: { plan: TestPlanDetail; classN
           return (
             <div key={category} className="flex gap-3 px-4 py-2.5">
               <dt className="flex w-[5.5rem] shrink-0 items-baseline gap-1.5">
-                <Icon name="rules" size={12} className={cn('mt-px', meta.className)} />
-                <span className="text-[12px] font-medium text-ink">{meta.label}</span>
+                <Icon name="rules" size={12} className={cn('mt-px', meta.tone)} />
+                <span className="text-[12px] font-medium text-ink">{meta.short}</span>
               </dt>
               <dd className="min-w-0 flex-1">
                 <p className="text-[12.5px] leading-snug text-ink-muted">
                   {group.map((r) => r.name).join(' · ')}
                 </p>
-                <p className="mt-0.5 text-[11px] text-ink-subtle">{meta.hint}</p>
+                <p className="mt-0.5 text-[11px] text-ink-subtle">{meta.applied}</p>
               </dd>
             </div>
           );
