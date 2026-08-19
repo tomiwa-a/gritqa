@@ -1,120 +1,44 @@
-'use client';
-
-import { useState } from 'react';
 import Link from 'next/link';
+import { KeyField } from '@/components/app/settings/key-field';
 import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
+import { buttonVariants } from '@/components/ui/button';
 
-const FIELD = 'h-10 text-[13.5px]';
-
-export function ProviderStep() {
-  const [baseUrl, setBaseUrl] = useState('');
-  const [model, setModel] = useState('');
-  const [key, setKey] = useState('');
-  const [reveal, setReveal] = useState(false);
-  const [consent, setConsent] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const ready = baseUrl.trim() !== '' && model.trim() !== '' && key.trim() !== '' && consent;
-
+/**
+ * The onboarding step for the model key, which is the same control as the one in
+ * settings and now literally the same component.
+ *
+ * It used to be a second implementation: its own input, its own fake save, and a
+ * base URL and model field beside them with no column to land in. That is why it
+ * needed a disclaimer. One control that writes needs no disclaimer, and there is
+ * only one place to change when the vault changes.
+ *
+ * The endpoint is not asked for because it is not per-developer yet -- the AI
+ * settings screen says the same thing, and asking for something that gets thrown
+ * away is how the old version got to be misleading.
+ */
+export function ProviderStep({ masked }: { masked: string | null }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[13px] leading-relaxed text-ink-muted">
-        GritQA drafts plans through the provider you choose. Any OpenAI-compatible endpoint works —
-        DeepSeek, OpenAI, Claude, or Gemini — so you keep the account and the bill.
+        GritQA drafts plans with your key, on your account, so you keep the bill and the choice of
+        model. Only the files you change are sent, only when you ask for a draft, and never before.
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-ink">Base URL</span>
-          <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.deepseek.com/v1"
-            className={FIELD}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
+      <KeyField masked={masked} />
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-ink">Model</span>
-          <Input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="deepseek-chat"
-            className={FIELD}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-      </div>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[12px] font-medium text-ink">API key</span>
-        <span className="relative flex">
-          <Input
-            type={reveal ? 'text' : 'password'}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-…"
-            className={cn(FIELD, 'pr-11 font-mono')}
-            autoComplete="off"
-          />
-          <button
-            type="button"
-            onClick={() => setReveal((v) => !v)}
-            aria-label={reveal ? 'Hide the key' : 'Show the key'}
-            className="absolute top-0 right-0 flex h-10 w-10 items-center justify-center text-ink-subtle transition-colors duration-150 hover:text-ink"
-          >
-            <Icon name={reveal ? 'eyeOff' : 'eye'} size={14} />
-          </button>
-        </span>
-        <span className="text-[11.5px] text-ink-subtle">
-          Stored encrypted. Only used to draft plans you asked for.
-        </span>
-      </label>
-
-      <label
-        className={cn(
-          'flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors duration-150',
-          consent ? 'border-ink/20 bg-app' : 'border-rule hover:bg-app',
-        )}
-      >
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-punch-red"
-        />
-        <span className="text-[12.5px] leading-snug text-ink-muted">
-          <span className="font-medium text-ink">I agree to send changed files for drafting.</span>{' '}
-          When you ask for a plan, only the files that changed go to the provider above. Your source
-          is never kept on our servers, and nothing is sent unless you ask.
-        </span>
-      </label>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="primary" size="sm" disabled={!ready} onClick={() => setSaved(true)}>
-          Save provider
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rule bg-app px-3 py-2.5">
+        <p className="flex items-start gap-2 text-[12.5px] leading-snug text-ink-muted">
+          <Icon name="plan" size={13} className="mt-px shrink-0 text-ink-subtle" />
+          Would rather not involve a model at all? Write the plans yourself and GritQA will run
+          them.
+        </p>
         <Link
           href="/dashboard/test-plans"
           className={buttonVariants({ variant: 'ghost', size: 'sm' })}
         >
-          I would rather write plans myself
+          Write a plan
         </Link>
       </div>
-
-      {saved && (
-        <p className="flex items-start gap-2 rounded-lg border border-rule bg-app p-3 text-[12.5px] text-ink-muted">
-          <Icon name="alert" size={14} className="mt-0.5 shrink-0 text-warn" />
-          Keys are not accepted yet — the vault that holds them goes live with the beta API. Your
-          choices here are not stored.
-        </p>
-      )}
     </div>
   );
 }

@@ -5,7 +5,6 @@ import { KeyField } from '@/components/app/settings/key-field';
 import { DataBoundary } from '@/components/app/settings/data-boundary';
 import { Panel } from '@/components/app/panel';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
 import { getUser } from '@/lib/data';
@@ -31,11 +30,16 @@ export default async function AiSettingsPage() {
 
       <DataBoundary />
 
+      {/* Not a checkbox. The key is the consent -- there is no second switch that
+          could disagree with it, and a control that looked separately savable
+          would be claiming one exists. */}
       <Panel title="Consent" bodyClassName="p-4">
-        <Checkbox defaultChecked={Boolean(user.aiKeyMasked)}>
-          I understand that the source files I change are sent to the model above so a plan can be
-          drafted, and that I can revoke this by removing the key.
-        </Checkbox>
+        <p className="flex items-start gap-2 text-[12.5px] leading-snug text-ink-muted">
+          <Icon name="shield" size={14} className="mt-px shrink-0 text-ink-subtle" />
+          {user.aiKeyMasked
+            ? 'The source files you change are sent to the model above when you ask for a draft. Removing the key is what revokes that, and it is the only thing that does.'
+            : 'Nothing is sent anywhere. Adding a key is what lets the files you change reach a model, and removing it is what stops them.'}
+        </p>
       </Panel>
 
       <Panel title="How drafting behaves" bodyClassName="p-0">

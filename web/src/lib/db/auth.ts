@@ -68,3 +68,15 @@ export async function resolveProjectForUser(
   const [first] = await listProjectsForUser(userId);
   return first ?? null;
 }
+
+/**
+ * Sets or clears the stored model key. Takes ciphertext, never a key.
+ *
+ * The encryption happens in the action above this, which means a reader of this
+ * file cannot find a path where a plaintext key reaches a column -- there isn't
+ * one to find. `null` clears, and clearing is a normal thing to want: it is how a
+ * developer revokes drafting.
+ */
+export async function setAiKey(userId: number, ciphertext: string | null): Promise<void> {
+  await db.update(users).set({ aiApiKey: ciphertext }).where(eq(users.id, userId));
+}

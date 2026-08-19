@@ -9,7 +9,7 @@ const BAR: Record<StepState, string> = {
   todo: 'bg-rule-strong',
 };
 
-export function SetupFlow({ done }: { done: number }) {
+export function SetupFlow({ done, aiKeyMasked }: { done: number; aiKeyMasked: string | null }) {
   const steps = [
     {
       short: 'Install',
@@ -27,7 +27,7 @@ export function SetupFlow({ done }: { done: number }) {
       short: 'Provider',
       title: 'Choose who drafts your tests',
       description: 'Bring your own key, or write every plan by hand instead.',
-      body: <ProviderStep />,
+      body: <ProviderStep masked={aiKeyMasked} />,
     },
     {
       short: 'Review',

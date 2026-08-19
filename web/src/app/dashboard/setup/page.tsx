@@ -58,7 +58,7 @@ export default async function SetupPage() {
         />
 
         <div className="mt-5 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <SetupFlow done={done} />
+          <SetupFlow done={done} aiKeyMasked={user.aiKeyMasked} />
 
           <aside className="flex flex-col gap-4">
             <div className="rounded-xl border border-rule bg-app-panel p-4 shadow-panel">
