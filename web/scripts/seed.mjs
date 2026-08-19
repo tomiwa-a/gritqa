@@ -46,6 +46,35 @@ const PROJECTS = [
   { name: 'admin-api', localPath: '~/code/admin-api', branch: 'main', status: 'archived', indexed: false },
 ];
 
+/**
+ * The rules the dashboard was designed against, on the first project.
+ *
+ * `rule_config` carries the whole line as `description`, which is what the editor
+ * writes today. The structured per-category form -- `{ priority: 1, description }`
+ * for an ordering rule -- renders identically through `ruleDetail`, so these can be
+ * split later without any screen changing.
+ */
+const RULES = [
+  ['Authentication first', 'ordering', true, 'priority 1 -- test authentication before other endpoints'],
+  ['Create before read', 'ordering', true, 'priority 2 -- never assert on a list before seeding it'],
+  ['Cleanup runs last', 'ordering', true, 'priority 9 -- deletes go at the end of a plan'],
+  ['Paystack charge', 'mock', true, 'target paystack -- 200, status success, amount 10000'],
+  ['Paystack verify', 'mock', true, 'target paystack -- /transaction/verify returns success'],
+  ['Stripe webhook', 'mock', true, 'target stripe -- signed event, 200'],
+  ['Outbound mail', 'mock', true, 'target sendgrid -- 202, no delivery'],
+  ['Object storage', 'mock', false, 'target s3 -- 200, fake object key'],
+  ['Response under 2s', 'assertion', true, 'responseTime lt 2000 on every step'],
+  ['Never a 500', 'assertion', true, 'status notEquals 500 on every step'],
+  ['JSON content type', 'assertion', true, 'header content-type contains application/json'],
+  ['No stack traces', 'assertion', true, 'bodyField error notContains goroutine'],
+  ['Auth header required', 'assertion', true, 'unauthenticated calls assert status equals 401'],
+  ['Pagination envelope', 'assertion', false, 'bodyField meta.total exists on list endpoints'],
+  ['Test email', 'fixture', true, 'testEmail -- qa+run@gritqa.dev'],
+  ['Test password', 'fixture', true, 'testPassword -- generated per run'],
+  ['Test amount', 'fixture', true, 'testAmount -- 50000 minor units'],
+  ['Test currency', 'fixture', true, 'testCurrency -- NGN'],
+];
+
 /** Shaped like what a tree-sitter pass over a Go API would produce. */
 const INDEX = [
   {
@@ -162,6 +191,31 @@ try {
     }
     const endpoints = INDEX.reduce((n, f) => n + f.endpoints.length, 0);
     console.log(`${INDEX.length} indexed files, ${endpoints} endpoints on ${first.name}`);
+
+    // Matched on name rather than upserted, because there is no unique index on
+    // (project_id, name) -- two rules may legitimately share one. That keeps
+    // `public_id` stable across re-seeds, so a bookmarked ?open=rule:<id> survives.
+    for (const [name, category, isActive, description] of RULES) {
+      const detail = description.replaceAll(' -- ', ' \u2014 ');
+      const [existing] = await sql`
+        SELECT id FROM testing_rules WHERE project_id = ${first.id} AND name = ${name} LIMIT 1
+      `;
+      if (existing) {
+        await sql`
+          UPDATE testing_rules
+          SET category = ${category}, is_active = ${isActive},
+              rule_config = ${sql.json({ description: detail })}
+          WHERE id = ${existing.id}
+        `;
+      } else {
+        await sql`
+          INSERT INTO testing_rules (project_id, name, category, is_active, rule_config)
+          VALUES (${first.id}, ${name}, ${category}, ${isActive},
+                  ${sql.json({ description: detail })})
+        `;
+      }
+    }
+    console.log(`${RULES.length} rules on ${first.name}`);
   }
 
   console.log('Seeded. Sign in at http://localhost:3000/api/auth/dev');

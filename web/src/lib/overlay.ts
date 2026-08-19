@@ -10,7 +10,7 @@ export type OverlayToken =
   { kind: 'plan' | 'run' | 'ask' | 'rule'; id: string } | { kind: 'generate'; id: null };
 
 /** Params an overlay owns. Everything else on the URL belongs to the page. */
-export const OVERLAY_PARAMS = ['open', 'g', 'from', 'state', 'since', 'q', 'only'] as const;
+export const OVERLAY_PARAMS = ['open', 'g', 'from', 'state', 'since', 'q', 'only', 'edit'] as const;
 
 export type PageParams = Record<string, string | string[] | undefined>;
 
@@ -41,7 +41,10 @@ export function askToken(planPublicId: string) {
   return `ask:${planPublicId}`;
 }
 
-/** One rule and what it is shaping. `rule:new` writes a rule instead of reading one. */
+/**
+ * One rule and what it is shaping. `rule:new` writes a rule instead of reading one,
+ * and `&edit=1` beside an existing id opens the same box over that rule.
+ */
 export function ruleToken(publicId: string) {
   return `rule:${publicId}`;
 }

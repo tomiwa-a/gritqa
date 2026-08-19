@@ -4,14 +4,21 @@ import { PlanPreview } from './plan/plan-preview';
 import { RunPreview } from './run-preview';
 import { RuleDrawer } from './rules/rule-drawer';
 import { RuleEditor } from './rules/rule-editor';
-import { parseOverlay, withOverlay, withoutOverlay, type PageParams } from '@/lib/overlay';
+import { getRules } from '@/lib/data';
+import {
+  parseOverlay,
+  ruleToken,
+  withOverlay,
+  withoutOverlay,
+  type PageParams,
+} from '@/lib/overlay';
 
 /**
  * Every page that can host an overlay renders this once, at the end. It reads the
  * one param that decides what is open — an unknown token opens nothing, the same
  * way an unknown `?plan=` selects nothing.
  */
-export function OverlayHost({ params, pathname }: { params: PageParams; pathname: string }) {
+export async function OverlayHost({ params, pathname }: { params: PageParams; pathname: string }) {
   const open = typeof params.open === 'string' ? params.open : undefined;
   const token = parseOverlay(open);
   if (!token) return null;
@@ -28,11 +35,22 @@ export function OverlayHost({ params, pathname }: { params: PageParams; pathname
   }
 
   if (token.kind === 'rule') {
-    /* One token, two jobs: reading a rule is a panel, writing one is a box. */
-    return token.id === 'new' ? (
-      <RuleEditor closeHref={closeHref} />
-    ) : (
-      <RuleDrawer id={token.id} closeHref={closeHref} />
+    /* One token, three jobs: reading a rule is a panel, writing one is a box, and
+       editing one is the same box over a rule that already exists. */
+    if (token.id === 'new') return <RuleEditor closeHref={closeHref} />;
+
+    if (params.edit === '1') {
+      const rule = (await getRules()).find((r) => r.publicId === token.id);
+      /* A rule deleted in another tab: fall through to the drawer, which says so. */
+      if (rule) return <RuleEditor closeHref={closeHref} rule={rule} />;
+    }
+
+    return (
+      <RuleDrawer
+        id={token.id}
+        closeHref={closeHref}
+        editHref={withOverlay(pathname, params, ruleToken(token.id), { edit: '1' })}
+      />
     );
   }
 

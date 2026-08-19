@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Switch } from '@/components/ui/switch';
+import { RuleSwitch } from './rule-switch';
 import { getAllPlans, getPlanDetails, getRules } from '@/lib/data';
 import { reachOf } from '@/lib/plan';
 import type { TestingRule } from '@/lib/mock/types';
@@ -67,9 +67,10 @@ export async function RuleRows({
                 : 'off'}
             </span>
 
-            <Switch
-              label={`Turn ${rule.name} ${rule.isActive ? 'off' : 'on'}`}
-              defaultOn={rule.isActive}
+            <RuleSwitch
+              publicId={rule.publicId}
+              name={rule.name}
+              isActive={rule.isActive}
             />
           </li>
         );

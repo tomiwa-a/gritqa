@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { Drawer, DrawerBlock } from '../drawer';
-import { Switch } from '@/components/ui/switch';
+import { RuleSwitch } from './rule-switch';
 import { Icon } from '@/components/ui/icon';
+import { buttonVariants } from '@/components/ui/button';
 import { CATEGORY, scopeOf } from './categories';
 import { getAllPlans, getPlanDetails, getRules } from '@/lib/data';
+import { deleteRuleAction } from '@/lib/actions/rules';
 import { reachOf } from '@/lib/plan';
 
 const STATUS_WORD = { draft: 'Draft', approved: 'Approved', archived: 'Archived' } as const;
@@ -13,7 +15,15 @@ const STATUS_WORD = { draft: 'Draft', approved: 'Approved', archived: 'Archived'
  * shaping. Turning a rule off is the one edit here with reach beyond itself, so
  * the plans it touches are named before the switch is in reach, not after.
  */
-export async function RuleDrawer({ id, closeHref }: { id: string; closeHref: string }) {
+export async function RuleDrawer({
+  id,
+  closeHref,
+  editHref,
+}: {
+  id: string;
+  closeHref: string;
+  editHref: string;
+}) {
   const [rules, allPlans, details] = await Promise.all([
     getRules(),
     getAllPlans(),
@@ -44,10 +54,7 @@ export async function RuleDrawer({ id, closeHref }: { id: string; closeHref: str
                 : 'Off, so nothing follows it. Turn it on and the next draft does.'}
             </p>
           </div>
-          <Switch
-            label={`Turn ${rule.name} ${rule.isActive ? 'off' : 'on'}`}
-            defaultOn={rule.isActive}
-          />
+          <RuleSwitch publicId={rule.publicId} name={rule.name} isActive={rule.isActive} />
         </div>
       }
     >
@@ -61,6 +68,32 @@ export async function RuleDrawer({ id, closeHref }: { id: string; closeHref: str
 
       <DrawerBlock label="Applies to">
         <p className="text-[12.5px] leading-relaxed text-ink-muted">{scopeOf(rule)}</p>
+      </DrawerBlock>
+
+      <DrawerBlock label="This rule">
+        <div className="flex items-center gap-2">
+          <Link
+            href={editHref}
+            scroll={false}
+            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+          >
+            <Icon name="pencil" size={13} />
+            Edit
+          </Link>
+
+          {/* Its own form, so it is a real submission rather than a click handler,
+              and so it needs no JavaScript to work. */}
+          <form action={deleteRuleAction}>
+            <input type="hidden" name="publicId" value={rule.publicId} />
+            <button type="submit" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+              <Icon name="trash" size={13} />
+              Delete
+            </button>
+          </form>
+        </div>
+        <p className="mt-2 text-[11.5px] leading-snug text-ink-subtle">
+          Deleting it leaves every plan already drafted under it alone. Only the next draft changes.
+        </p>
       </DrawerBlock>
 
       <DrawerBlock

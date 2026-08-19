@@ -1,7 +1,11 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
+  customType,
   index,
+  inet,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -11,6 +15,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import type { CommitFile, PlanChange } from '@/lib/mock/types';
 
 /**
  * Every table carries the dual-ID pattern from `plan/technical/entities.md`: a
@@ -34,6 +39,11 @@ const stamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 };
+
+/** Drizzle has no `bytea`. Only the audit log needs one, and it holds gzip. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 export const providerEnum = pgEnum('provider', ['github', 'gitlab']);
 export const projectStatusEnum = pgEnum('project_status', ['active', 'archived']);
@@ -153,6 +163,322 @@ export const deviceCodes = pgTable(
   (t) => [index('device_codes_expires_idx').on(t.expiresAt)],
 );
 
+export const ruleCategoryEnum = pgEnum('rule_category', [
+  'ordering',
+  'mock',
+  'assertion',
+  'fixture',
+]);
+export const testPlanStatusEnum = pgEnum('test_plan_status', ['draft', 'approved', 'archived']);
+export const triggerSourceEnum = pgEnum('trigger_source', ['git_push', 'manual']);
+export const executionStatusEnum = pgEnum('execution_status', [
+  'pending',
+  'running',
+  'passed',
+  'failed',
+  'error',
+]);
+export const stepStatusEnum = pgEnum('step_status', [
+  'pending',
+  'passed',
+  'failed',
+  'skipped',
+  'error',
+]);
+export const jobTypeEnum = pgEnum('job_type', ['index_codebase', 'execute_tests']);
+export const jobStatusEnum = pgEnum('job_status', [
+  'pending',
+  'claimed',
+  'completed',
+  'failed',
+  'dead',
+]);
+export const httpMethodEnum = pgEnum('http_method', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+export const failureVerdictEnum = pgEnum('failure_verdict', ['real_bug', 'bad_test', 'undecided']);
+export const revisionAuthorEnum = pgEnum('revision_author', ['agent', 'human']);
+
+export const testingRules = pgTable(
+  'testing_rules',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    category: ruleCategoryEnum('category').notNull(),
+    /**
+     * Shape depends on the category, and stays JSONB until the structured
+     * per-category fields land -- an assertion is type x operator x target x
+     * expected, an ordering rule is a priority number, and inventing four
+     * columns that are null three times out of four buys nothing yet.
+     */
+    ruleConfig: jsonb('rule_config')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    isActive: boolean('is_active').notNull().default(true),
+    ...stamps,
+  },
+  (t) => [index('testing_rules_project_category_idx').on(t.projectId, t.category)],
+);
+
+export const testPlans = pgTable(
+  'test_plans',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    baseUrl: text('base_url').notNull(),
+    /** The agent's output. Validated against JSON Schema on the way in, not here. */
+    planJson: jsonb('plan_json').notNull(),
+    status: testPlanStatusEnum('status').notNull().default('draft'),
+    /** Optimistic lock. A version that walks backwards means two writers raced. */
+    version: integer('version').notNull().default(1),
+    triggerSource: triggerSourceEnum('trigger_source').notNull(),
+    /**
+     * Kept even though `commits` exists: this is the diff as it stood when the
+     * plan was drafted, and a branch that has since moved cannot reproduce it.
+     */
+    diffContext: jsonb('diff_context'),
+    ...stamps,
+  },
+  (t) => [index('test_plans_project_status_idx').on(t.projectId, t.status, t.createdAt)],
+);
+
+/**
+ * Why a plan changed, which `test_plans.version` cannot say.
+ *
+ * A developer reading a plan's history wants the sentence they typed, not a diff
+ * of two JSON blobs to infer it from. This is the table `refine-composer.tsx`
+ * has been submitting into nothing for.
+ *
+ * `author` is stored as agent/human rather than the read model's ai/you, because
+ * "you" is only true from one side of the screen. The data layer maps it.
+ */
+export const planRevisions = pgTable(
+  'plan_revisions',
+  {
+    ...identity,
+    testPlanId: bigint('test_plan_id', { mode: 'number' })
+      .notNull()
+      .references(() => testPlans.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    author: revisionAuthorEnum('author').notNull(),
+    /** Null for the agent's own turns; a CHECK requires it for a human's. */
+    instruction: text('instruction'),
+    summary: text('summary').notNull(),
+    changes: jsonb('changes')
+      .$type<PlanChange[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('plan_revisions_plan_version_idx').on(t.testPlanId, t.version)],
+);
+
+export const testExecutions = pgTable(
+  'test_executions',
+  {
+    ...identity,
+    testPlanId: bigint('test_plan_id', { mode: 'number' })
+      .notNull()
+      .references(() => testPlans.id, { onDelete: 'cascade' }),
+    /**
+     * Denormalized from the plan on purpose. Every runs query filters by project
+     * and none of them wants to join through `test_plans` to do it.
+     */
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    status: executionStatusEnum('status').notNull().default('pending'),
+    dockerContainerId: varchar('docker_container_id', { length: 64 }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('test_executions_project_idx').on(t.projectId, t.createdAt),
+    index('test_executions_plan_idx').on(t.testPlanId, t.createdAt),
+  ],
+);
+
+export const testResults = pgTable(
+  'test_results',
+  {
+    ...identity,
+    executionId: bigint('execution_id', { mode: 'number' })
+      .notNull()
+      .references(() => testExecutions.id, { onDelete: 'cascade' }),
+    /** The step's id inside `test_plans.plan_json`, not a row id. */
+    stepId: varchar('step_id', { length: 255 }).notNull(),
+    stepName: varchar('step_name', { length: 255 }).notNull(),
+    status: stepStatusEnum('status').notNull().default('pending'),
+    requestMethod: varchar('request_method', { length: 10 }),
+    requestUrl: text('request_url'),
+    requestBody: jsonb('request_body'),
+    responseStatus: integer('response_status'),
+    responseBody: jsonb('response_body'),
+    responseTimeMs: integer('response_time_ms'),
+    assertionResults: jsonb('assertion_results'),
+    errorMessage: text('error_message'),
+
+    /**
+     * The human's read of the failure, which is not the same fact as the failure.
+     *
+     * Per step, not per execution: a run with four failures can be one real bug
+     * and three bad assertions, and collapsing that to one verdict throws away
+     * the only judgement anyone made. The read model already keys it this way --
+     * `PlanFailureSeed` carries a `stepId`.
+     *
+     * Null is not 'undecided'. Null means nobody has looked; 'undecided' means
+     * somebody looked and could not tell, which is the more interesting fact.
+     */
+    verdict: failureVerdictEnum('verdict'),
+    verdictNote: text('verdict_note'),
+    verdictBy: bigint('verdict_by', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    verdictAt: timestamp('verdict_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('test_results_execution_idx').on(t.executionId, t.id)],
+);
+
+/**
+ * A project's history, which `test_plans.diff_context` could only show through
+ * whichever plans happened to quote it. The generate wizard's range picker needs
+ * somewhere to browse from and a way to look a commit up by hash.
+ *
+ * No short hash column: a prefix of a sha is not a second fact about a commit.
+ */
+export const commits = pgTable(
+  'commits',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    sha: varchar('sha', { length: 40 }).notNull(),
+    subject: text('subject').notNull(),
+    author: varchar('author', { length: 255 }).notNull(),
+    branch: varchar('branch', { length: 255 }).notNull(),
+    authoredAt: timestamp('authored_at', { withTimezone: true }).notNull(),
+    files: jsonb('files')
+      .$type<CommitFile[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** The `files` numbers summed. Stored because every list view shows them. */
+    additions: integer('additions').notNull().default(0),
+    deletions: integer('deletions').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('commits_project_sha_idx').on(t.projectId, t.sha),
+    index('commits_project_authored_idx').on(t.projectId, t.authoredAt),
+  ],
+);
+
+/**
+ * The durable half of the web/CLI seam: approved work that nobody is sitting at
+ * a socket waiting for, so a partition here is latency rather than failure.
+ * Research goes the other way, synchronously over MCP.
+ *
+ * No `generate_tests` type. Drafting is a conversation that streams to the
+ * browser, so it never becomes queued work.
+ */
+export const jobs = pgTable(
+  'jobs',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    type: jobTypeEnum('type').notNull(),
+    status: jobStatusEnum('status').notNull().default('pending'),
+    payload: jsonb('payload')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    result: jsonb('result'),
+    /** Which CLI instance holds it. Kept after the job ends: part of what happened. */
+    claimedBy: varchar('claimed_by', { length: 255 }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+    errorMessage: text('error_message'),
+    ...stamps,
+  },
+  (t) => [
+    /**
+     * The poll, exactly: the oldest pending job. Partial, so the index stays the
+     * size of the backlog rather than the size of the history.
+     */
+    index('jobs_pending_idx')
+      .on(t.createdAt)
+      .where(sql`status = 'pending'`),
+    index('jobs_project_idx').on(t.projectId, t.createdAt),
+  ],
+);
+
+export const mockEndpoints = pgTable(
+  'mock_endpoints',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    method: httpMethodEnum('method').notNull(),
+    path: text('path').notNull(),
+    responseStatus: integer('response_status').notNull().default(200),
+    responseBody: jsonb('response_body')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    delayMs: integer('delay_ms').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    ...stamps,
+  },
+  /** One mock per route: two rows for the same one is an ambiguity to guess at. */
+  (t) => [uniqueIndex('mock_endpoints_route_idx').on(t.projectId, t.method, t.path)],
+);
+
+/**
+ * Append-only, and enforced by triggers in `drizzle/0001_the_rest.sql` rather
+ * than by convention. No `public_id` and no `updated_at`: nothing addresses a
+ * log row from outside, and a row that could be updated would not be a log.
+ *
+ * The value columns hold gzip. `entities.md` said gzip-then-base64, which
+ * inflates bytes by a third on their way into a column that is already binary.
+ */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint('user_id', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    action: varchar('action', { length: 255 }).notNull(),
+    entityType: varchar('entity_type', { length: 255 }).notNull(),
+    entityId: bigint('entity_id', { mode: 'number' }),
+    oldValues: bytea('old_values'),
+    newValues: bytea('new_values'),
+    ipAddress: inet('ip_address'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('audit_logs_entity_idx').on(t.entityType, t.entityId, t.id),
+    index('audit_logs_user_idx').on(t.userId, t.id),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   projects: many(projects),
 }));
@@ -169,3 +495,13 @@ export const codebaseIndexRelations = relations(codebaseIndex, ({ one }) => ({
 export type UserRow = typeof users.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type DeviceCodeRow = typeof deviceCodes.$inferSelect;
+export type CodebaseFileRow = typeof codebaseIndex.$inferSelect;
+export type TestingRuleRow = typeof testingRules.$inferSelect;
+export type TestPlanRow = typeof testPlans.$inferSelect;
+export type PlanRevisionRow = typeof planRevisions.$inferSelect;
+export type TestExecutionRow = typeof testExecutions.$inferSelect;
+export type TestResultRow = typeof testResults.$inferSelect;
+export type CommitRow = typeof commits.$inferSelect;
+export type JobRow = typeof jobs.$inferSelect;
+export type MockEndpointRow = typeof mockEndpoints.$inferSelect;
+export type AuditLogRow = typeof auditLogs.$inferSelect;
