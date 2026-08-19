@@ -25,6 +25,7 @@ type Options struct {
 	Name     string
 
 	PlanFile   string
+	NoConfirm  bool
 	Project    string
 	Verbose    bool
 	JSON       bool

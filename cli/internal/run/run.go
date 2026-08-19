@@ -25,8 +25,23 @@ type Engine struct {
 	// wins over whatever the plan was drafted against.
 	BaseURL string
 	HTTP    *http.Client
-	// OnStep is called as each step settles, so a transcript can stream.
+	// OnStep is called once per step, after repair has settled, so a transcript
+	// streams without a re-run corrupting its arithmetic.
 	OnStep func(StepResult)
+
+	// Repairer is optional. With none, a failed step settles exactly as it did
+	// before M3 and the run costs nothing but HTTP.
+	Repairer Repairer
+	// OnRepair narrates each repair attempt, accepted or declined.
+	OnRepair func(Attempt)
+	// Handler resolves a step to the source that serves it, when the index knows.
+	Handler func(plan.Step) Handler
+	// Attempts bounds fixes per failed step; Budget bounds them for the whole run.
+	Attempts int
+	Budget   int
+
+	plan  string
+	spent int
 }
 
 type Result struct {
@@ -35,6 +50,8 @@ type Result struct {
 	Steps   []StepResult
 	Vars    map[string]string
 	Elapsed time.Duration
+	// Repairs is how many model calls the run spent fixing steps.
+	Repairs int
 }
 
 // RunID is seeded before every run and is different each time. A plan that signs
@@ -69,6 +86,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 		vars[k] = v
 	}
 
+	e.plan, e.spent = p.Name, 0
+
 	started := time.Now()
 	out := &Result{Plan: p.Name, Steps: make([]StepResult, 0, len(order)), Vars: vars}
 	settled := make(map[string]StepStatus, len(order))
@@ -84,6 +103,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 				"%s did not pass, so this had nothing to run with", blocker(s, settled)))
 		default:
 			r = e.step(ctx, s, vars)
+			if e.Repairer != nil && (r.Status == StepFailed || r.Status == StepError) {
+				r = e.repair(ctx, s, r, vars)
+			}
 		}
 
 		settled[s.ID] = r.Status
@@ -100,6 +122,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 	}
 
 	out.Elapsed = time.Since(started)
+	out.Repairs = e.spent
 	out.Status = statusOf(out.Steps)
 	return out, nil
 }

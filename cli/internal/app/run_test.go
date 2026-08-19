@@ -5,11 +5,15 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gritqa/cli/internal/config"
+	"github.com/gritqa/cli/internal/index"
+	"github.com/gritqa/cli/internal/index/routes"
 	"github.com/gritqa/cli/internal/plan"
 	"github.com/gritqa/cli/internal/run"
 	"github.com/gritqa/cli/internal/term"
@@ -194,5 +198,97 @@ func TestExecutionRowsAreWhatTheDashboardShows(t *testing.T) {
 	}
 	if e.Steps[2].Code != 0 || e.Steps[2].Detail != "" {
 		t.Errorf("a step that never ran has nothing to report: %+v", e.Steps[2])
+	}
+}
+
+// The hotel API's shape: one file per controller, reached by query string. The
+// step carries a variable the route does not, so only its literal head matches.
+func TestHandlersMatchAQueryStringRoute(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ReservationController.php"),
+		[]byte("<?php class ReservationController { function addToBag() {} }"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	find := handlers(dir, &index.Snapshot{Root: dir, Routes: []routes.Route{
+		{File: "ReservationController.php", Method: "POST",
+			Path: "/index.php?controller=reservations&action=addToBag"},
+		{File: "RoomTypeController.php", Method: "GET",
+			Path: "/index.php?controller=room_type&action=index"},
+	}})
+
+	got := find(plan.Step{Request: plan.Request{Method: "POST",
+		URL: "/index.php?controller=reservations&action=addToBag&user_id={{guestId}}"}})
+	if got.Path != "ReservationController.php" {
+		t.Fatalf("matched %q", got.Path)
+	}
+	if !strings.Contains(got.Content, "addToBag") {
+		t.Error("the handler's source is what repair reads")
+	}
+
+	if miss := find(plan.Step{Request: plan.Request{Method: "GET", URL: "/nothing/here"}}); miss.Path != "" {
+		t.Errorf("a miss is fine, an invention is not: %+v", miss)
+	}
+}
+
+// A file the index names but the tree no longer has is a miss, not a crash.
+func TestHandlersSurviveAMissingFile(t *testing.T) {
+	find := handlers(t.TempDir(), &index.Snapshot{Routes: []routes.Route{
+		{File: "gone.php", Method: "GET", Path: "/gone"},
+	}})
+	if got := find(plan.Step{Request: plan.Request{Method: "GET", URL: "/gone"}}); got.Path != "" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestRepairNoteSaysWhichKindOfFailureItWas(t *testing.T) {
+	cases := []struct {
+		a    run.Attempt
+		want string
+	}{
+		{run.Attempt{Err: "the model timed out"}, "timed out"},
+		{run.Attempt{Refused: "repair may correct how a step asks"}, "declined"},
+		{run.Attempt{Kind: run.CodeWrong, Why: "it dereferences a null discount"}, "the code looks wrong"},
+		{run.Attempt{Kind: run.Unsure, Why: "the body says nothing"}, "could not tell"},
+		{run.Attempt{Kind: run.TestWrong, Why: "guest_id is a query param",
+			After: &plan.Step{}, Status: run.StepPassed}, "the test was wrong"},
+		{run.Attempt{Kind: run.TestWrong, Why: "try the body instead",
+			After: &plan.Step{}, Status: run.StepFailed}, "did not help"},
+	}
+	for _, c := range cases {
+		if got := repairNote(c.a); !strings.Contains(got, c.want) {
+			t.Errorf("%+v → %q, want it to mention %q", c.a, got, c.want)
+		}
+	}
+}
+
+// Every attempt becomes a revision, accepted or not, because a repairer reaching
+// for a frozen field is the failure mode the guard exists for.
+func TestRevisionsKeepDeclinedAttempts(t *testing.T) {
+	before := plan.Step{ID: "s1", Name: "create an order",
+		Request: plan.Request{Method: "POST", URL: "/orders"}}
+	moved := before
+	moved.Request.URL = "/orders?guest_id=g_1"
+
+	got := revisions([]run.Attempt{
+		{StepID: "s1", N: 1, Kind: run.TestWrong, Why: "guest_id is a query param",
+			Before: before, After: &moved, Status: run.StepPassed},
+		{StepID: "s1", N: 2, Kind: run.TestWrong, Why: "it returns 500",
+			Before: before, After: &moved, Refused: "repair may correct how a step asks"},
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("%d revisions", len(got))
+	}
+	if !got[0].Accepted || got[1].Accepted {
+		t.Errorf("accepted = %v, %v", got[0].Accepted, got[1].Accepted)
+	}
+	for i, r := range got {
+		if r.Author != "ai" || r.Version != i+1 || r.Summary == "" {
+			t.Errorf("revision %d: %+v", i, r)
+		}
+		if len(r.Changes) != 1 || r.Changes[0].Detail != "url" {
+			t.Errorf("revision %d changes: %+v", i, r.Changes)
+		}
 	}
 }

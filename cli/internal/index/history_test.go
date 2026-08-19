@@ -1,6 +1,7 @@
 package index
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 )
@@ -114,5 +115,86 @@ func TestHistorySurvivesACacheRebuild(t *testing.T) {
 	}
 	if len(got) != 1 || len(got[0].Steps) != 3 {
 		t.Fatalf("history did not survive: %+v", got)
+	}
+}
+
+func TestRevisionsRoundTrip(t *testing.T) {
+	s := open(t, t.TempDir())
+
+	e := run("checkout-tax")
+	e.Confirmed = sql.NullBool{Bool: false, Valid: true}
+	e.ConfirmNote = "nothing checked that auth was enforced"
+	e.Steps[1].Verdict = "real_bug"
+	e.Revisions = []Revision{
+		{StepID: "s2", Version: 1, Author: "ai", Summary: "guest_id belongs in the query",
+			Accepted: true, Changes: []ChangeRow{
+				{Kind: "value_changed", StepName: "Apply tax", Detail: "url",
+					From: "/checkout/c_1/tax", To: "/checkout/c_1/tax?guest_id=g_1"},
+			}},
+		{StepID: "s2", Version: 2, Author: "ai", Summary: "the fix was declined", Accepted: false},
+	}
+
+	id, err := s.SaveExecution(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	revs, err := s.Revisions(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revs) != 2 {
+		t.Fatalf("%d revisions, want 2", len(revs))
+	}
+	if revs[0].Version != 1 || !revs[0].Accepted || len(revs[0].Changes) != 1 {
+		t.Fatalf("%+v", revs[0])
+	}
+	if revs[0].Changes[0].To != "/checkout/c_1/tax?guest_id=g_1" {
+		t.Errorf("the change did not survive: %+v", revs[0].Changes[0])
+	}
+	if revs[1].Accepted || len(revs[1].Changes) != 0 {
+		t.Errorf("a declined revision is kept as declined: %+v", revs[1])
+	}
+
+	got, err := s.Executions(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got[0].Confirmed.Valid || got[0].Confirmed.Bool {
+		t.Errorf("confirmed = %+v, want a stored false", got[0].Confirmed)
+	}
+	if got[0].ConfirmNote == "" {
+		t.Error("the confirm note is the whole point of storing it")
+	}
+	if got[0].Steps[1].Verdict != "real_bug" || got[0].Steps[0].Verdict != "undecided" {
+		t.Errorf("verdicts = %q, %q", got[0].Steps[0].Verdict, got[0].Steps[1].Verdict)
+	}
+}
+
+// A cache written before M3 gains the three columns rather than losing its runs.
+func TestUpgradeAddsColumnsToAnExistingHistory(t *testing.T) {
+	dir := t.TempDir()
+
+	s := open(t, dir)
+	if _, err := s.SaveExecution(run("before-m3")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range added {
+		if _, err := s.db.Exec("ALTER TABLE " + c.table + " DROP COLUMN " + c.column); err != nil {
+			t.Fatalf("cannot fake the old shape: %v", err)
+		}
+	}
+	s.Close()
+
+	again := open(t, dir)
+	got, err := again.Executions(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Plan != "before-m3" {
+		t.Fatalf("the upgrade lost the run: %+v", got)
+	}
+	if got[0].Confirmed.Valid {
+		t.Error("a run that predates confirm has no verdict on it")
 	}
 }

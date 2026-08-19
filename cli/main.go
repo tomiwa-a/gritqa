@@ -52,6 +52,7 @@ func main() {
 	f.StringVar(&opts.Describe, "describe", "", "draft one plan from this brief, in your own words")
 	f.StringVar(&opts.Name, "name", "", "title for the plan --describe writes")
 	f.StringVar(&opts.PlanFile, "plan", "", "run one plan JSON locally, without a server")
+	f.BoolVar(&opts.NoConfirm, "no-confirm", false, "skip the model's check that a green run proved anything")
 	f.StringVar(&opts.Project, "project", "", "project name, when there is no config yet")
 	f.BoolVar(&opts.Verbose, "verbose", false, "plain unaligned output, for logs")
 	f.BoolVar(&opts.JSON, "json", false, "NDJSON output, one event per line")

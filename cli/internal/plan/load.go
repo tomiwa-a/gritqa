@@ -74,56 +74,13 @@ func (p *Plan) Validate() error {
 			where = fmt.Sprintf("step %d (%s)", i+1, s.Name)
 		}
 
-		if s.ID == "" {
-			return fmt.Errorf("%s has no id", where)
-		}
 		if seen[s.ID] {
 			return fmt.Errorf("two steps share the id %q", s.ID)
 		}
+		if err := validateStep(s, where); err != nil {
+			return err
+		}
 		seen[s.ID] = true
-
-		s.Request.Method = strings.ToUpper(strings.TrimSpace(s.Request.Method))
-		if !methods[s.Request.Method] {
-			return fmt.Errorf("%s uses the method %q, which I cannot send",
-				where, s.Request.Method)
-		}
-		if strings.TrimSpace(s.Request.URL) == "" {
-			return fmt.Errorf("%s has no url", where)
-		}
-
-		switch s.OnFailure {
-		case "":
-			s.OnFailure = Abort
-		case Abort, Continue:
-		default:
-			return fmt.Errorf("%s says onFailure %q, which is neither abort nor continue",
-				where, s.OnFailure)
-		}
-
-		if err := braces(s, where); err != nil {
-			return err
-		}
-		if err := validateExtractions(s.Extract, where); err != nil {
-			return err
-		}
-		if err := validateAssertions(s.Assertions, where); err != nil {
-			return err
-		}
-		if s.Retry != nil && s.Retry.MaxAttempts < 1 {
-			return fmt.Errorf("%s asks for %d attempts", where, s.Retry.MaxAttempts)
-		}
-
-		// Empty rather than null, so a plan written back out keeps the shape the
-		// dashboard writes.
-		if s.DependsOn == nil {
-			s.DependsOn = []string{}
-		}
-		if s.Extract == nil {
-			s.Extract = []Extraction{}
-		}
-		if s.Assertions == nil {
-			s.Assertions = []Assertion{}
-		}
 	}
 
 	for i, s := range p.Steps {
@@ -150,6 +107,60 @@ var reference = regexp.MustCompile(`\{\{\s*[\w.]+\s*\}\}`)
 // {{randomInt 1 9}} or {{roomTypeName Updated}} writes something the
 // interpolator leaves alone, so the braces are sent to the API as written and
 // the step tests nothing. Caught here, before a single request goes out.
+// ValidateStep holds one step to the same bar a whole plan is held to. M3's
+// repair goes through it: a fix that would not have loaded from disk must not be
+// sent at a real API either.
+func ValidateStep(s *Step) error { return validateStep(s, "the step "+s.Label()) }
+
+func validateStep(s *Step, where string) error {
+	if s.ID == "" {
+		return fmt.Errorf("%s has no id", where)
+	}
+
+	s.Request.Method = strings.ToUpper(strings.TrimSpace(s.Request.Method))
+	if !methods[s.Request.Method] {
+		return fmt.Errorf("%s uses the method %q, which I cannot send", where, s.Request.Method)
+	}
+	if strings.TrimSpace(s.Request.URL) == "" {
+		return fmt.Errorf("%s has no url", where)
+	}
+
+	switch s.OnFailure {
+	case "":
+		s.OnFailure = Abort
+	case Abort, Continue:
+	default:
+		return fmt.Errorf("%s says onFailure %q, which is neither abort nor continue",
+			where, s.OnFailure)
+	}
+
+	if err := braces(s, where); err != nil {
+		return err
+	}
+	if err := validateExtractions(s.Extract, where); err != nil {
+		return err
+	}
+	if err := validateAssertions(s.Assertions, where); err != nil {
+		return err
+	}
+	if s.Retry != nil && s.Retry.MaxAttempts < 1 {
+		return fmt.Errorf("%s asks for %d attempts", where, s.Retry.MaxAttempts)
+	}
+
+	// Empty rather than null, so a plan written back out keeps the shape the
+	// dashboard writes.
+	if s.DependsOn == nil {
+		s.DependsOn = []string{}
+	}
+	if s.Extract == nil {
+		s.Extract = []Extraction{}
+	}
+	if s.Assertions == nil {
+		s.Assertions = []Assertion{}
+	}
+	return nil
+}
+
 func literal(s, where string) error {
 	if !strings.Contains(reference.ReplaceAllString(s, ""), "{{") {
 		return nil

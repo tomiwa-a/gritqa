@@ -63,6 +63,37 @@ type Run struct {
 	Seed    string            `yaml:"seed,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
 	Model   *Model            `yaml:"model,omitempty"`
+	Repair  *Repair           `yaml:"repair,omitempty"`
+}
+
+// Repair bounds what a failed run may spend on the model. An unbounded agent
+// loop against a live API is a runaway bill and an unexplainable run.
+type Repair struct {
+	// Attempts is how many fixes one failed step may be given.
+	Attempts int `yaml:"attempts,omitempty"`
+	// Budget is the total repair calls one run may make, however many steps fail.
+	Budget int `yaml:"budget,omitempty"`
+}
+
+const (
+	defaultRepairAttempts = 2
+	defaultRepairBudget   = 8
+)
+
+// RepairOpts returns the repair bounds, defaulted. Zero is not "off": a run with
+// no repairer never asks, and that is decided by whether a model is reachable.
+func (r *Run) RepairOpts() Repair {
+	out := Repair{Attempts: defaultRepairAttempts, Budget: defaultRepairBudget}
+	if r == nil || r.Repair == nil {
+		return out
+	}
+	if r.Repair.Attempts > 0 {
+		out.Attempts = r.Repair.Attempts
+	}
+	if r.Repair.Budget > 0 {
+		out.Budget = r.Repair.Budget
+	}
+	return out
 }
 
 // Model is the endpoint drafting talks to. It must speak the OpenAI chat

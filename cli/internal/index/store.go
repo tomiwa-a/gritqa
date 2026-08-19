@@ -87,8 +87,10 @@ func (s *Store) migrate() error {
 	if err := s.rebuildCache(); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(history)
-	return err
+	if _, err := s.db.Exec(history); err != nil {
+		return err
+	}
+	return upgrade(s.db)
 }
 
 // rebuildCache drops and recreates the cache tables when the schema moved. Run
