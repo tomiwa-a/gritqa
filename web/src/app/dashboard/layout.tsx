@@ -1,5 +1,5 @@
 import { AppShell } from '@/components/app/app-shell';
-import type { ShellData } from '@/components/app/sidebar';
+import { shellDataOf } from '@/components/app/shell-data';
 import { getCurrentProject, getPlansAwaitingReview, getProjects, getUser } from '@/lib/data';
 
 /**
@@ -14,12 +14,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
     getPlansAwaitingReview(),
   ]);
 
-  const data: ShellData = {
+  // Narrowed on purpose: the shell is a client island, so whatever goes in here
+  // ships to the browser on every navigation.
+  const data = shellDataOf({
     user,
     projects,
     currentProject,
     reviewCount: plansAwaitingReview.length,
-  };
+  });
 
   return <AppShell data={data}>{children}</AppShell>;
 }

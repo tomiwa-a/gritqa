@@ -8,7 +8,7 @@ import { ProjectSwitcher } from './project-switcher';
 import { SearchField } from './search-field';
 import { SetupCard } from './setup-card';
 import { UserMenu } from './user-menu';
-import type { Project, User } from '@/lib/mock/types';
+import type { ShellData } from './shell-data';
 import { cn } from '@/lib/cn';
 
 /**
@@ -16,14 +16,6 @@ import { cn } from '@/lib/cn';
  * it is a client island, so the dashboard layout does the reading and hands the
  * result down whole.
  */
-export type ShellData = {
-  user: User;
-  projects: Project[];
-  currentProject: Project;
-  /** Drives the badge on Review queue — the one count the nav carries. */
-  reviewCount: number;
-};
-
 type Item = { href: string; icon: IconName; label: string; count?: number; notice?: boolean };
 type Group = { key: string; label: string; items: Item[] };
 

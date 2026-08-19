@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
-import { Sidebar, type ShellData } from './sidebar';
+import { Sidebar } from './sidebar';
+import type { ShellData } from './shell-data';
 import { lockScroll } from '@/lib/scroll-lock';
 
 const ShellContext = createContext<{ openMobileNav: () => void } | null>(null);

@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { initialsOf } from '@/components/ui/avatar';
-import type { User } from '@/lib/mock/types';
+import type { ShellUser } from './shell-data';
 import { cn } from '@/lib/cn';
 
 const PROVIDER = { github: 'GitHub', gitlab: 'GitLab' } as const;
 
-export function UserMenu({ user, collapsed = false }: { user: User; collapsed?: boolean }) {
+export function UserMenu({ user, collapsed = false }: { user: ShellUser; collapsed?: boolean }) {
   const initials = initialsOf(user.name);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
 import { StatusDot } from '@/components/ui/badge';
-import type { Project } from '@/lib/mock/types';
+import type { ShellCurrentProject, ShellProject } from './shell-data';
 import { cn } from '@/lib/cn';
 
 export function ProjectSwitcher({
@@ -11,8 +11,8 @@ export function ProjectSwitcher({
   currentProject,
   collapsed = false,
 }: {
-  projects: Project[];
-  currentProject: Project;
+  projects: ShellProject[];
+  currentProject: ShellCurrentProject;
   collapsed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
