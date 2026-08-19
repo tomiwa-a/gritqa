@@ -29,7 +29,11 @@ type Request struct {
 	Name string
 	// Cover are the endpoints the plan must exercise, when the user picked them
 	// rather than a whole file.
-	Cover     []string
+	Cover []string
+	// Variables are names the run seeds from the user's environment — admin
+	// credentials, mostly. Names only: a value never reaches a prompt, and a
+	// drafted plan references them without declaring them.
+	Variables []string
 	Files     []File
 	Endpoints []Endpoint
 	Existing  []Existing

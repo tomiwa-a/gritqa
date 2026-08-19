@@ -52,7 +52,8 @@ Rules:
 - extract paths are written $.a.b, bodyField targets are written a.b. source is
   body or header, and a header path is the header name.
 - {{name}} reads a variable in any url, header, body value, query value or
-  expected value. Only a variable the plan seeds or an earlier step extracts.
+  expected value. Only a variable the plan seeds, an earlier step extracts, or
+  one you are told is already seeded.
 - There are no functions and no expressions: {{randomInt 1 9}}, {{strftime ...}}
   and {{name Updated}} are all wrong, and would be sent to the API as written.
   Seed a literal value in variables, or extract one from an earlier response.
@@ -98,6 +99,14 @@ func brief(req Request) string {
 		b.WriteString("\nCover exactly these endpoints:\n")
 		for _, s := range req.Cover {
 			fmt.Fprintf(&b, "- %s\n", s)
+		}
+	}
+
+	if len(req.Variables) > 0 {
+		b.WriteString("\nAlready seeded for you. Reference these as {{name}} and do not " +
+			"declare them in variables:\n")
+		for _, v := range req.Variables {
+			fmt.Fprintf(&b, "- {{%s}}\n", v)
 		}
 	}
 

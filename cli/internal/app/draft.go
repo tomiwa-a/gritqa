@@ -305,6 +305,7 @@ func requests(cfg *config.Config, got *reading, scopes []scope, opts Options, ba
 			BaseURL:   base,
 			Focus:     sc.file,
 			Cover:     sc.cover,
+			Variables: cfg.Run.VariableNames(),
 			Endpoints: endpoints,
 			Existing:  have,
 		}
@@ -328,6 +329,7 @@ func described(cfg *config.Config, got *reading, scopes []scope, opts Options, b
 		BaseURL:   base,
 		Brief:     opts.Describe,
 		Name:      opts.Name,
+		Variables: cfg.Run.VariableNames(),
 		Endpoints: endpointsOf(got.snap),
 		Existing:  existing(cfg),
 	}

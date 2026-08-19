@@ -139,3 +139,24 @@ func TestFinishKeepsTheNameTheUserGave(t *testing.T) {
 		t.Errorf("name = %q", got.Name)
 	}
 }
+
+// The Request carries names, so there is no path by which a credential reaches
+// a prompt even if the caller is careless.
+func TestBriefNamesSeededVariables(t *testing.T) {
+	body := brief(Request{
+		Project:   "hotel-api",
+		Variables: []string{"adminEmail", "adminPassword"},
+	})
+
+	for _, want := range []string{"{{adminEmail}}", "{{adminPassword}}"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the brief never mentions %q", want)
+		}
+	}
+	if !strings.Contains(body, "do not") {
+		t.Error("a seeded variable declared again in variables shadows the real one")
+	}
+	if strings.Contains(brief(Request{Project: "p"}), "seeded") {
+		t.Error("with no variables the brief should not mention them")
+	}
+}

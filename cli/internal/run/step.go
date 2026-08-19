@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func (e *Engine) step(ctx context.Context, s plan.Step, vars map[string]string) 
 		out.Status, out.Err = StepError, err.Error()
 		return out
 	}
-	out.URL = req.url
+	out.URL = e.mask(req.url)
 
 	attempts, delay := s.Attempts()
 	for i := 1; i <= attempts; i++ {
@@ -214,3 +215,21 @@ func unwrapURL(err error) error {
 	}
 	return err
 }
+
+// mask keeps a configured secret out of the URL a step reports. Longest first, so
+// a value that contains another is replaced whole.
+func (e *Engine) mask(url string) string {
+	if len(e.Secrets) == 0 {
+		return url
+	}
+	if e.masks == nil {
+		e.masks = append([]string(nil), e.Secrets...)
+		sort.Slice(e.masks, func(i, j int) bool { return len(e.masks[i]) > len(e.masks[j]) })
+	}
+	for _, s := range e.masks {
+		url = strings.ReplaceAll(url, s, hidden)
+	}
+	return url
+}
+
+const hidden = "•••"

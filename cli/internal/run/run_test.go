@@ -275,3 +275,114 @@ func TestRunSeedsAUniqueRunID(t *testing.T) {
 		t.Errorf("runId was not substituted: %q", got[0])
 	}
 }
+
+// A credential enters a run here and nowhere else: the plan names it, the
+// config supplies it, and the config wins because it describes this machine.
+func TestEngineVariablesWinOverThePlans(t *testing.T) {
+	var sent map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = map[string]string{
+			"email":  r.URL.Query().Get("email"),
+			"pass":   r.URL.Query().Get("pass"),
+			"seeded": r.URL.Query().Get("seeded"),
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	p := &plan.Plan{
+		Name:      "sign in as admin",
+		Variables: map[string]string{"adminEmail": "drafted@example.com", "kept": "from the plan"},
+		Steps: []plan.Step{{
+			ID: "s1",
+			Request: plan.Request{Method: "POST", URL: "/login", Query: map[string]string{
+				"email": "{{adminEmail}}", "pass": "{{adminPassword}}", "seeded": "{{kept}}",
+			}},
+			Assertions: []plan.Assertion{
+				{Type: plan.Status, Operator: plan.Equals, Target: "status", Expected: float64(200)},
+			},
+		}},
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{BaseURL: srv.URL, Variables: map[string]string{
+		"adminEmail": "admin@hotel.test", "adminPassword": "s3cret",
+	}}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps)
+	}
+
+	want := map[string]string{"email": "admin@hotel.test", "pass": "s3cret", "seeded": "from the plan"}
+	for k, v := range want {
+		if sent[k] != v {
+			t.Errorf("%s = %q, want %q", k, sent[k], v)
+		}
+	}
+}
+
+// A name the config does not supply is still unbound, so a plan that reads one
+// errors rather than sending an empty credential.
+func TestEngineVariablesDoNotBindEverything(t *testing.T) {
+	p := parse(t, `{"id":"s1","request":{"method":"GET","url":"/x/{{adminPassword}}"},
+		"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}`)
+
+	res, err := (&Engine{BaseURL: "http://127.0.0.1:1", Variables: map[string]string{
+		"adminEmail": "admin@hotel.test",
+	}}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Steps[0].Status != StepError || !strings.Contains(res.Steps[0].Err, "adminPassword") {
+		t.Fatalf("got %s %q", res.Steps[0].Status, res.Steps[0].Err)
+	}
+}
+
+// The URL a step reports lands in cache.db and in the repairer's prompt, so a
+// credential interpolated into a query string must not survive into it.
+func TestEngineMasksASecretInTheReportedURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("pass") != "s3cret" {
+			t.Errorf("the API must still receive the real value, got %q", r.URL.RawQuery)
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	p := &plan.Plan{
+		Name: "sign in",
+		Steps: []plan.Step{{
+			ID: "s1",
+			Request: plan.Request{Method: "GET", URL: "/login",
+				Query: map[string]string{"pass": "{{adminPassword}}"}},
+			Assertions: []plan.Assertion{
+				{Type: plan.Status, Operator: plan.Equals, Target: "status", Expected: float64(200)},
+			},
+		}},
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{
+		BaseURL:   srv.URL,
+		Variables: map[string]string{"adminPassword": "s3cret"},
+		Secrets:   []string{"s3cret"},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := res.Steps[0].URL
+	if strings.Contains(got, "s3cret") {
+		t.Errorf("the secret reached the recorded run: %q", got)
+	}
+	if !strings.Contains(got, "pass=") {
+		t.Errorf("masking should replace the value, not the URL: %q", got)
+	}
+}

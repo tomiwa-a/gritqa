@@ -36,6 +36,11 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	if err != nil {
 		return err
 	}
+	vars := cfg.Run.ResolvedVariables()
+	if len(vars.Missing) > 0 {
+		return fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
+			strings.Join(vars.Missing, ", "))
+	}
 	if err := probe(ctx, cfg, base); err != nil {
 		return err
 	}
@@ -50,6 +55,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		return err
 	}
 
+	shadowed(w, p, vars.Values)
 	w.Write(term.Line{
 		Kind: term.Info,
 		Text: fmt.Sprintf("running %s against %s — %s",
@@ -61,7 +67,9 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	done := 0
 	var all, pending []run.Attempt
 	engine := &run.Engine{
-		BaseURL: base,
+		BaseURL:   base,
+		Variables: vars.Values,
+		Secrets:   vars.Secrets(),
 		OnStep: func(s run.StepResult) {
 			done++
 			w.Write(term.Line{
@@ -130,13 +138,41 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 			w.Write(term.Line{Kind: term.Info, Text: s.Name + ": " + r})
 		}
 	}
-	for _, a := range all {
-		if a.Kind == run.CodeWrong {
-			w.Write(term.Line{Kind: term.Info, Text: "awaiting your verdict: real bug, or bad test"})
-			break
-		}
+	if needsVerdict(all) {
+		w.Write(term.Line{Kind: term.Info, Text: "awaiting your verdict: real bug, or bad test"})
 	}
 	return nil
+}
+
+// needsVerdict is true when repair left the disagreement to the human. A refused
+// edit counts: the model wanted to move expected, which is precisely the call
+// decision 15 reserves.
+func needsVerdict(as []run.Attempt) bool {
+	for _, a := range as {
+		if a.Kind == run.CodeWrong || a.Refused != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// shadowed names a variable the config overrode. A plan's own seeded value
+// losing silently to one from the environment is worth a line.
+func shadowed(w *term.Writer, p *plan.Plan, vars map[string]string) {
+	var names []string
+	for k, v := range vars {
+		if was, ok := p.Variables[k]; ok && was != v {
+			names = append(names, k)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	sort.Strings(names)
+	w.Write(term.Line{
+		Kind: term.Info,
+		Text: strings.Join(names, ", ") + " comes from your config, not from what the plan seeds",
+	})
 }
 
 // repairer builds the judgement half. Nil is a working configuration: a plan

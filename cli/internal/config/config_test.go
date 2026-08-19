@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -205,5 +206,99 @@ func mustWrite(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestResolvedVariables(t *testing.T) {
+	t.Setenv("GRITQA_ADMIN_PASSWORD", "s3cret")
+	t.Setenv("GRITQA_EMPTY", "")
+
+	run := &Run{Variables: map[string]string{
+		"adminEmail":    "admin@hotel.test",
+		"adminPassword": "$GRITQA_ADMIN_PASSWORD",
+		"braced":        "${GRITQA_ADMIN_PASSWORD}",
+		"priced":        "$9.99 plan",
+		"bare":          "$",
+		"unset":         "$GRITQA_NOT_EXPORTED",
+		"blank":         "$GRITQA_EMPTY",
+	}}
+
+	v := run.ResolvedVariables()
+	want := map[string]string{
+		"adminEmail":    "admin@hotel.test",
+		"adminPassword": "s3cret",
+		"braced":        "s3cret",
+		"priced":        "$9.99 plan",
+		"bare":          "$",
+	}
+	for k, w := range want {
+		if v.Values[k] != w {
+			t.Errorf("%s: got %q, want %q", k, v.Values[k], w)
+		}
+	}
+	if len(v.Values) != len(want) {
+		t.Errorf("an unresolved name must not be passed on: %+v", v.Values)
+	}
+
+	// Only what came from the environment is worth masking: a value written into
+	// the config file is committed already.
+	if strings.Join(v.Secret, " ") != "adminPassword braced" {
+		t.Errorf("secret = %+v", v.Secret)
+	}
+
+	// An exported-but-empty variable is missing, not empty: an empty admin
+	// password fails every guarded step with a 401 that explains nothing.
+	got := strings.Join(v.Missing, " ")
+	for _, want := range []string{"blank ($GRITQA_EMPTY)", "unset ($GRITQA_NOT_EXPORTED)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing should name %s, got %q", want, got)
+		}
+	}
+	if len(v.Missing) != 2 {
+		t.Errorf("got %q", got)
+	}
+}
+
+// A short value masked everywhere it occurs would shred every URL it appears
+// inside, so it is left alone.
+func TestSecretsAreEnvSourcedAndLongEnough(t *testing.T) {
+	t.Setenv("GRITQA_PASSWORD", "s3cret")
+	t.Setenv("GRITQA_PIN", "99")
+
+	run := &Run{Variables: map[string]string{
+		"password": "$GRITQA_PASSWORD",
+		"pin":      "$GRITQA_PIN",
+		"written":  "in-the-config-file",
+	}}
+
+	if got := run.ResolvedVariables().Secrets(); len(got) != 1 || got[0] != "s3cret" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestResolvedVariablesWithoutAny(t *testing.T) {
+	for _, run := range []*Run{nil, {}, {Variables: map[string]string{}}} {
+		v := run.ResolvedVariables()
+		if len(v.Values) != 0 || len(v.Missing) != 0 || len(v.Secrets()) != 0 {
+			t.Errorf("%+v gave %+v", run, v)
+		}
+	}
+	if names := (*Run)(nil).VariableNames(); names != nil {
+		t.Errorf("got %+v", names)
+	}
+}
+
+func TestVariableNamesAreSortedAndValuesNeverLeave(t *testing.T) {
+	run := &Run{Variables: map[string]string{
+		"adminPassword": "$GRITQA_ADMIN_PASSWORD", "adminEmail": "admin@hotel.test",
+	}}
+	got := run.VariableNames()
+	if len(got) != 2 || got[0] != "adminEmail" || got[1] != "adminPassword" {
+		t.Fatalf("got %+v", got)
+	}
+	for _, n := range got {
+		if strings.Contains(n, "@") || strings.Contains(n, "$") {
+			t.Errorf("a name carried its value: %q", n)
+		}
 	}
 }

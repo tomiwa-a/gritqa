@@ -28,6 +28,14 @@ type Engine struct {
 	// OnStep is called once per step, after repair has settled, so a transcript
 	// streams without a re-run corrupting its arithmetic.
 	OnStep func(StepResult)
+	// Variables are seeded before the walk and win over the plan's own, because
+	// the config describes this machine the same way BaseURL does. This is where
+	// a credential enters a run: the plan only ever names it.
+	Variables map[string]string
+	// Secrets are values that must not survive into a reported URL. A password
+	// interpolated into a query string would otherwise reach the recorded run and
+	// the repairer's prompt, which is the leak run.variables exists to prevent.
+	Secrets []string
 
 	// Repairer is optional. With none, a failed step settles exactly as it did
 	// before M3 and the run costs nothing but HTTP.
@@ -42,6 +50,7 @@ type Engine struct {
 
 	plan  string
 	spent int
+	masks []string
 }
 
 type Result struct {
@@ -80,9 +89,12 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 		return nil, err
 	}
 
-	vars := make(map[string]string, len(p.Variables)+1)
+	vars := make(map[string]string, len(p.Variables)+len(e.Variables)+1)
 	vars[RunID] = runID()
 	for k, v := range p.Variables {
+		vars[k] = v
+	}
+	for k, v := range e.Variables {
 		vars[k] = v
 	}
 

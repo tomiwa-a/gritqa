@@ -292,3 +292,71 @@ func TestRevisionsKeepDeclinedAttempts(t *testing.T) {
 		}
 	}
 }
+
+// The base URL points at a dead port, so naming the variable rather than the
+// silence proves the check runs before anything is sent.
+func TestRunRefusesAnUnsetVariableBeforeTouchingTheNetwork(t *testing.T) {
+	cfg := conf(t, &config.Run{
+		BaseURL:   "http://127.0.0.1:1",
+		Variables: map[string]string{"adminPassword": "$GRITQA_NOT_EXPORTED"},
+	})
+	file := filepath.Join(t.TempDir(), "p.json")
+	if err := os.WriteFile(file, []byte(`{"name":"p","version":1,"steps":[{"id":"s1",
+		"request":{"method":"GET","url":"/x"},"assertions":[{"type":"status",
+		"operator":"equals","target":"status","expected":200}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, _ := writer()
+	err := runPlan(context.Background(), w, cfg, Options{PlanFile: file})
+	if err == nil || !strings.Contains(err.Error(), "adminPassword ($GRITQA_NOT_EXPORTED)") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestShadowedNamesTheOverrideAndNotItsValue(t *testing.T) {
+	w, out := writer()
+	shadowed(w, &plan.Plan{Variables: map[string]string{
+		"adminEmail": "drafted@example.com", "agreed": "same", "planOnly": "x",
+	}}, map[string]string{
+		"adminEmail": "admin@hotel.test", "agreed": "same", "configOnly": "y",
+	})
+
+	got := out.String()
+	if !strings.Contains(got, "adminEmail") {
+		t.Errorf("an overridden name should be named: %q", got)
+	}
+	for _, s := range []string{"agreed", "planOnly", "configOnly"} {
+		if strings.Contains(got, s) {
+			t.Errorf("%s is not shadowed: %q", s, got)
+		}
+	}
+	for _, s := range []string{"admin@hotel.test", "drafted@example.com"} {
+		if strings.Contains(got, s) {
+			t.Errorf("a value reached the transcript: %q", got)
+		}
+	}
+}
+
+func TestNeedsVerdictCoversARefusedEditToo(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []run.Attempt
+		want bool
+	}{
+		{"nothing repaired", nil, false},
+		{"the test was wrong and the fix held", []run.Attempt{
+			{Kind: run.TestWrong, Status: run.StepPassed}}, false},
+		{"the code looks wrong", []run.Attempt{{Kind: run.CodeWrong}}, true},
+		{"a frozen field was reached for", []run.Attempt{
+			{Kind: run.TestWrong, Refused: "assertion 1 moved expected from 401 to 400"}}, true},
+		{"the repairer itself failed", []run.Attempt{{Err: "timed out"}}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := needsVerdict(c.in); got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
