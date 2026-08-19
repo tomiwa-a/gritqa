@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gritqa/cli/internal/plan"
@@ -36,6 +37,16 @@ type Result struct {
 	Elapsed time.Duration
 }
 
+// RunID is seeded before every run and is different each time. A plan that signs
+// a new user up needs its email to be unique or the second run fails on a row
+// the first one left behind, and the plan format has no functions — so the
+// engine supplies the one value that cannot be written down.
+const RunID = "runId"
+
+func runID() string {
+	return strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 36)
+}
+
 func (e *Engine) client() *http.Client {
 	if e.HTTP != nil {
 		return e.HTTP
@@ -52,7 +63,8 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 		return nil, err
 	}
 
-	vars := make(map[string]string, len(p.Variables))
+	vars := make(map[string]string, len(p.Variables)+1)
+	vars[RunID] = runID()
 	for k, v := range p.Variables {
 		vars[k] = v
 	}

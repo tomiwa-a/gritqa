@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gritqa/cli/internal/plan"
 )
@@ -231,5 +232,46 @@ func TestStatusOfPrefersFailed(t *testing.T) {
 	}
 	if statusOf([]StepResult{{Status: StepPassed}, {Status: StepSkipped}}) != RunPassed {
 		t.Error("skipped is not a failure on its own")
+	}
+}
+
+// A signup step needs a unique email or the second run fails on the row the
+// first one left behind, and the plan format has no functions to make one.
+func TestRunSeedsAUniqueRunID(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Query().Get("email"))
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	p := &plan.Plan{Name: "signup", Steps: []plan.Step{{
+		ID:      "s1",
+		Request: plan.Request{Method: "POST", URL: "/signup", Query: map[string]string{"email": "g-{{runId}}@example.com"}},
+		Assertions: []plan.Assertion{
+			{Type: plan.Status, Operator: plan.Equals, Target: "status", Expected: float64(200)},
+		},
+	}}}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{BaseURL: srv.URL}
+	for range 2 {
+		time.Sleep(2 * time.Millisecond)
+		r, err := e.Run(context.Background(), p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Status != RunPassed {
+			t.Fatalf("status = %s: %+v", r.Status, r.Steps)
+		}
+	}
+
+	if len(got) != 2 || got[0] == got[1] {
+		t.Fatalf("emails = %v, want two different ones", got)
+	}
+	if strings.Contains(got[0], "{{") {
+		t.Errorf("runId was not substituted: %q", got[0])
 	}
 }

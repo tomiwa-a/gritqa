@@ -56,6 +56,9 @@ Rules:
 - There are no functions and no expressions: {{randomInt 1 9}}, {{strftime ...}}
   and {{name Updated}} are all wrong, and would be sent to the API as written.
   Seed a literal value in variables, or extract one from an earlier response.
+- {{runId}} is seeded for you and is different on every run. Use it wherever a
+  value has to be unique — "guest-{{runId}}@example.com" — and do not declare it
+  in variables. Dates are not unique, so write those as literals.
 - url is relative to baseUrl and starts with /.
 - Build every piece of state you need through the API: POST the order, extract
   its id, then read it back. Never assume a row already exists, and never write
