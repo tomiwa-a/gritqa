@@ -94,15 +94,20 @@ export function UserMenu({ user, collapsed = false }: { user: User; collapsed?: 
 
           <div className="my-1.5 h-px bg-rule" />
 
-          <Link
-            href="/login"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-ink-muted transition-colors duration-150 hover:bg-fail-soft hover:text-fail"
-          >
-            <Icon name="signOut" size={14} />
-            Sign out
-          </Link>
+          {/* A form, not a link: signing out has to be a POST, or any page that can
+              get the browser to fetch a URL -- an <img src> is enough -- can sign the
+              developer out. It also means it still works with JavaScript off. */}
+          <form action="/api/auth/sign-out" method="post">
+            <button
+              type="submit"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-ink-muted transition-colors duration-150 hover:bg-fail-soft hover:text-fail"
+            >
+              <Icon name="signOut" size={14} />
+              Sign out
+            </button>
+          </form>
         </div>
       )}
     </div>
