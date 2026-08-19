@@ -17,8 +17,13 @@ import (
 const defaultServer = "https://app.gritqa.dev"
 
 type Options struct {
-	Once       bool
-	Draft      bool
+	Once     bool
+	Draft    bool
+	Only     []string
+	All      bool
+	Describe string
+	Name     string
+
 	PlanFile   string
 	Project    string
 	Verbose    bool
@@ -70,13 +75,18 @@ func Run(ctx context.Context, opts Options) error {
 		return runPlan(ctx, w, cfg, opts)
 	}
 
+	// A brief can mean nothing but drafting, so it does not also need --draft.
+	if opts.Describe != "" {
+		opts.Draft = true
+	}
+
 	got, err := read(ctx, w, cfg, opts)
 	if err != nil {
 		return err
 	}
 
 	if opts.Draft {
-		return draftPlans(ctx, w, cfg, got)
+		return draftPlans(ctx, w, cfg, got, opts)
 	}
 	if opts.Once {
 		return nil

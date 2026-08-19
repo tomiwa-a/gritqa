@@ -21,7 +21,15 @@ type Request struct {
 	BaseURL string
 	// Focus is the file this plan is for. Files may carry one more — how to log
 	// in — because a plan that cannot authenticate proves nothing.
-	Focus     string
+	Focus string
+	// Brief is the user's own words for what the plan must prove. When it is set
+	// it is the authority, and Focus is empty: the source is only how to do it.
+	Brief string
+	// Name titles the plan when the user named it.
+	Name string
+	// Cover are the endpoints the plan must exercise, when the user picked them
+	// rather than a whole file.
+	Cover     []string
 	Files     []File
 	Endpoints []Endpoint
 	Existing  []Existing

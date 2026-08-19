@@ -64,7 +64,10 @@ Rules:
 - If the endpoints need a logged-in user, sign in first and extract the token.
 - You may be shown endpoints and a file beyond the one you are writing for. They
   are there so the plan can sign in and build the state it needs; the plan itself
-  tests the file you were told to write for.`
+  tests the file you were told to write for.
+- A brief outranks everything else you are shown: write the one plan it asks for,
+  and use the endpoints and source only as the means to do it.
+- When you are told to cover exact endpoints, every one of them gets a step.`
 
 func messages(req Request) []model.Message {
 	return []model.Message{
@@ -78,6 +81,18 @@ func brief(req Request) string {
 	fmt.Fprintf(&b, "Project: %s\nBase URL: %s\n", req.Project, req.BaseURL)
 	if req.Focus != "" {
 		fmt.Fprintf(&b, "Write the plan for: %s\n", req.Focus)
+	}
+	if req.Name != "" {
+		fmt.Fprintf(&b, "Call the plan: %s\n", req.Name)
+	}
+	if req.Brief != "" {
+		fmt.Fprintf(&b, "\nWrite this plan:\n%s\n", req.Brief)
+	}
+	if len(req.Cover) > 0 {
+		b.WriteString("\nCover exactly these endpoints:\n")
+		for _, s := range req.Cover {
+			fmt.Fprintf(&b, "- %s\n", s)
+		}
 	}
 
 	if len(req.Endpoints) > 0 {
@@ -132,6 +147,9 @@ func finish(p *plan.Plan, req Request) *plan.Plan {
 	}
 	if p.BaseURL == "" {
 		p.BaseURL = req.BaseURL
+	}
+	if req.Name != "" {
+		p.Name = req.Name
 	}
 	return p
 }

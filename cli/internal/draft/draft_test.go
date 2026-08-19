@@ -104,3 +104,38 @@ func TestSystemPromptHoldsTheRules(t *testing.T) {
 		}
 	}
 }
+
+// The user's own words, and their title for the plan.
+func TestBriefCarriesABrief(t *testing.T) {
+	body := brief(Request{
+		Project: "hotel-api",
+		BaseURL: "http://localhost/hotel/api/",
+		Brief:   "Book a room, then try to double-book the same dates.",
+		Name:    "No double bookings",
+		Cover:   []string{"POST /index.php?controller=reservation&action=create"},
+	})
+
+	for _, want := range []string{
+		"Call the plan: No double bookings",
+		"Book a room, then try to double-book the same dates.",
+		"Cover exactly these endpoints:\n- POST /index.php?controller=reservation&action=create",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the brief does not carry %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Write the plan for:") {
+		t.Error("a described plan has no focus file")
+	}
+}
+
+// The user named it, so the user's name wins over the model's.
+func TestFinishKeepsTheNameTheUserGave(t *testing.T) {
+	p, err := Parse(minimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := finish(p, Request{Name: "No double bookings"}); got.Name != "No double bookings" {
+		t.Errorf("name = %q", got.Name)
+	}
+}

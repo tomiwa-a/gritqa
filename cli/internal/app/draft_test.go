@@ -36,12 +36,25 @@ func sample() *reading {
 	}
 }
 
+// files names what a pass would draft for, as a comparable string.
+func files(scopes []scope) string {
+	var out []string
+	for _, s := range scopes {
+		if len(s.cover) > 0 {
+			out = append(out, s.file+"["+strings.Join(s.cover, "|")+"]")
+			continue
+		}
+		out = append(out, s.file)
+	}
+	return strings.Join(out, " ")
+}
+
 // A plan is drafted for what changed, and only files that register an endpoint
 // can change what a plan should test.
 func TestCandidatesAreChangedRouteFiles(t *testing.T) {
-	got := candidates(sample())
-	if len(got) != 1 || got[0] != "handlers/tax.go" {
-		t.Fatalf("got %v", got)
+	got, _ := candidates(sample(), Options{})
+	if files(got) != "handlers/tax.go" {
+		t.Fatalf("got %v", files(got))
 	}
 }
 
@@ -51,8 +64,60 @@ func TestCandidatesOnFirstIndex(t *testing.T) {
 	got.first, got.delta = true, index.Delta{}
 
 	want := "handlers/login.go handlers/orders.go handlers/tax.go"
-	if names := strings.Join(candidates(got), " "); names != want {
+	if names := files(candidatesOf(got, Options{})); names != want {
 		t.Fatalf("got %q", names)
+	}
+}
+
+func candidatesOf(got *reading, opts Options) []scope {
+	scopes, _ := candidates(got, opts)
+	return scopes
+}
+
+// --all is the override for a warm index where nothing changed, which is every
+// index after the first one.
+func TestAllIgnoresWhatChanged(t *testing.T) {
+	got := sample()
+	got.delta = index.Delta{}
+
+	if names := files(candidatesOf(got, Options{All: true})); names !=
+		"handlers/login.go handlers/orders.go handlers/tax.go" {
+		t.Fatalf("got %q", names)
+	}
+	if names := files(candidatesOf(got, Options{})); names != "" {
+		t.Fatalf("without --all, nothing changed, so got %q", names)
+	}
+}
+
+// A name the user types picks a file whether or not it changed.
+func TestOnlyPicksAFileByName(t *testing.T) {
+	got, missed := candidates(sample(), Options{Only: []string{"orders"}})
+	if files(got) != "handlers/orders.go" {
+		t.Fatalf("got %q", files(got))
+	}
+	if len(missed) != 0 {
+		t.Errorf("missed = %v", missed)
+	}
+}
+
+// An endpoint signature narrows the plan to that endpoint, rather than taking
+// the whole file it lives in.
+func TestOnlyPicksAnEndpoint(t *testing.T) {
+	got, _ := candidates(sample(), Options{Only: []string{"POST /checkout"}})
+	if files(got) != "handlers/tax.go[POST /checkout/{id}/tax]" {
+		t.Fatalf("got %q", files(got))
+	}
+}
+
+// A pattern that matches nothing is reported, because a silent miss reads as a
+// pass over something it never looked at.
+func TestOnlyReportsAPatternThatMatchesNothing(t *testing.T) {
+	got, missed := candidates(sample(), Options{Only: []string{"orders", "invoices"}})
+	if files(got) != "handlers/orders.go" {
+		t.Errorf("got %q", files(got))
+	}
+	if len(missed) != 1 || missed[0] != "invoices" {
+		t.Fatalf("missed = %v", missed)
 	}
 }
 
@@ -65,9 +130,13 @@ func TestRequestsCarryWhatTheModelNeeds(t *testing.T) {
 	write(t, filepath.Join(cfg.Root(), "handlers/login.go"), "func SignIn() {}")
 	writeExisting(t, cfg)
 
-	reqs, err := requests(cfg, sample(), []string{"handlers/tax.go"}, "http://localhost:8080")
+	reqs, labels, err := requests(cfg, sample(), whole([]string{"handlers/tax.go"}), Options{},
+		"http://localhost:8080")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(labels) != 1 || labels[0] != "handlers/tax.go" {
+		t.Errorf("labels = %v", labels)
 	}
 	if len(reqs) != 1 {
 		t.Fatalf("%d requests, want one per file", len(reqs))
@@ -202,4 +271,59 @@ func writeExisting(t *testing.T, cfg *config.Config) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(cfg.DraftsPath(), "partial-refund.json"), string(body))
+}
+
+// A brief collapses the pass into one plan: no focus file, the user's words as
+// the authority, and every endpoint as the means.
+func TestDescribeIsOnePlanFromABrief(t *testing.T) {
+	cfg := config.New(t.TempDir(), "main")
+	write(t, filepath.Join(cfg.Root(), "handlers/login.go"), "func SignIn() {}")
+
+	opts := Options{Describe: "Book a room, then try to double-book it.", Name: "No double bookings"}
+	reqs, labels, err := requests(cfg, sample(), nil, opts, "http://localhost:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("%d requests, want one plan", len(reqs))
+	}
+	req := reqs[0]
+
+	if req.Brief != opts.Describe || req.Name != opts.Name {
+		t.Errorf("req = %+v", req)
+	}
+	if req.Focus != "" {
+		t.Errorf("focus = %q, want none: the brief is what the plan is for", req.Focus)
+	}
+	if len(req.Endpoints) != 3 {
+		t.Errorf("endpoints = %d, want every one", len(req.Endpoints))
+	}
+	if len(req.Files) != 1 || req.Files[0].Path != "handlers/login.go" {
+		t.Fatalf("files = %+v, want how to log in and nothing else", req.Files)
+	}
+	if len(labels) != 1 || labels[0] != "your brief" {
+		t.Errorf("labels = %v", labels)
+	}
+}
+
+// --only with --describe is what source the one plan gets to read.
+func TestDescribeReadsWhatOnlyPicked(t *testing.T) {
+	cfg := config.New(t.TempDir(), "main")
+	write(t, filepath.Join(cfg.Root(), "handlers/tax.go"), "func ApplyTax() {}")
+	write(t, filepath.Join(cfg.Root(), "handlers/login.go"), "func SignIn() {}")
+
+	opts := Options{Describe: "Tax a checkout twice.", Only: []string{"tax.go"}}
+	scopes, _ := candidates(sample(), opts)
+	reqs, _, err := requests(cfg, sample(), scopes, opts, "http://localhost:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var paths []string
+	for _, f := range reqs[0].Files {
+		paths = append(paths, f.Path)
+	}
+	if strings.Join(paths, " ") != "handlers/tax.go handlers/login.go" {
+		t.Fatalf("files = %v", paths)
+	}
 }
