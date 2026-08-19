@@ -3,10 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
 import { StatusDot } from '@/components/ui/badge';
-import { projects, currentProject } from '@/lib/mock/data';
+import type { Project } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
-export function ProjectSwitcher({ collapsed = false }: { collapsed?: boolean }) {
+export function ProjectSwitcher({
+  projects,
+  currentProject,
+  collapsed = false,
+}: {
+  projects: Project[];
+  currentProject: Project;
+  collapsed?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 

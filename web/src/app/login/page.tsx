@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/icon';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Crosshair } from '@/components/ui/crosshair';
 import { buttonVariants } from '@/components/ui/button';
-import { plansAwaitingReview } from '@/lib/mock/data';
+import { getPlansAwaitingReview } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 export const metadata: Metadata = {
@@ -24,9 +24,9 @@ const ASSURANCES = [
   'GritQA never pushes, opens pull requests, or writes to your repositories.',
 ];
 
-const preview = plansAwaitingReview.slice(0, 3);
-
-export default function LoginPage() {
+export default async function LoginPage() {
+  const plansAwaitingReview = await getPlansAwaitingReview();
+  const preview = plansAwaitingReview.slice(0, 3);
   return (
     <main id="main" className="flex min-h-screen flex-col lg:flex-row">
       <div className="flex w-full flex-col bg-app-panel px-6 py-8 lg:w-[492px] lg:shrink-0 lg:border-r lg:border-rule lg:px-12 lg:py-10">

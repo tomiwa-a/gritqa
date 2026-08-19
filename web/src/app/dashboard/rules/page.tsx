@@ -11,7 +11,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { rules } from '@/lib/mock/data';
+import { getRules } from '@/lib/data';
 import { ruleToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { RuleCategory } from '@/lib/mock/types';
 
@@ -25,6 +25,7 @@ function isCategory(value: string | undefined): value is RuleCategory {
 
 export default async function RulesPage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
+  const rules = await getRules();
   const categoryParam = typeof params.category === 'string' ? params.category : undefined;
   /* `category` is not an overlay param, so opening a rule keeps the filter and
      closing it comes back to the same narrowed list. Nothing to thread through. */

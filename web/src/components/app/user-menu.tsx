@@ -4,14 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { initialsOf } from '@/components/ui/avatar';
-import { user } from '@/lib/mock/data';
+import type { User } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
-
-const initials = initialsOf(user.name);
 
 const PROVIDER = { github: 'GitHub', gitlab: 'GitLab' } as const;
 
-export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
+export function UserMenu({ user, collapsed = false }: { user: User; collapsed?: boolean }) {
+  const initials = initialsOf(user.name);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
@@ -74,9 +73,24 @@ export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
 
           <div className="my-1.5 h-px bg-rule" />
 
-          <MenuLink href="/dashboard/settings" icon="user" label="Account" onDone={() => setOpen(false)} />
-          <MenuLink href="/dashboard/projects" icon="projects" label="Projects" onDone={() => setOpen(false)} />
-          <MenuLink href="/dashboard/setup" icon="terminal" label="CLI setup" onDone={() => setOpen(false)} />
+          <MenuLink
+            href="/dashboard/settings"
+            icon="user"
+            label="Account"
+            onDone={() => setOpen(false)}
+          />
+          <MenuLink
+            href="/dashboard/projects"
+            icon="projects"
+            label="Projects"
+            onDone={() => setOpen(false)}
+          />
+          <MenuLink
+            href="/dashboard/setup"
+            icon="terminal"
+            label="CLI setup"
+            onDone={() => setOpen(false)}
+          />
 
           <div className="my-1.5 h-px bg-rule" />
 

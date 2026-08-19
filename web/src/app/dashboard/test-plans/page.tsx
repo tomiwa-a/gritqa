@@ -11,7 +11,7 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { allPlans, plansAwaitingReview } from '@/lib/mock/data';
+import { getAllPlans, getCoverage, getPlansAwaitingReview } from '@/lib/data';
 import {
   coverageFileFor,
   endpointFocusFor,
@@ -24,7 +24,7 @@ import { EndpointFocusHeader, FileFocusHeader } from '@/components/app/coverage-
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { planToken, withOverlay, type PageParams } from '@/lib/overlay';
-import type { TestPlan } from '@/lib/mock/types';
+import type { CoverageFile, TestPlan } from '@/lib/mock/types';
 
 export const metadata = { title: 'Test plans · GritQA' };
 
@@ -49,7 +49,7 @@ type Section = { key: string; title: string; hint?: string; plans: TestPlan[] };
 
 /* Every grouping below is computed from the plan itself. No plan carries a
    folder, a suite or a tag, because none of those exist. */
-function sectionsFor(group: Group): Section[] {
+function sectionsFor(allPlans: TestPlan[], coverage: CoverageFile[], group: Group): Section[] {
   if (group === 'status') {
     return STATUS_ORDER.map((status) => ({
       key: status,
@@ -66,7 +66,8 @@ function sectionsFor(group: Group): Section[] {
         const key = `${endpoint.method} ${endpoint.path}`;
         const found = byEndpoint.get(key);
         if (found) found.plans.push(plan);
-        else byEndpoint.set(key, { key, title: endpoint.path, hint: endpoint.method, plans: [plan] });
+        else
+          byEndpoint.set(key, { key, title: endpoint.path, hint: endpoint.method, plans: [plan] });
       }
     }
     return [...byEndpoint.values()].sort((a, b) => a.key.localeCompare(b.key));
@@ -75,7 +76,7 @@ function sectionsFor(group: Group): Section[] {
   if (group === 'file') {
     const byFile = new Map<string, Section>();
     for (const plan of allPlans) {
-      for (const file of filesCoveredBy(plan)) {
+      for (const file of filesCoveredBy(coverage, plan)) {
         const found = byFile.get(file);
         if (found) found.plans.push(plan);
         else byFile.set(file, { key: file, title: file, plans: [plan] });
@@ -196,6 +197,11 @@ export default async function TestPlansPage({
   searchParams: Promise<PageParams>;
 }) {
   const params = await searchParams;
+  const [allPlans, coverage, plansAwaitingReview] = await Promise.all([
+    getAllPlans(),
+    getCoverage(),
+    getPlansAwaitingReview(),
+  ]);
   const groupParam = typeof params.group === 'string' ? params.group : undefined;
   const endpointParam = typeof params.endpoint === 'string' ? params.endpoint : undefined;
   const fileParam = typeof params.file === 'string' ? params.file : undefined;
@@ -204,7 +210,7 @@ export default async function TestPlansPage({
 
   /* A coverage square or a file name lands here. Focus narrows the list to what
      touches that one thing, and the grouping control steps aside while it does. */
-  const endpointFocus = endpointFocusFor(endpointParam);
+  const endpointFocus = endpointFocusFor(coverage, endpointParam);
   /* Drafting for one endpoint opens the wizard over this page, on that endpoint. */
   const generateHref = (method: string, path: string) =>
     withOverlay(PATH, params, 'generate', {
@@ -212,7 +218,7 @@ export default async function TestPlansPage({
       g: 'scope',
       only: `${method} ${path}`,
     });
-  const fileFocus = coverageFileFor(fileParam);
+  const fileFocus = coverageFileFor(coverage, fileParam);
   const focused = Boolean(endpointFocus || fileFocus);
   const missing = Boolean((endpointParam && !endpointFocus) || (fileParam && !fileFocus));
 
@@ -222,7 +228,7 @@ export default async function TestPlansPage({
           key: 'focus-endpoint',
           title: 'Plans that touch it',
           hint: 'Everything covering this endpoint today',
-          plans: plansForEndpoint(endpointFocus.path),
+          plans: plansForEndpoint(allPlans, endpointFocus.path),
         },
       ]
     : fileFocus
@@ -231,10 +237,10 @@ export default async function TestPlansPage({
             key: 'focus-file',
             title: 'Plans that reach into it',
             hint: 'Everything covering an endpoint in this file',
-            plans: plansForFile(fileFocus.file),
+            plans: plansForFile(allPlans, coverage, fileFocus.file),
           },
         ]
-      : sectionsFor(group);
+      : sectionsFor(allPlans, coverage, group);
 
   const counts = {
     draft: allPlans.filter((p) => p.status === 'draft').length,
@@ -292,13 +298,16 @@ export default async function TestPlansPage({
         {endpointFocus && (
           <EndpointFocusHeader
             focus={endpointFocus}
-            plans={plansForEndpoint(endpointFocus.path)}
+            plans={plansForEndpoint(allPlans, endpointFocus.path)}
             generateHref={generateHref(endpointFocus.method, endpointFocus.path)}
           />
         )}
 
         {!endpointFocus && fileFocus && (
-          <FileFocusHeader file={fileFocus} plans={plansForFile(fileFocus.file)} />
+          <FileFocusHeader
+            file={fileFocus}
+            plans={plansForFile(allPlans, coverage, fileFocus.file)}
+          />
         )}
 
         {!focused && (

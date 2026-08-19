@@ -1,15 +1,17 @@
 import Link from 'next/link';
 import { Delta } from './delta';
-import { planPassRates } from '@/lib/mock/data';
+import { getPlanPassRates } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 const SERIES = ['bg-series-1', 'bg-series-2', 'bg-series-3', 'bg-series-4', 'bg-series-5'];
 
-export function PlanRates({
+export async function PlanRates({
   hrefFor = (id) => `/dashboard/test-plans/${id}`,
 }: {
   hrefFor?: (planPublicId: string) => string;
 } = {}) {
+  const planPassRates = await getPlanPassRates();
+
   return (
     <ul className="flex flex-col gap-1">
       {planPassRates.map((p) => (

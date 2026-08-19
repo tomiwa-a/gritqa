@@ -13,12 +13,13 @@ import { diffFrom, resolveFrom, searchCommits } from '@/lib/commits';
 import { endpointKey } from '@/lib/plan';
 import { withOverlayParams, type PageParams } from '@/lib/overlay';
 import {
-  commits,
-  coverage,
-  coverageTotals,
-  currentProject,
-  lastDraftedFrom,
-} from '@/lib/mock/data';
+  getCommits,
+  getCoverage,
+  getCoverageTotals,
+  getCurrentProject,
+  getLastDraftedFrom,
+} from '@/lib/data';
+import type { CoverageFile } from '@/lib/mock/types';
 
 const SOURCES = ['changes', 'endpoints', 'blank'] as const;
 type Source = (typeof SOURCES)[number];
@@ -72,7 +73,7 @@ function isState(value: string | undefined): value is StateFilter {
 }
 
 /** Resolves an `only=METHOD /path` key back to the endpoint and the file it lives in. */
-function findEndpoint(key: string) {
+function findEndpoint(coverage: CoverageFile[], key: string) {
   for (const file of coverage) {
     const endpoint = file.endpoints.find((e) => endpointKey(e) === key);
     if (endpoint) return { key, file: file.file, method: endpoint.method, path: endpoint.path };
@@ -80,7 +81,7 @@ function findEndpoint(key: string) {
   return undefined;
 }
 
-function pickerFiles(filter: StateFilter, only?: string[]): PickerFile[] {
+function pickerFiles(coverage: CoverageFile[], filter: StateFilter, only?: string[]): PickerFile[] {
   return coverage
     .filter((file) => !only || only.includes(file.file))
     .map((file) => ({
@@ -148,7 +149,7 @@ function Nothing({ title, children }: { title: string; children?: React.ReactNod
  * Drafting a plan, without losing the page you were reading. Three steps on the
  * URL so the whole thing stays server-rendered and linkable.
  */
-export function GenerateModal({
+export async function GenerateModal({
   params,
   pathname,
   closeHref,
@@ -157,6 +158,14 @@ export function GenerateModal({
   pathname: string;
   closeHref: string;
 }) {
+  const [commits, coverage, coverageTotals, currentProject, lastDraftedFrom] = await Promise.all([
+    getCommits(),
+    getCoverage(),
+    getCoverageTotals(),
+    getCurrentProject(),
+    getLastDraftedFrom(),
+  ]);
+
   const askedSource = typeof params.from === 'string' ? params.from : undefined;
   const askedStep = typeof params.g === 'string' ? params.g : undefined;
   const askedState = typeof params.state === 'string' ? params.state : undefined;
@@ -169,7 +178,7 @@ export function GenerateModal({
   const step: Step = isStep(askedStep) ? askedStep : askedSource ? 'scope' : 'source';
 
   /* Arriving from one endpoint: show its file, with that endpoint already ticked. */
-  const focus = askedOnly ? findEndpoint(askedOnly) : undefined;
+  const focus = askedOnly ? findEndpoint(coverage, askedOnly) : undefined;
   const stateFilter: StateFilter = isState(askedState) ? askedState : focus ? 'all' : 'none';
 
   const href = (patch: Record<string, string | undefined>) =>
@@ -210,7 +219,7 @@ export function GenerateModal({
   const from = resolveFrom(commits, askedFrom, lastDraftedFrom);
   const diff = diffFrom(commits, from);
   const shown = searchCommits(commits, query);
-  const pickable = pickerFiles(stateFilter, focus ? [focus.file] : undefined);
+  const pickable = pickerFiles(coverage, stateFilter, focus ? [focus.file] : undefined);
 
   return (
     <Modal

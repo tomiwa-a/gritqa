@@ -5,9 +5,9 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { allPlans, currentProject } from '@/lib/mock/data';
+import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { runsForPlan } from '@/lib/runs';
+import { runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, runToken } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
@@ -24,7 +24,7 @@ const STATUS: Record<
  * What the plan is and what you can do about it. The steps, the diff and the raw
  * JSON live on the plan's page; the conversation is a panel of its own.
  */
-export function PlanPreview({
+export async function PlanPreview({
   id,
   closeHref,
   runDrawerHref,
@@ -36,6 +36,13 @@ export function PlanPreview({
   /** Swaps this panel for the conversation, so asking stays one click deep. */
   askDrawerHref?: (token: string) => string;
 }) {
+  const [allPlans, currentProject, history, recent] = await Promise.all([
+    getAllPlans(),
+    getCurrentProject(),
+    getRunHistory(),
+    getRecentRuns(),
+  ]);
+
   const plan = allPlans.find((p) => p.publicId === id);
   if (!plan) return null;
 
@@ -47,7 +54,7 @@ export function PlanPreview({
      Without a panel to swap to, the plan's own page carries the same button. */
   const askHref = askDrawerHref ? askDrawerHref(askToken(plan.publicId)) : base;
 
-  const lastRun = runsForPlan(plan.publicId)[0];
+  const lastRun = runsForPlan(runRowsOf(history, recent), plan.publicId)[0];
   const lastRunHref = lastRun
     ? runDrawerHref
       ? runDrawerHref(runToken(lastRun.publicId))

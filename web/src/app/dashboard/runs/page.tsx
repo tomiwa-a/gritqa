@@ -13,9 +13,9 @@ import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { allPlans, runStripStats } from '@/lib/mock/data';
+import { getAllPlans, getRecentRuns, getRunHistory, getRunStripStats } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, matchesStatus, runCounts, runRows, type RunRow } from '@/lib/runs';
+import { brokeAt, matchesStatus, runCountsOf, runRowsOf, type RunRow } from '@/lib/runs';
 import { runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Runs · GritQA' };
@@ -87,7 +87,11 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
       }
       return (
         <span className="text-[12px] text-ink-subtle">
-          {run.status === 'running' ? 'Still going' : run.status === 'failed' ? 'A step failed' : 'Ran clean'}
+          {run.status === 'running'
+            ? 'Still going'
+            : run.status === 'failed'
+              ? 'A step failed'
+              : 'Ran clean'}
         </span>
       );
     },
@@ -120,19 +124,24 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
   },
 ];
 
-export default async function RunsPage({
-  searchParams,
-}: {
-  searchParams: Promise<PageParams>;
-}) {
+export default async function RunsPage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
   const statusParam = typeof params.status === 'string' ? params.status : undefined;
   const planParam = typeof params.plan === 'string' ? params.plan : undefined;
   const filter: Filter = isFilter(statusParam) ? statusParam : 'all';
   const openRun = (publicId: string) => withOverlay(PATH, params, runToken(publicId));
 
+  const [allPlans, history, recent, runStripStats] = await Promise.all([
+    getAllPlans(),
+    getRunHistory(),
+    getRecentRuns(),
+    getRunStripStats(),
+  ]);
+  const allRows = runRowsOf(history, recent);
+  const runCounts = runCountsOf(allRows);
+
   const plan = planParam ? allPlans.find((p) => p.publicId === planParam) : undefined;
-  const scoped = plan ? runRows.filter((r) => r.planPublicId === plan.publicId) : runRows;
+  const scoped = plan ? allRows.filter((r) => r.planPublicId === plan.publicId) : allRows;
   const rows = scoped.filter((r) => matchesStatus(r, filter));
 
   const base = plan ? `/dashboard/runs?plan=${plan.publicId}` : '/dashboard/runs';

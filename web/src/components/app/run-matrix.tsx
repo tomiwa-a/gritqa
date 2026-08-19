@@ -1,24 +1,31 @@
 import Link from 'next/link';
-import { runStripStats } from '@/lib/mock/data';
-import { CELL_FILL, CELL_WORD, runRows } from '@/lib/runs';
+import { getRecentRuns, getRunHistory, getRunStripStats } from '@/lib/data';
+import { CELL_FILL, CELL_WORD, runRowsOf } from '@/lib/runs';
 import { cn } from '@/lib/cn';
 
 const ORDER = ['p', 'f', 's'];
 
-/** Oldest on the left, so the strip reads the way time does. */
-const COLUMNS = [...runRows].reverse();
-
 function summarise(cells: string, planName: string, whenLabel: string) {
   const failed = [...cells].filter((c) => c === 'f').length;
-  const tail = failed ? `${failed} of ${cells.length} steps failed` : `all ${cells.length} steps passed`;
+  const tail = failed
+    ? `${failed} of ${cells.length} steps failed`
+    : `all ${cells.length} steps passed`;
   return `${planName} · ${whenLabel} — ${tail}`;
 }
 
-export function RunMatrix({
+export async function RunMatrix({
   hrefFor = (id) => `/dashboard/runs/${id}`,
 }: {
   hrefFor?: (publicId: string) => string;
 } = {}) {
+  const [history, recent, runStripStats] = await Promise.all([
+    getRunHistory(),
+    getRecentRuns(),
+    getRunStripStats(),
+  ]);
+  /* Oldest on the left, so the strip reads the way time does. */
+  const COLUMNS = [...runRowsOf(history, recent)].reverse();
+
   return (
     <div>
       <div className="-mx-1 overflow-x-auto px-1 pb-1">

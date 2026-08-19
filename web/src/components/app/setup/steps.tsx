@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon';
 import { CodeBlock } from '@/components/ui/code-block';
 import { buttonVariants } from '@/components/ui/button';
 import { CopyCommand } from '../copy-command';
-import { currentProject } from '@/lib/mock/data';
+import { getCurrentProject } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 export function InstallStep() {
@@ -41,7 +41,9 @@ path: ~/code/payments-api
 branch: main
 `;
 
-export function ConnectStep({ connected }: { connected: boolean }) {
+export async function ConnectStep({ connected }: { connected: boolean }) {
+  const currentProject = await getCurrentProject();
+
   return (
     <div className="flex flex-col gap-4">
       <CopyCommand label="In your project directory" command="gritqa" />
@@ -72,7 +74,9 @@ export function ConnectStep({ connected }: { connected: boolean }) {
               connected ? 'bg-pass' : 'bg-skip',
             )}
           />
-          <span className={cn('relative h-2 w-2 rounded-full', connected ? 'bg-pass' : 'bg-skip')} />
+          <span
+            className={cn('relative h-2 w-2 rounded-full', connected ? 'bg-pass' : 'bg-skip')}
+          />
         </span>
         {connected
           ? `Connected — ${currentProject.name} was read ${currentProject.lastIndexedLabel}`

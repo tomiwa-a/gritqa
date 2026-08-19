@@ -6,18 +6,22 @@ import { DangerZone } from '@/components/app/settings/danger-zone';
 import { Panel } from '@/components/app/panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { currentProject } from '@/lib/mock/data';
+import { getCurrentProject } from '@/lib/data';
 
 export const metadata = { title: 'Project · Settings · GritQA' };
 
-export default function ProjectSettingsPage() {
+export default async function ProjectSettingsPage() {
+  const currentProject = await getCurrentProject();
   return (
     <SettingsShell
       active="project"
       title={currentProject.name}
       description="How GritQA finds this project and what it watches. The path and the reading are set by the CLI on your machine."
       action={
-        <Link href="/dashboard/projects" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+        <Link
+          href="/dashboard/projects"
+          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+        >
           All projects
           <Icon name="arrowRight" size={13} />
         </Link>

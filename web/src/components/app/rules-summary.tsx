@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { CATEGORY, CATEGORY_ORDER } from './rules/categories';
-import { rules } from '@/lib/mock/data';
+import { getRules } from '@/lib/data';
 
-export function RulesSummary() {
+export async function RulesSummary() {
+  const rules = await getRules();
+
   return (
     <ul className="divide-y divide-rule-soft">
       {CATEGORY_ORDER.map((key) => {

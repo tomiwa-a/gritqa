@@ -20,20 +20,39 @@ import { Icon } from '@/components/ui/icon';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
-  allPlans,
-  coverageTotals,
-  currentProject,
-  period,
-  plansAwaitingReview,
-  recentRuns,
-  runStripStats,
-} from '@/lib/mock/data';
+  getAllPlans,
+  getCoverageTotals,
+  getCurrentProject,
+  getPeriod,
+  getPlansAwaitingReview,
+  getRecentRuns,
+  getRunStripStats,
+  type CoverageTotals,
+  type Period,
+  type RunStripStats,
+} from '@/lib/data';
+import type { Project, TestExecution, TestPlan } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Overview · GritQA' };
 
 const PATH = '/dashboard';
+
+/**
+ * One read feeds the whole page. Every shape below is derived from this bundle
+ * rather than fetching for itself — once these come from Postgres, a helper that
+ * read its own data would mean a query per section.
+ */
+type Overview = {
+  allPlans: TestPlan[];
+  coverageTotals: CoverageTotals;
+  currentProject: Project;
+  period: Period;
+  plansAwaitingReview: TestPlan[];
+  recentRuns: TestExecution[];
+  runStripStats: RunStripStats;
+};
 
 type WorkItem = {
   id: string;
@@ -48,40 +67,47 @@ type WorkItem = {
   token: string;
 };
 
-const failedRuns = recentRuns.filter((r) => r.status === 'failed');
+function failedRunsOf(d: Overview) {
+  return d.recentRuns.filter((r) => r.status === 'failed');
+}
 
-const failingWork: WorkItem[] = failedRuns.map((run) => {
-  const broke = run.steps.find((s) => s.status === 'failed');
-  return {
-    id: run.publicId,
-    kind: 'failing',
-    name: run.planName,
-    note: broke ? `Failed at "${broke.stepName}" · ${run.startedLabel}` : run.startedLabel,
-    covers: `${run.steps.length} steps · ${new Set(run.steps.map((s) => s.path)).size} endpoints`,
-    signal: broke ? `${broke.method} ${broke.responseStatus}` : '—',
-    run: { total: run.steps.length, passed: run.steps.filter((s) => s.status === 'passed').length },
-    cta: 'Inspect',
-    token: runToken(run.publicId),
-  };
-});
+const failingWorkOf = (d: Overview): WorkItem[] =>
+  failedRunsOf(d).map((run) => {
+    const broke = run.steps.find((s) => s.status === 'failed');
+    return {
+      id: run.publicId,
+      kind: 'failing',
+      name: run.planName,
+      note: broke ? `Failed at "${broke.stepName}" · ${run.startedLabel}` : run.startedLabel,
+      covers: `${run.steps.length} steps · ${new Set(run.steps.map((s) => s.path)).size} endpoints`,
+      signal: broke ? `${broke.method} ${broke.responseStatus}` : '—',
+      run: {
+        total: run.steps.length,
+        passed: run.steps.filter((s) => s.status === 'passed').length,
+      },
+      cta: 'Inspect',
+      token: runToken(run.publicId),
+    };
+  });
 
-const reviewWork: WorkItem[] = plansAwaitingReview.map((plan) => ({
-  id: plan.publicId,
-  kind: 'review',
-  name: plan.name,
-  note: `${plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'} · ${plan.createdLabel}`,
-  covers: `${plan.stepCount} steps · ${plan.covers.length} endpoints`,
-  signal: `${plan.assertionCount} checks`,
-  run: plan.lastRun ? { total: plan.lastRun.total, passed: plan.lastRun.passed } : null,
-  cta: 'Review',
-  token: planToken(plan.publicId),
-}));
+const reviewWorkOf = (d: Overview): WorkItem[] =>
+  d.plansAwaitingReview.map((plan) => ({
+    id: plan.publicId,
+    kind: 'review',
+    name: plan.name,
+    note: `${plan.triggerSource === 'git_push' ? 'Drafted from a push' : 'Started by hand'} · ${plan.createdLabel}`,
+    covers: `${plan.stepCount} steps · ${plan.covers.length} endpoints`,
+    signal: `${plan.assertionCount} checks`,
+    run: plan.lastRun ? { total: plan.lastRun.total, passed: plan.lastRun.passed } : null,
+    cta: 'Review',
+    token: planToken(plan.publicId),
+  }));
 
-const WORK: Record<ViewKey, WorkItem[]> = {
-  all: [...failingWork, ...reviewWork],
-  review: reviewWork,
-  failing: failingWork,
-};
+function workOf(d: Overview): Record<ViewKey, WorkItem[]> {
+  const failing = failingWorkOf(d);
+  const review = reviewWorkOf(d);
+  return { all: [...failing, ...review], review, failing };
+}
 
 const SUBTITLE: Record<ViewKey, string> = {
   all: 'Failing runs first, then plans waiting on your approval',
@@ -155,17 +181,16 @@ const workColumns = (hrefFor: (row: WorkItem) => string): Column<WorkItem>[] => 
   },
 ];
 
-const passRateDelta = (
-  Number(runStripStats.passRate) - Number(period.passRatePrevious)
-).toFixed(1);
-
-const metricCells = (generateHref: string): MetricCell[] => [
+const metricCells = (
+  { coverageTotals, period, runStripStats }: Overview,
+  generateHref: string,
+): MetricCell[] => [
   {
     icon: 'check',
     label: 'Pass rate',
     value: `${runStripStats.passRate}%`,
     direction: 'up',
-    delta: `+${passRateDelta}`,
+    delta: `+${(Number(runStripStats.passRate) - Number(period.passRatePrevious)).toFixed(1)}`,
     tone: 'good',
     comparison: `from ${period.passRatePrevious}%`,
     href: '/dashboard/runs',
@@ -202,61 +227,62 @@ const metricCells = (generateHref: string): MetricCell[] => [
   },
 ];
 
-const approvedPlans = allPlans.filter((p) => p.status === 'approved').length;
-
 /* The five things that happen to a plan, in order, each one a place to stand. */
-const STAGES: Stage[] = [
-  {
-    key: 'read',
-    icon: 'codebase',
-    label: 'Read',
-    value: String(currentProject.endpointCount),
-    unit: 'endpoints',
-    hint: `Found across ${currentProject.fileCount} files on your machine`,
-    href: '/dashboard/test-plans?group=file',
-  },
-  {
-    key: 'drafted',
-    icon: 'sparkle',
-    label: 'Drafted',
-    value: String(plansAwaitingReview.length),
-    unit: 'waiting',
-    hint: 'Written for you, and stuck here until you read them',
-    href: '/dashboard/queue',
-    tone: 'warn',
-  },
-  {
-    key: 'approved',
-    icon: 'check',
-    label: 'You approved',
-    value: String(approvedPlans),
-    unit: 'plans',
-    hint: 'The only plans your machine is allowed to run',
-    href: '/dashboard/test-plans?group=status',
-  },
-  {
-    key: 'ran',
-    icon: 'runs',
-    label: 'Ran',
-    value: String(runStripStats.runs),
-    unit: 'runs',
-    hint: `${runStripStats.total} requests went out in the last 30 days`,
-    href: '/dashboard/runs',
-  },
-  {
-    key: 'broke',
-    icon: 'alert',
-    label: 'Broke',
-    value: String(failedRuns.length),
-    unit: 'runs',
-    hint: 'Each one is either a real bug or a bad test — your call',
-    href: '/dashboard/runs?status=failed',
-    tone: 'fail',
-  },
-];
+const stagesOf = (d: Overview): Stage[] => {
+  const { allPlans, currentProject, plansAwaitingReview, runStripStats } = d;
+  const approvedPlans = allPlans.filter((p) => p.status === 'approved').length;
 
-const freshPush = plansAwaitingReview.filter((p) => p.createdLabel.endsWith('h ago')).length;
-const newestBreak = failedRuns[0]?.steps.find((s) => s.status === 'failed');
+  return [
+    {
+      key: 'read',
+      icon: 'codebase',
+      label: 'Read',
+      value: String(currentProject.endpointCount),
+      unit: 'endpoints',
+      hint: `Found across ${currentProject.fileCount} files on your machine`,
+      href: '/dashboard/test-plans?group=file',
+    },
+    {
+      key: 'drafted',
+      icon: 'sparkle',
+      label: 'Drafted',
+      value: String(plansAwaitingReview.length),
+      unit: 'waiting',
+      hint: 'Written for you, and stuck here until you read them',
+      href: '/dashboard/queue',
+      tone: 'warn',
+    },
+    {
+      key: 'approved',
+      icon: 'check',
+      label: 'You approved',
+      value: String(approvedPlans),
+      unit: 'plans',
+      hint: 'The only plans your machine is allowed to run',
+      href: '/dashboard/test-plans?group=status',
+    },
+    {
+      key: 'ran',
+      icon: 'runs',
+      label: 'Ran',
+      value: String(runStripStats.runs),
+      unit: 'runs',
+      hint: `${runStripStats.total} requests went out in the last 30 days`,
+      href: '/dashboard/runs',
+    },
+    {
+      key: 'broke',
+      icon: 'alert',
+      label: 'Broke',
+      value: String(failedRunsOf(d).length),
+      unit: 'runs',
+      hint: 'Each one is either a real bug or a bad test — your call',
+      href: '/dashboard/runs?status=failed',
+      tone: 'fail',
+    },
+  ];
+};
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export default async function OverviewPage({
@@ -265,9 +291,41 @@ export default async function OverviewPage({
   searchParams: Promise<PageParams>;
 }) {
   const params = await searchParams;
+  const [
+    allPlans,
+    coverageTotals,
+    currentProject,
+    period,
+    plansAwaitingReview,
+    recentRuns,
+    runStripStats,
+  ] = await Promise.all([
+    getAllPlans(),
+    getCoverageTotals(),
+    getCurrentProject(),
+    getPeriod(),
+    getPlansAwaitingReview(),
+    getRecentRuns(),
+    getRunStripStats(),
+  ]);
+  const overview: Overview = {
+    allPlans,
+    coverageTotals,
+    currentProject,
+    period,
+    plansAwaitingReview,
+    recentRuns,
+    runStripStats,
+  };
+
+  const failedRuns = failedRunsOf(overview);
+  const work = workOf(overview);
+  const freshPush = plansAwaitingReview.filter((p) => p.createdLabel.endsWith('h ago')).length;
+  const newestBreak = failedRuns[0]?.steps.find((s) => s.status === 'failed');
+
   const view = typeof params.view === 'string' ? params.view : undefined;
   const active: ViewKey = view === 'review' || view === 'failing' ? view : 'all';
-  const rows = WORK[active];
+  const rows = work[active];
 
   /* Everything on this page opens over it, so the work list and the filter stay put. */
   const open = (token: string) => withOverlay(PATH, params, token);
@@ -294,7 +352,11 @@ export default async function OverviewPage({
 
           <ViewFilter
             active={active}
-            counts={{ all: WORK.all.length, review: reviewWork.length, failing: failingWork.length }}
+            counts={{
+              all: work.all.length,
+              review: work.review.length,
+              failing: work.failing.length,
+            }}
           />
         </div>
 
@@ -360,11 +422,11 @@ export default async function OverviewPage({
           subtitle="Each stage hands to the next, and one of them is you"
           bodyClassName="p-0"
         >
-          <PipelineRail stages={STAGES} />
+          <PipelineRail stages={stagesOf(overview)} />
         </Panel>
 
         <div className="mt-4">
-          <MetricRail cells={metricCells(generateHref)} />
+          <MetricRail cells={metricCells(overview, generateHref)} />
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">

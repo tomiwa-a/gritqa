@@ -5,8 +5,8 @@ import { Panel } from '@/components/app/panel';
 import { Segmented } from '@/components/ui/segmented';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { auditLog } from '@/lib/mock/data';
-import type { AuditTone } from '@/lib/mock/types';
+import { getAuditLog } from '@/lib/data';
+import type { AuditEntry, AuditTone } from '@/lib/mock/types';
 
 export const metadata = { title: 'Activity · Settings · GritQA' };
 
@@ -25,7 +25,7 @@ function isScope(value: string | undefined): value is ScopeKey {
   return SCOPES.some((scope) => scope.key === value);
 }
 
-function countFor(key: ScopeKey) {
+function countFor(auditLog: AuditEntry[], key: ScopeKey) {
   return key === 'all' ? auditLog.length : auditLog.filter((e) => e.tone === key).length;
 }
 
@@ -70,6 +70,7 @@ export default async function ActivitySettingsPage({
   searchParams: Promise<{ scope?: string }>;
 }) {
   const { scope } = await searchParams;
+  const auditLog = await getAuditLog();
   const active: ScopeKey = isScope(scope) ? scope : 'all';
   const current = SCOPES.find((s) => s.key === active) ?? SCOPES[0];
   const entries = active === 'all' ? auditLog : auditLog.filter((e) => e.tone === active);
@@ -95,7 +96,7 @@ export default async function ActivitySettingsPage({
             options={SCOPES.map((s) => ({
               key: s.key,
               label: s.label,
-              count: countFor(s.key),
+              count: countFor(auditLog, s.key),
               href:
                 s.key === 'all'
                   ? '/dashboard/settings/activity'

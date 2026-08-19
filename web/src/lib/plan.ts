@@ -1,5 +1,3 @@
-import { allPlans, coverage, rules } from '@/lib/mock/data';
-import { planDetailFor } from '@/lib/mock/plans';
 import type {
   CoverageFile,
   CoverageState,
@@ -120,17 +118,17 @@ export function endpointsTouched(plan: TestPlanDetail): Endpoint[] {
 }
 
 /** The route file an endpoint lives in, read off the same index the CLI built. */
-export function fileForPath(path: string): string | null {
+export function fileForPath(coverage: CoverageFile[], path: string): string | null {
   for (const file of coverage) {
     if (file.endpoints.some((e) => e.path === path)) return file.file;
   }
   return null;
 }
 
-export function filesCoveredBy(plan: TestPlan): string[] {
+export function filesCoveredBy(coverage: CoverageFile[], plan: TestPlan): string[] {
   const files = new Set<string>();
   for (const endpoint of plan.covers) {
-    const file = fileForPath(endpoint.path);
+    const file = fileForPath(coverage, endpoint.path);
     if (file) files.add(file);
   }
   return [...files].sort();
@@ -160,7 +158,10 @@ export type EndpointFocus = {
 };
 
 /** Only an endpoint the index actually knows about resolves. */
-export function endpointFocusFor(key: string | undefined): EndpointFocus | null {
+export function endpointFocusFor(
+  coverage: CoverageFile[],
+  key: string | undefined,
+): EndpointFocus | null {
   if (!key) return null;
   for (const file of coverage) {
     for (const endpoint of file.endpoints) {
@@ -177,17 +178,24 @@ export function endpointFocusFor(key: string | undefined): EndpointFocus | null 
   return null;
 }
 
-export function coverageFileFor(name: string | undefined): CoverageFile | null {
+export function coverageFileFor(
+  coverage: CoverageFile[],
+  name: string | undefined,
+): CoverageFile | null {
   if (!name) return null;
   return coverage.find((f) => f.file === name) ?? null;
 }
 
-export function plansForEndpoint(path: string): TestPlan[] {
-  return allPlans.filter((plan) => plan.covers.some((c) => c.path === path));
+export function plansForEndpoint(plans: TestPlan[], path: string): TestPlan[] {
+  return plans.filter((plan) => plan.covers.some((c) => c.path === path));
 }
 
-export function plansForFile(file: string): TestPlan[] {
-  return allPlans.filter((plan) => filesCoveredBy(plan).includes(file));
+export function plansForFile(
+  plans: TestPlan[],
+  coverage: CoverageFile[],
+  file: string,
+): TestPlan[] {
+  return plans.filter((plan) => filesCoveredBy(coverage, plan).includes(file));
 }
 
 export function coverageTotalsOf(endpoints: { state: CoverageState }[]) {
@@ -205,7 +213,7 @@ export function coverageTotalsOf(endpoints: { state: CoverageState }[]) {
  * target. Nothing is stored — the generator re-reads the active rules, so this
  * is the same derivation it does.
  */
-export function rulesFor(plan: TestPlanDetail): TestingRule[] {
+export function rulesFor(rules: TestingRule[], plan: TestPlanDetail): TestingRule[] {
   const surface = JSON.stringify(plan.steps).toLowerCase();
   return rules.filter((rule) => {
     if (!rule.isActive) return false;
@@ -238,7 +246,12 @@ export type RuleReach = {
  * off the steps -- so plans without them are counted as unknown rather than
  * being claimed either way.
  */
-export function reachOf(rule: TestingRule): RuleReach {
+export function reachOf(
+  rules: TestingRule[],
+  allPlans: TestPlan[],
+  details: TestPlanDetail[],
+  rule: TestingRule,
+): RuleReach {
   if (!rule.isActive) return { plans: [], unknown: 0 };
   if (rule.category !== 'mock') return { plans: allPlans, unknown: 0 };
 
@@ -246,12 +259,12 @@ export function reachOf(rule: TestingRule): RuleReach {
   let unknown = 0;
 
   for (const plan of allPlans) {
-    const detail = planDetailFor(plan.publicId);
+    const detail = details.find((d) => d.publicId === plan.publicId);
     if (!detail) {
       unknown += 1;
       continue;
     }
-    if (rulesFor(detail).some((r) => r.publicId === rule.publicId)) plans.push(plan);
+    if (rulesFor(rules, detail).some((r) => r.publicId === rule.publicId)) plans.push(plan);
   }
 
   return { plans, unknown };

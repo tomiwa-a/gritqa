@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { CATEGORY } from '../rules/categories';
+import { getRules } from '@/lib/data';
 import { rulesFor } from '@/lib/plan';
 import type { RuleCategory, TestPlanDetail } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
@@ -9,8 +10,14 @@ import { cn } from '@/lib/cn';
    are the two things you read first, and mocks are a detail of how. */
 const ORDER: RuleCategory[] = ['ordering', 'assertion', 'mock', 'fixture'];
 
-export function RulesApplied({ plan, className }: { plan: TestPlanDetail; className?: string }) {
-  const applied = rulesFor(plan);
+export async function RulesApplied({
+  plan,
+  className,
+}: {
+  plan: TestPlanDetail;
+  className?: string;
+}) {
+  const applied = rulesFor(await getRules(), plan);
 
   if (applied.length === 0) {
     return (

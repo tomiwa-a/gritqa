@@ -2,8 +2,7 @@ import { Drawer } from '../drawer';
 import { Badge } from '@/components/ui/badge';
 import { RevisionThread, TurnRow } from './revision-thread';
 import { RefineComposer } from './refine-composer';
-import { allPlans, user } from '@/lib/mock/data';
-import { planDetailFor } from '@/lib/mock/plans';
+import { getAllPlans, getPlanDetail, getUser } from '@/lib/data';
 import type { TestPlan } from '@/lib/mock/types';
 
 /**
@@ -64,11 +63,13 @@ function OpeningTurn({ plan, author }: { plan: TestPlan; author: string }) {
  * The exchange scrolls, and the box you answer in is pinned underneath it —
  * because your answer is the next turn, not a separate tool.
  */
-export function PlanConversation({ id, closeHref }: { id: string; closeHref: string }) {
+export async function PlanConversation({ id, closeHref }: { id: string; closeHref: string }) {
+  const [allPlans, user] = await Promise.all([getAllPlans(), getUser()]);
+
   const plan = allPlans.find((p) => p.publicId === id);
   if (!plan) return null;
 
-  const detail = planDetailFor(plan.publicId);
+  const detail = await getPlanDetail(plan.publicId);
   const revisions = detail?.revisions ?? [];
   /* An archived plan is kept for the record, so there is nothing to ask for. */
   const canAsk = plan.status !== 'archived';

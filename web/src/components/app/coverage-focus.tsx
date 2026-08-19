@@ -3,9 +3,16 @@ import { Icon } from '@/components/ui/icon';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { COVERAGE_FILL, COVERAGE_LABEL, COVERAGE_NEXT, COVERAGE_ORDER, COVERAGE_TONE } from '@/lib/coverage';
+import {
+  COVERAGE_FILL,
+  COVERAGE_LABEL,
+  COVERAGE_NEXT,
+  COVERAGE_ORDER,
+  COVERAGE_TONE,
+} from '@/lib/coverage';
 import { endpointHref, type EndpointFocus } from '@/lib/plan';
-import { failedRunForEndpoint } from '@/lib/runs';
+import { getRecentRuns, getRunHistory } from '@/lib/data';
+import { failedRunForEndpoint, runRowsOf } from '@/lib/runs';
 import type { CoverageFile, CoverageState, TestPlan } from '@/lib/mock/types';
 
 function Shell({
@@ -37,7 +44,7 @@ function Shell({
 }
 
 /** One CTA per state, so a square always lands somewhere it can be acted on. */
-function NextAction({
+async function NextAction({
   state,
   plans,
   method,
@@ -52,7 +59,8 @@ function NextAction({
   generateHref: string;
 }) {
   if (state === 'failing') {
-    const run = failedRunForEndpoint(method, path);
+    const rows = runRowsOf(await getRunHistory(), await getRecentRuns());
+    const run = failedRunForEndpoint(rows, method, path);
     if (run) {
       return (
         <Link

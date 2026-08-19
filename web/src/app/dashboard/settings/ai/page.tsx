@@ -8,11 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
-import { user } from '@/lib/mock/data';
+import { getUser } from '@/lib/data';
 
 export const metadata = { title: 'AI drafting · Settings · GritQA' };
 
-export default function AiSettingsPage() {
+export default async function AiSettingsPage() {
+  const user = await getUser();
   return (
     <SettingsShell
       active="ai"
@@ -58,7 +59,8 @@ export default function AiSettingsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rule bg-app-panel px-4 py-3.5">
         <p className="flex items-start gap-2 text-[12.5px] leading-snug text-ink-muted">
           <Icon name="plan" size={14} className="mt-px shrink-0 text-ink-subtle" />
-          Would rather not involve a model at all? Write plans by hand and GritQA will just run them.
+          Would rather not involve a model at all? Write plans by hand and GritQA will just run
+          them.
         </p>
         <Link
           href="/dashboard/test-plans"

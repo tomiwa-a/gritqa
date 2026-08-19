@@ -20,6 +20,7 @@ export type Project = {
   defaultBranch: string;
   status: 'active' | 'archived';
   lastIndexedLabel: string | null;
+  lastIndexedAt: string | null;
   fileCount: number;
   endpointCount: number;
 };
@@ -39,6 +40,7 @@ export type TestPlan = {
   version: number;
   triggerSource: 'git_push' | 'manual';
   createdLabel: string;
+  createdAt: string;
   stepCount: number;
   assertionCount: number;
   /** The endpoints the plan is about — sign-in scaffolding excluded. */
@@ -49,13 +51,7 @@ export type TestPlan = {
 export type AssertionType = 'status' | 'bodyField' | 'header' | 'responseTime';
 
 export type AssertionOperator =
-  | 'equals'
-  | 'notEquals'
-  | 'contains'
-  | 'notContains'
-  | 'exists'
-  | 'lt'
-  | 'gt';
+  'equals' | 'notEquals' | 'contains' | 'notContains' | 'exists' | 'lt' | 'gt';
 
 export type PlanAssertion = {
   type: AssertionType;
@@ -107,6 +103,7 @@ export type PlanChange = {
 export type PlanRevision = {
   version: number;
   whenLabel: string;
+  createdAt: string;
   /** Who started the turn. A revision by 'you' is an instruction the model answered. */
   author: 'ai' | 'you';
   /** SCHEMA GAP: no table stores refine instructions — versions alone lose the why. */
@@ -122,6 +119,7 @@ export type PlanFailureSeed = {
   version: number;
   stepId: string;
   whenLabel: string;
+  observedAt: string;
   expected: string;
   actual: string;
   verdict: FailureVerdict;
@@ -151,6 +149,7 @@ export type Commit = {
   subject: string;
   author: string;
   whenLabel: string;
+  committedAt: string;
   branch: string;
   files: CommitFile[];
 };
@@ -181,6 +180,7 @@ export type TestExecution = {
   status: ExecutionStatus;
   durationMs: number | null;
   startedLabel: string;
+  startedAt: string;
   steps: StepResult[];
 };
 
@@ -196,6 +196,7 @@ export type RunHistoryEntry = {
   /** One character per step: p passed, f failed, s skipped or not reached. */
   cells: string;
   whenLabel: string;
+  startedAt: string;
 };
 
 export type TestingRule = {
@@ -227,5 +228,6 @@ export type AuditEntry = {
   label: string;
   tone: AuditTone;
   whenLabel: string;
+  createdAt: string;
   ip: string;
 };

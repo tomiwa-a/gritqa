@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
+import { getAllPlans, getPlanDetails, getRules } from '@/lib/data';
 import { reachOf } from '@/lib/plan';
 import type { TestingRule } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/cn';
  * An inactive rule mutes its name rather than dimming the whole row: the switch
  * is what you came for, and greying out the way back on is the wrong instinct.
  */
-export function RuleRows({
+export async function RuleRows({
   rules,
   hrefFor,
 }: {
@@ -27,10 +28,21 @@ export function RuleRows({
     );
   }
 
+  /* Reach is read off every rule and every plan, not just this group's, so it is
+     resolved once here -- a map over JSX has nowhere to await. */
+  const [allRules, allPlans, details] = await Promise.all([
+    getRules(),
+    getAllPlans(),
+    getPlanDetails(),
+  ]);
+  const reachFor = new Map(
+    rules.map((rule) => [rule.publicId, reachOf(allRules, allPlans, details, rule)]),
+  );
+
   return (
     <ul className="flex flex-col">
       {rules.map((rule) => {
-        const reach = reachOf(rule);
+        const reach = reachFor.get(rule.publicId)!;
 
         return (
           <li

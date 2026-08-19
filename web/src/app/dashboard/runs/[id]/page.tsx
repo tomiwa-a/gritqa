@@ -9,9 +9,9 @@ import { RunCells } from '@/components/app/run-cells';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { allPlans, currentProject } from '@/lib/mock/data';
+import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, runRowFor, runsForPlan } from '@/lib/runs';
+import { brokeAt, runRowFor, runRowsOf, runsForPlan } from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { askToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
@@ -26,7 +26,8 @@ const BADGE = {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const run = runRowFor(id);
+  const rows = runRowsOf(await getRunHistory(), await getRecentRuns());
+  const run = runRowFor(rows, id);
   return { title: run ? `${run.planName} run · GritQA` : 'Run not found · GritQA' };
 }
 
@@ -40,7 +41,15 @@ export default async function RunDetailPage({
   const { id } = await params;
   const query = await searchParams;
 
-  const run = runRowFor(id);
+  const [allPlans, currentProject, history, recent] = await Promise.all([
+    getAllPlans(),
+    getCurrentProject(),
+    getRunHistory(),
+    getRecentRuns(),
+  ]);
+  const rows = runRowsOf(history, recent);
+
+  const run = runRowFor(rows, id);
   if (!run) notFound();
 
   const plan = allPlans.find((p) => p.publicId === run.planPublicId);
@@ -54,7 +63,7 @@ export default async function RunDetailPage({
   /* The conversation is about the plan, but it opens here — the evidence for
      what you want changed is on this page. */
   const refineHref = withOverlay(path, query, askToken(run.planPublicId));
-  const siblings = runsForPlan(run.planPublicId).filter((r) => r.publicId !== run.publicId);
+  const siblings = runsForPlan(rows, run.planPublicId).filter((r) => r.publicId !== run.publicId);
 
   /* Checking the plan or a sibling run should not cost you this report. */
   const planPreviewHref = plan ? withOverlay(path, query, planToken(plan.publicId)) : planHref;

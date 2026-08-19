@@ -1,4 +1,4 @@
-import { plansAwaitingReview } from '@/lib/mock/data';
+import { getPlansAwaitingReview } from '@/lib/data';
 
 const STEPS = [
   { method: 'POST', path: '/quotes', carries: 'quote_id' },
@@ -14,9 +14,9 @@ const METHOD_TONE: Record<string, string> = {
   DELETE: 'text-series-5',
 };
 
-const plan = plansAwaitingReview[0];
+export async function ApprovalGate() {
+  const plan = (await getPlansAwaitingReview())[0];
 
-export function ApprovalGate() {
   return (
     <div className="flex h-full flex-col justify-center">
       <div className="rounded-lg border border-rule-dark bg-surface-dark-raised p-3">
@@ -29,7 +29,9 @@ export function ApprovalGate() {
           </span>
         </div>
 
-        <p className="mt-1.5 text-[12.5px] leading-snug font-medium text-ink-inverse">{plan.name}</p>
+        <p className="mt-1.5 text-[12.5px] leading-snug font-medium text-ink-inverse">
+          {plan.name}
+        </p>
 
         <ul className="mt-3 flex flex-col gap-1.5">
           {STEPS.map((step, i) => (
@@ -46,7 +48,11 @@ export function ApprovalGate() {
       </div>
 
       <div className="mt-4 flex gap-3">
-        <span aria-hidden className="mt-3 w-6 shrink-0 border-t border-l border-rule-dark" style={{ height: 44 }} />
+        <span
+          aria-hidden
+          className="mt-3 w-6 shrink-0 border-t border-l border-rule-dark"
+          style={{ height: 44 }}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="rounded-lg border border-term-pass/25 bg-term-pass/5 px-3 py-2">

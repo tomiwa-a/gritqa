@@ -6,13 +6,14 @@ import { Panel } from '@/components/app/panel';
 import { Avatar } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icon';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { user } from '@/lib/mock/data';
+import { getUser } from '@/lib/data';
 
 export const metadata = { title: 'Account · Settings · GritQA' };
 
 const PROVIDER_LABEL = { github: 'GitHub', gitlab: 'GitLab' } as const;
 
-export default function AccountSettingsPage() {
+export default async function AccountSettingsPage() {
+  const user = await getUser();
   const provider = PROVIDER_LABEL[user.provider];
 
   return (
@@ -59,7 +60,12 @@ export default function AccountSettingsPage() {
           value={provider}
         />
 
-        <SettingRow label="Account ID" hint="Quote this if you ever write to us." value={user.publicId} mono />
+        <SettingRow
+          label="Account ID"
+          hint="Quote this if you ever write to us."
+          value={user.publicId}
+          mono
+        />
       </Panel>
 
       <Panel title="This browser" bodyClassName="p-0">

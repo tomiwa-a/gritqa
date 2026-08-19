@@ -1,5 +1,6 @@
 import { plansAwaitingReview } from './data';
 import type { PlanStepSpec, TestPlan, TestPlanDetail } from './types';
+import { at } from './when';
 
 const BASE_URL = 'http://localhost:8080';
 
@@ -278,6 +279,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 1,
         whenLabel: '2h ago',
+        createdAt: at('2h ago'),
         author: 'ai',
         summary: 'Drafted from the push to main. Five steps, twelve checks.',
         changes: [],
@@ -304,6 +306,7 @@ export const planDetails: TestPlanDetail[] = [
       version: 1,
       stepId: 's3',
       whenLabel: 'Yesterday',
+      observedAt: at('Yesterday'),
       expected: 'data.amount equals 4500',
       actual: '9000',
       verdict: 'undecided',
@@ -312,6 +315,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 1,
         whenLabel: 'Yesterday',
+        createdAt: at('Yesterday'),
         author: 'ai',
         summary: 'Drafted from the first push. Refunded the whole order.',
         changes: [],
@@ -319,6 +323,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 2,
         whenLabel: '3h ago',
+        createdAt: at('3h ago'),
         author: 'ai',
         summary:
           'Redrafted after a second push to the same handler, and narrowed the refund to the unshipped line.',
@@ -366,6 +371,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 1,
         whenLabel: '5d ago',
+        createdAt: at('5d ago'),
         author: 'you',
         instruction:
           'Cover the paystack webhook — replaying the same event should not credit the wallet twice.',
@@ -375,6 +381,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 2,
         whenLabel: '4d ago',
+        createdAt: at('4d ago'),
         author: 'you',
         instruction: 'The second delivery should be asserted as a duplicate, not just a 200.',
         summary: 'Added the duplicate flag and a zero-credit check to the replay step.',
@@ -394,6 +401,7 @@ export const planDetails: TestPlanDetail[] = [
       {
         version: 3,
         whenLabel: '2d ago',
+        createdAt: at('2d ago'),
         author: 'you',
         instruction: 'Check the webhook log too, so we know only one entry was written.',
         summary: 'Added a fourth step that reads the log and asserts a single entry.',

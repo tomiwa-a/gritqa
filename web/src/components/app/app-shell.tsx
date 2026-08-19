@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Icon } from '@/components/ui/icon';
-import { Sidebar } from './sidebar';
+import { Sidebar, type ShellData } from './sidebar';
 import { lockScroll } from '@/lib/scroll-lock';
 
 const ShellContext = createContext<{ openMobileNav: () => void } | null>(null);
@@ -13,7 +13,7 @@ export function useAppShell() {
   return ctx;
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ data, children }: { data: ShellData; children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -32,7 +32,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ShellContext.Provider value={{ openMobileNav: () => setMobileOpen(true) }}>
       <div className="flex min-h-screen bg-app">
         <div className="sticky top-0 hidden h-screen shrink-0 lg:block">
-          <Sidebar collapsed={collapsed} onToggleCollapse={() => setCollapsed((v) => !v)} />
+          <Sidebar
+            data={data}
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((v) => !v)}
+          />
         </div>
 
         {mobileOpen && (
@@ -44,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className="absolute inset-0 bg-ink/25"
             />
             <div className="absolute inset-y-0 left-0 shadow-menu">
-              <Sidebar onNavigate={() => setMobileOpen(false)} />
+              <Sidebar data={data} onNavigate={() => setMobileOpen(false)} />
             </div>
           </div>
         )}

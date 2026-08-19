@@ -9,8 +9,7 @@ import { PlanReader } from '@/components/app/plan/plan-reader';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { currentProject, plansAwaitingReview } from '@/lib/mock/data';
-import { planDetailFor } from '@/lib/mock/plans';
+import { getCurrentProject, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
 import { askToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
@@ -19,6 +18,10 @@ const QUEUE = '/dashboard/queue';
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
+  const [currentProject, plansAwaitingReview] = await Promise.all([
+    getCurrentProject(),
+    getPlansAwaitingReview(),
+  ]);
   const planParam = typeof params.plan === 'string' ? params.plan : undefined;
   const stepParam = typeof params.step === 'string' ? params.step : undefined;
 
@@ -50,7 +53,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
 
   const selected =
     plansAwaitingReview.find((p) => p.publicId === planParam) ?? plansAwaitingReview[0];
-  const detail = planDetailFor(selected.publicId);
+  const detail = await getPlanDetail(selected.publicId);
 
   const stepIndex = detail && stepParam ? detail.steps.findIndex((s) => s.id === stepParam) : -1;
   const step = stepIndex >= 0 ? detail?.steps[stepIndex] : undefined;

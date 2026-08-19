@@ -1,4 +1,3 @@
-import { recentRuns, runHistory } from '@/lib/mock/data';
 import type { ExecutionStatus, RunHistoryEntry, StepResult, TestExecution } from '@/lib/mock/types';
 
 export const CELL_FILL: Record<string, string> = { p: 'bg-pass', f: 'bg-fail', s: 'bg-skip' };
@@ -27,25 +26,32 @@ export type RunRow = RunHistoryEntry & {
   passed: number;
 };
 
-function rowFor(entry: RunHistoryEntry): RunRow {
+/**
+ * Every derivation here takes its data rather than reading it, so the module stays
+ * pure and one read serves a whole page. Once these rows come from Postgres, a
+ * function that fetched for itself would mean a query per call.
+ */
+function rowFor(recent: TestExecution[], entry: RunHistoryEntry): RunRow {
   const cells = [...entry.cells];
   return {
     ...entry,
-    detail: recentRuns.find((r) => r.publicId === entry.publicId),
+    detail: recent.find((r) => r.publicId === entry.publicId),
     steps: cells.length,
     passed: cells.filter((c) => c === 'p').length,
   };
 }
 
 /** Newest first — the order every list in the product reads in. */
-export const runRows: RunRow[] = [...runHistory].reverse().map(rowFor);
-
-export function runRowFor(id: string): RunRow | undefined {
-  return runRows.find((r) => r.publicId === id);
+export function runRowsOf(history: RunHistoryEntry[], recent: TestExecution[]): RunRow[] {
+  return [...history].reverse().map((entry) => rowFor(recent, entry));
 }
 
-export function runsForPlan(planPublicId: string): RunRow[] {
-  return runRows.filter((r) => r.planPublicId === planPublicId);
+export function runRowFor(rows: RunRow[], id: string): RunRow | undefined {
+  return rows.find((r) => r.publicId === id);
+}
+
+export function runsForPlan(rows: RunRow[], planPublicId: string): RunRow[] {
+  return rows.filter((r) => r.planPublicId === planPublicId);
 }
 
 export function brokeAt(run: RunRow): StepResult | undefined {
@@ -53,20 +59,29 @@ export function brokeAt(run: RunRow): StepResult | undefined {
 }
 
 /** The most recent run that broke on a given endpoint, when we have the report. */
-export function failedRunForEndpoint(method: string, path: string): RunRow | undefined {
-  return runRows.find((row) =>
+export function failedRunForEndpoint(
+  rows: RunRow[],
+  method: string,
+  path: string,
+): RunRow | undefined {
+  return rows.find((row) =>
     row.detail?.steps.some(
-      (s) => s.method === method && s.path === path && (s.status === 'failed' || s.status === 'error'),
+      (s) =>
+        s.method === method && s.path === path && (s.status === 'failed' || s.status === 'error'),
     ),
   );
 }
 
-export const runCounts: Record<'all' | 'failed' | 'passed' | 'running', number> = {
-  all: runRows.length,
-  failed: runRows.filter((r) => r.status === 'failed' || r.status === 'error').length,
-  passed: runRows.filter((r) => r.status === 'passed').length,
-  running: runRows.filter((r) => r.status === 'running' || r.status === 'pending').length,
-};
+export function runCountsOf(
+  rows: RunRow[],
+): Record<'all' | 'failed' | 'passed' | 'running', number> {
+  return {
+    all: rows.length,
+    failed: rows.filter((r) => r.status === 'failed' || r.status === 'error').length,
+    passed: rows.filter((r) => r.status === 'passed').length,
+    running: rows.filter((r) => r.status === 'running' || r.status === 'pending').length,
+  };
+}
 
 export function matchesStatus(row: RunRow, filter: string): boolean {
   if (filter === 'failed') return row.status === 'failed' || row.status === 'error';

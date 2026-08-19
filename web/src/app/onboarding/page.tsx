@@ -11,7 +11,7 @@ import { StepInstall } from '@/components/app/wizard/step-install';
 import { StepConnect } from '@/components/app/wizard/step-connect';
 import { StepReview } from '@/components/app/wizard/step-review';
 import { OS_KEYS, type OsKey } from '@/components/app/wizard/platform-picker';
-import { user } from '@/lib/mock/data';
+import { getUser } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 export const metadata = {
@@ -55,6 +55,7 @@ export default async function OnboardingPage({
   searchParams: Promise<{ step?: string; os?: string }>;
 }) {
   const params = await searchParams;
+  const user = await getUser();
   const step = stepFrom(params.step);
   const os = osFrom(params.os);
 

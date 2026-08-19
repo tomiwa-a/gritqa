@@ -8,13 +8,26 @@ import { ProjectSwitcher } from './project-switcher';
 import { SearchField } from './search-field';
 import { SetupCard } from './setup-card';
 import { UserMenu } from './user-menu';
-import { plansAwaitingReview, projects } from '@/lib/mock/data';
+import type { Project, User } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
+
+/**
+ * What the shell needs and cannot read for itself. The sidebar and everything in
+ * it is a client island, so the dashboard layout does the reading and hands the
+ * result down whole.
+ */
+export type ShellData = {
+  user: User;
+  projects: Project[];
+  currentProject: Project;
+  /** Drives the badge on Review queue — the one count the nav carries. */
+  reviewCount: number;
+};
 
 type Item = { href: string; icon: IconName; label: string; count?: number; notice?: boolean };
 type Group = { key: string; label: string; items: Item[] };
 
-const GROUPS: Group[] = [
+const groupsOf = ({ projects, reviewCount }: ShellData): Group[] => [
   {
     key: 'essentials',
     label: 'Essentials',
@@ -24,7 +37,7 @@ const GROUPS: Group[] = [
         href: '/dashboard/queue',
         icon: 'queue',
         label: 'Review queue',
-        count: plansAwaitingReview.length,
+        count: reviewCount,
         notice: true,
       },
       { href: '/dashboard/runs', icon: 'runs', label: 'Runs' },
@@ -55,16 +68,19 @@ function isActive(pathname: string, href: string) {
 }
 
 export function Sidebar({
+  data,
   collapsed = false,
   onToggleCollapse,
   onNavigate,
 }: {
+  data: ShellData;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname() ?? '/dashboard';
   const [shut, setShut] = useState<string[]>([]);
+  const groups = groupsOf(data);
 
   return (
     <aside
@@ -74,7 +90,11 @@ export function Sidebar({
       )}
     >
       <div className={cn('flex items-center gap-1 px-2 pt-2', collapsed && 'flex-col')}>
-        <ProjectSwitcher collapsed={collapsed} />
+        <ProjectSwitcher
+          projects={data.projects}
+          currentProject={data.currentProject}
+          collapsed={collapsed}
+        />
         {onToggleCollapse && (
           <button
             type="button"
@@ -93,7 +113,7 @@ export function Sidebar({
       </div>
 
       <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {GROUPS.map((group, i) => {
+        {groups.map((group, i) => {
           const open = !shut.includes(group.key);
           return (
             <div key={group.key} className={cn(i > 0 && 'mt-4')}>
@@ -176,7 +196,7 @@ export function Sidebar({
       </div>
 
       <div className="border-t border-rule-soft px-2 py-2">
-        <UserMenu collapsed={collapsed} />
+        <UserMenu user={data.user} collapsed={collapsed} />
       </div>
     </aside>
   );

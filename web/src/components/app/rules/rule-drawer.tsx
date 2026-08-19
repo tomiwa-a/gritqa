@@ -3,8 +3,8 @@ import { Drawer, DrawerBlock } from '../drawer';
 import { Switch } from '@/components/ui/switch';
 import { Icon } from '@/components/ui/icon';
 import { CATEGORY, scopeOf } from './categories';
+import { getAllPlans, getPlanDetails, getRules } from '@/lib/data';
 import { reachOf } from '@/lib/plan';
-import { rules } from '@/lib/mock/data';
 
 const STATUS_WORD = { draft: 'Draft', approved: 'Approved', archived: 'Archived' } as const;
 
@@ -13,12 +13,18 @@ const STATUS_WORD = { draft: 'Draft', approved: 'Approved', archived: 'Archived'
  * shaping. Turning a rule off is the one edit here with reach beyond itself, so
  * the plans it touches are named before the switch is in reach, not after.
  */
-export function RuleDrawer({ id, closeHref }: { id: string; closeHref: string }) {
+export async function RuleDrawer({ id, closeHref }: { id: string; closeHref: string }) {
+  const [rules, allPlans, details] = await Promise.all([
+    getRules(),
+    getAllPlans(),
+    getPlanDetails(),
+  ]);
+
   const rule = rules.find((r) => r.publicId === id);
   if (!rule) return null;
 
   const meta = CATEGORY[rule.category];
-  const reach = reachOf(rule);
+  const reach = reachOf(rules, allPlans, details, rule);
   const count = reach.plans.length;
 
   return (

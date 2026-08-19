@@ -1,10 +1,12 @@
 import Link from 'next/link';
-import { coverage, coverageTotals } from '@/lib/mock/data';
+import { getCoverage, getCoverageTotals } from '@/lib/data';
 import { endpointHref, fileHref } from '@/lib/plan';
 import { COVERAGE_FILL, COVERAGE_LABEL, COVERAGE_ORDER } from '@/lib/coverage';
 import { cn } from '@/lib/cn';
 
-export function CoverageGrid() {
+export async function CoverageGrid() {
+  const [coverage, coverageTotals] = await Promise.all([getCoverage(), getCoverageTotals()]);
+
   return (
     <div>
       <div className="flex flex-col gap-2">

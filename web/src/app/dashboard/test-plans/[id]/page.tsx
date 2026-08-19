@@ -15,10 +15,15 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { CodeBlock } from '@/components/ui/code-block';
 import { Icon } from '@/components/ui/icon';
-import { allPlans, currentProject } from '@/lib/mock/data';
-import { planDetailFor } from '@/lib/mock/plans';
+import {
+  getAllPlans,
+  getCurrentProject,
+  getPlanDetail,
+  getRecentRuns,
+  getRunHistory,
+} from '@/lib/data';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { runsForPlan } from '@/lib/runs';
+import { runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/mock/types';
 
@@ -40,7 +45,7 @@ const STATUS: Record<
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const plan = allPlans.find((p) => p.publicId === id);
+  const plan = (await getAllPlans()).find((p) => p.publicId === id);
   return { title: plan ? `${plan.name} · GritQA` : 'Plan not found · GritQA' };
 }
 
@@ -144,10 +149,17 @@ export default async function PlanDetailPage({
   const stepParam = typeof query.step === 'string' ? query.step : undefined;
   const versionParam = typeof query.v === 'string' ? query.v : undefined;
 
+  const [allPlans, currentProject, history, recent] = await Promise.all([
+    getAllPlans(),
+    getCurrentProject(),
+    getRunHistory(),
+    getRecentRuns(),
+  ]);
+
   const plan = allPlans.find((p) => p.publicId === id);
   if (!plan) notFound();
 
-  const detail = planDetailFor(plan.publicId);
+  const detail = await getPlanDetail(plan.publicId);
   const tab: Tab = isTab(tabParam) ? tabParam : 'steps';
   const status = STATUS[plan.status];
   const cliConnected = currentProject.lastIndexedLabel !== null;
@@ -160,7 +172,7 @@ export default async function PlanDetailPage({
   /* One drawer at a time: a preview opening here parks the step inspector. */
   const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
   const askHref = withOverlay(base, query, askToken(plan.publicId));
-  const newestRun = runsForPlan(plan.publicId)[0];
+  const newestRun = runsForPlan(runRowsOf(history, recent), plan.publicId)[0];
   const runPreviewHref = newestRun
     ? withOverlay(base, query, runToken(newestRun.publicId))
     : undefined;

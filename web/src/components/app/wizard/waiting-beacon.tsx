@@ -1,5 +1,6 @@
 import { Icon } from '@/components/ui/icon';
-import { coverage, currentProject } from '@/lib/mock/data';
+import { getCoverage, getCurrentProject } from '@/lib/data';
+import type { CoverageFile } from '@/lib/mock/types';
 import { cn } from '@/lib/cn';
 
 const RINGS = [
@@ -16,14 +17,14 @@ const METHOD_FILL: Record<string, string> = {
   DELETE: 'bg-series-5',
 };
 
-const methodMix = (() => {
+function methodMixOf(coverage: CoverageFile[]) {
   const all = coverage.flatMap((f) => f.endpoints);
   const counts = new Map<string, number>();
   for (const endpoint of all) counts.set(endpoint.method, (counts.get(endpoint.method) ?? 0) + 1);
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([method, count]) => ({ method, count, share: (count / all.length) * 100 }));
-})();
+}
 
 function Beacon({ connected }: { connected: boolean }) {
   return (
@@ -55,7 +56,9 @@ function Beacon({ connected }: { connected: boolean }) {
   );
 }
 
-export function WaitingBeacon() {
+export async function WaitingBeacon() {
+  const [coverage, currentProject] = await Promise.all([getCoverage(), getCurrentProject()]);
+  const methodMix = methodMixOf(coverage);
   const connected = currentProject.lastIndexedLabel !== null;
 
   return (

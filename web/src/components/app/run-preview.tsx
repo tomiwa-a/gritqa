@@ -6,7 +6,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, runRowFor, runsForPlan, STEP_WORD } from '@/lib/runs';
+import { getRecentRuns, getRunHistory } from '@/lib/data';
+import { brokeAt, runRowFor, runRowsOf, runsForPlan, STEP_WORD } from '@/lib/runs';
 import { planToken } from '@/lib/overlay';
 
 const BADGE = {
@@ -21,7 +22,7 @@ const BADGE = {
  * Enough to decide whether to stop what you are doing. The step-by-step report
  * and the real-bug-or-bad-test call are on the run's own page, not repeated here.
  */
-export function RunPreview({
+export async function RunPreview({
   id,
   closeHref,
   planDrawerHref,
@@ -31,13 +32,14 @@ export function RunPreview({
   /** Swap this drawer for the plan behind the run, when the page can host it. */
   planDrawerHref?: (token: string) => string;
 }) {
-  const run = runRowFor(id);
+  const rows = runRowsOf(await getRunHistory(), await getRecentRuns());
+  const run = runRowFor(rows, id);
   if (!run) return null;
 
   const detail = run.detail;
   const broke = brokeAt(run);
   const brokeIndex = detail && broke ? detail.steps.indexOf(broke) : -1;
-  const siblings = runsForPlan(run.planPublicId).length;
+  const siblings = runsForPlan(rows, run.planPublicId).length;
 
   const runHref = `/dashboard/runs/${run.publicId}`;
   const planHref = planDrawerHref
