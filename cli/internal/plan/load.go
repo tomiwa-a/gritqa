@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -58,6 +60,11 @@ func (p *Plan) Validate() error {
 	if p.Variables == nil {
 		p.Variables = map[string]string{}
 	}
+	for name, v := range p.Variables {
+		if err := literal(v, "the variable "+name); err != nil {
+			return err
+		}
+	}
 
 	seen := make(map[string]bool, len(p.Steps))
 	for i := range p.Steps {
@@ -93,6 +100,9 @@ func (p *Plan) Validate() error {
 				where, s.OnFailure)
 		}
 
+		if err := braces(s, where); err != nil {
+			return err
+		}
 		if err := validateExtractions(s.Extract, where); err != nil {
 			return err
 		}
@@ -130,6 +140,72 @@ func (p *Plan) Validate() error {
 
 	_, err := p.Order()
 	return err
+}
+
+// reference is a {{name}} the interpolator will actually substitute — the same
+// spelling run.Text uses.
+var reference = regexp.MustCompile(`\{\{\s*[\w.]+\s*\}\}`)
+
+// literal rejects a {{ that is not a variable reference. A model reaching for
+// {{randomInt 1 9}} or {{roomTypeName Updated}} writes something the
+// interpolator leaves alone, so the braces are sent to the API as written and
+// the step tests nothing. Caught here, before a single request goes out.
+func literal(s, where string) error {
+	if !strings.Contains(reference.ReplaceAllString(s, ""), "{{") {
+		return nil
+	}
+	return fmt.Errorf("%s reads %s — {{ }} holds one variable name and nothing else, "+
+		"so this would be sent exactly as written", where, clip(s))
+}
+
+func clip(s string) string {
+	if len(s) > 60 {
+		s = s[:60] + "…"
+	}
+	return strconv.Quote(s)
+}
+
+// braces checks every place a variable may be read.
+func braces(s *Step, where string) error {
+	if err := literal(s.Request.URL, where+" url"); err != nil {
+		return err
+	}
+	for _, m := range []map[string]string{s.Request.Headers, s.Request.Query} {
+		for k, v := range m {
+			if err := literal(v, where+" "+k); err != nil {
+				return err
+			}
+		}
+	}
+	if err := deepBraces(s.Request.Body, where+" body"); err != nil {
+		return err
+	}
+	for i, a := range s.Assertions {
+		if err := deepBraces(a.Expected, fmt.Sprintf("%s check %d", where, i+1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deepBraces(v any, where string) error {
+	switch t := v.(type) {
+	case string:
+		return literal(t, where)
+	case map[string]any:
+		for k, inner := range t {
+			if err := deepBraces(inner, where+" "+k); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, inner := range t {
+			if err := deepBraces(inner, fmt.Sprintf("%s[%d]", where, i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func validateExtractions(es []Extraction, where string) error {

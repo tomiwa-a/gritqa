@@ -172,3 +172,38 @@ func ids(steps []Step) string {
 	}
 	return strings.Join(out, " ")
 }
+
+// Two independently drafted plans both reached for a template function the
+// format does not have. The interpolator leaves them alone, so a check_in date
+// of "{{strftime ...}}" reaches the API as written and proves nothing.
+func TestValidateRejectsBracesThatAreNotAVariable(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"a seeded template call", `{"variables":{"checkIn":"{{strftime \"%Y-%m-%d\" \"+1 day\"}}"},
+			"name":"p","steps":[{"id":"s1","request":{"method":"GET","url":"/x"},
+			"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}]}`},
+		{"a name with a space in it", `{"name":"p","steps":[{"id":"s1",
+			"request":{"method":"GET","url":"/x","query":{"name":"{{roomTypeName Updated}}"}},
+			"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}]}`},
+		{"inside a body", `{"name":"p","steps":[{"id":"s1",
+			"request":{"method":"POST","url":"/x","body":{"rooms":[{"n":"{{randomInt 1 9}}"}]}},
+			"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}]}`},
+		{"inside an expected value", `{"name":"p","steps":[{"id":"s1",
+			"request":{"method":"GET","url":"/x"},
+			"assertions":[{"type":"bodyField","operator":"equals","target":"a","expected":"{{a b}}"}]}]}`},
+	} {
+		if _, err := Parse([]byte(tc.body)); err == nil {
+			t.Errorf("%s should not have validated", tc.name)
+		}
+	}
+}
+
+// And the reference that does work is untouched.
+func TestValidateKeepsARealReference(t *testing.T) {
+	body := `{"variables":{"email":"qa@example.com"},"name":"p","steps":[{"id":"s1",
+		"request":{"method":"POST","url":"/x/{{ id }}","headers":{"A":"Bearer {{token}}"},
+		"body":{"email":"{{email}}"}},
+		"assertions":[{"type":"bodyField","operator":"equals","target":"a","expected":"{{taxTotal}}"}]}]}`
+	if _, err := Parse([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+}

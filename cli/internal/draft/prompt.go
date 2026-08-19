@@ -53,6 +53,9 @@ Rules:
   body or header, and a header path is the header name.
 - {{name}} reads a variable in any url, header, body value, query value or
   expected value. Only a variable the plan seeds or an earlier step extracts.
+- There are no functions and no expressions: {{randomInt 1 9}}, {{strftime ...}}
+  and {{name Updated}} are all wrong, and would be sent to the API as written.
+  Seed a literal value in variables, or extract one from an earlier response.
 - url is relative to baseUrl and starts with /.
 - Build every piece of state you need through the API: POST the order, extract
   its id, then read it back. Never assume a row already exists, and never write
