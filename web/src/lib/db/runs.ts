@@ -139,6 +139,7 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       routePattern: testResults.routePattern,
       responseStatus: testResults.responseStatus,
       responseTimeMs: testResults.responseTimeMs,
+      errorMessage: testResults.errorMessage,
     })
     .from(testResults)
     .where(
@@ -162,6 +163,7 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       path: step.routePattern ?? '',
       responseStatus: step.responseStatus,
       responseTimeMs: step.responseTimeMs,
+      errorMessage: step.errorMessage,
     };
     const list = byExecution.get(key);
     if (list) list.push(entry);

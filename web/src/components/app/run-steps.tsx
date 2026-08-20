@@ -75,6 +75,17 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
                 >
                   {step.stepName}
                 </p>
+
+                {/* The one line that says what the plan expected. Without it the report
+                    shows a red 500 and leaves the reader to work out what it should have
+                    been -- which the runner already knew and wrote down. Only on the step
+                    that failed: a note attached to a step that passed reads as a warning
+                    about it. */}
+                {step.errorMessage && (step.status === 'failed' || step.status === 'error') && (
+                  <p className="mt-1.5 font-mono text-[11.5px] leading-snug text-fail">
+                    {step.errorMessage}
+                  </p>
+                )}
               </div>
 
               <span className="flex shrink-0 items-center gap-2.5 self-start pt-0.5">

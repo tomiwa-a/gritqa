@@ -189,6 +189,14 @@ export type StepResult = {
   path: string;
   responseStatus: number | null;
   responseTimeMs: number | null;
+  /**
+   * What went wrong with this step, in the runner's words -- `Expected status 200, got
+   * 500.` The status code beside it says a 500 came back; only this says what the plan
+   * wanted instead, which is the difference between reading the report and guessing at
+   * it. Null for every step that did not fail, and for a failure the runner recorded
+   * without describing.
+   */
+  errorMessage: string | null;
 };
 
 export type TestExecution = {

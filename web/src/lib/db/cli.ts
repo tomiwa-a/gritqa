@@ -1,7 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
-import { cliInstances, projects, testExecutions, users } from '@/lib/db/schema';
+import { cliInstances, jobs, projects, testExecutions, testResults, users } from '@/lib/db/schema';
 import { verifyCliToken } from '@/lib/session';
+import type { TestResultRow } from '@/lib/db/schema';
 
 /**
  * The machine's side of the seam.
@@ -14,6 +15,16 @@ import { verifyCliToken } from '@/lib/session';
  * real case: pointed at the wrong project, running an old build, reporting a job id it
  * read from a log.
  */
+
+/**
+ * `db`, or a transaction on it.
+ *
+ * The reap runs outside a transaction and a completion runs inside one, and both
+ * settle the run behind a job. Passing the executor rather than closing over `db` is
+ * what stops the call inside a transaction from writing over a second connection,
+ * where a rollback would not reach it.
+ */
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** How long a claimed job may go without a heartbeat before it is fair game again. */
 const ABANDON_AFTER = '90 seconds';
@@ -159,35 +170,41 @@ export async function reapAbandoned(projectId: number): Promise<number> {
      which is the errand; the run is the run either way and keeps its `public_id`, so a
      link somebody is holding still resolves. */
   for (const job of revived) {
-    await settleRunOf(job, projectId, 'pending');
+    await settleRunOf(db, job, projectId, 'pending');
   }
   for (const job of dead) {
-    await settleRunOf(job, projectId, 'error');
+    await settleRunOf(db, job, projectId, {
+      error: 'The machine stopped reporting before this run finished.',
+    });
   }
 
   return revived.length + dead.length;
 }
 
-/** The execution a job's payload names, moved to match what happened to the job. */
+/**
+ * The execution a job's payload names, moved to match what happened to the job.
+ *
+ * `error` carries its sentence rather than owning one, because the two callers know
+ * different things: a reap knows only that a machine went quiet, and a release knows
+ * what the machine said before it handed the work back. The run report shows this
+ * text verbatim for a run with no steps, so it is written as a sentence.
+ */
 async function settleRunOf(
-  job: JobRowRaw,
+  exec: Executor,
+  job: { type: string; payload: unknown },
   projectId: number,
-  to: 'pending' | 'error',
+  to: 'pending' | { error: string },
 ): Promise<void> {
   if (job.type !== 'execute_tests') return;
   const executionPublicId = executionIdOf(job.payload);
   if (!executionPublicId) return;
 
-  await db
+  await exec
     .update(testExecutions)
     .set(
       to === 'pending'
         ? { status: 'pending', startedAt: null, dockerContainerId: null }
-        : {
-            status: 'error',
-            completedAt: new Date(),
-            errorMessage: 'The machine stopped reporting before this run finished.',
-          },
+        : { status: 'error', completedAt: new Date(), errorMessage: to.error },
     )
     .where(
       and(
@@ -291,4 +308,252 @@ export async function heartbeatJob(
     RETURNING id
   `;
   return rows.length > 0;
+}
+
+/**
+ * A step as the runner reports it, mirroring `test_results` in camelCase.
+ *
+ * `routePattern` is the field a caller is most likely to omit and least able to
+ * afford omitting. Coverage, the endpoint pages and a plan's `covers` list are all
+ * keyed by pattern, so a step that reports only the URL it called -- variables
+ * substituted, `/checkout/ckt_44e2f8/tax` -- joins to nothing it exercised. Only the
+ * runner holds the template and the values at the same moment, which is why this is
+ * reported rather than worked out here.
+ */
+export type StepReport = {
+  stepId: string;
+  stepName: string;
+  status: TestResultRow['status'];
+  method: string | null;
+  routePattern: string | null;
+  requestUrl: string | null;
+  requestBody: unknown;
+  responseStatus: number | null;
+  responseBody: unknown;
+  responseTimeMs: number | null;
+  assertions: unknown;
+  errorMessage: string | null;
+};
+
+/**
+ * What a machine says when it is done.
+ *
+ * `outcome` is the settled third of `execution_status` -- there is no reporting a
+ * finished run as still running. `durationMs` is the runner's own measurement and is
+ * kept in preference to `completed_at - started_at`, which would also count the
+ * container build and the gap between queueing and the poll that picked the job up.
+ */
+export type RunReport = {
+  outcome: 'passed' | 'failed' | 'error';
+  durationMs: number | null;
+  containerId: string | null;
+  errorMessage: string | null;
+  steps: StepReport[];
+};
+
+export type Completion = {
+  /** The run this described, so the CLI can print a link to it. Null for an index job. */
+  runPublicId: string | null;
+  steps: number;
+};
+
+/**
+ * The results arrive.
+ *
+ * **A failed test is a completed job.** The two rows mean different things -- the
+ * execution is the run, the job is the errand -- and an errand that delivered a
+ * verdict succeeded whatever the verdict was. `status = 'failed'` on a job is
+ * reserved for the delivery going wrong, which is what `release` below is for.
+ *
+ * **The `claimed` -> `completed` transition is the idempotence.** A machine that
+ * reports twice -- retried POST, duplicated process, a log replayed by hand -- finds
+ * nothing matching the second time and is told the job is not its. So the steps
+ * cannot be written twice, and no version counter or request id is needed to say so.
+ *
+ * All of it in one transaction, because the failure that matters is the half-done
+ * one: a job marked `completed` whose results never landed leaves its run `running`
+ * with nothing left to move it, and `test_executions_one_live_idx` turns that into a
+ * plan that can never be run again. A rollback is a machine that can retry; a
+ * committed half is a dead plan.
+ */
+export async function completeJob(
+  scope: CliScope,
+  jobPublicId: string,
+  instanceId: string,
+  report: RunReport,
+): Promise<Completion | null> {
+  const passed = report.steps.filter((step) => step.status === 'passed').length;
+
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .update(jobs)
+      .set({
+        status: 'completed',
+        /* A summary, not a second copy. The step bodies are the largest thing in the
+           request and they are being written to `test_results` in this same
+           transaction; keeping them here as well would double the storage of a run
+           to hold a row nothing reads. */
+        result: {
+          outcome: report.outcome,
+          steps: report.steps.length,
+          passed,
+          durationMs: report.durationMs,
+          containerId: report.containerId,
+        },
+        /* Cleared rather than left. A job that was reaped and re-handed out carries
+           the reap's note about an attempt that is now over, and reading "the machine
+           stopped reporting" off a job that finished is worse than reading nothing. */
+        errorMessage: null,
+      })
+      .where(
+        and(
+          eq(jobs.publicId, jobPublicId),
+          eq(jobs.projectId, scope.projectId),
+          eq(jobs.status, 'claimed'),
+          eq(jobs.claimedBy, instanceId),
+        ),
+      )
+      .returning({ type: jobs.type, payload: jobs.payload });
+    if (!job) return null;
+
+    // Only a run has steps. `index_codebase` has no execution behind it and nothing
+    // in `payload` naming one, so its completion is the job row and nothing else.
+    if (job.type !== 'execute_tests') return { runPublicId: null, steps: 0 };
+
+    const executionPublicId = executionIdOf(job.payload);
+    if (!executionPublicId) return { runPublicId: null, steps: 0 };
+
+    const [execution] = await tx
+      .select({ id: testExecutions.id })
+      .from(testExecutions)
+      .where(
+        and(
+          eq(testExecutions.publicId, executionPublicId),
+          eq(testExecutions.projectId, scope.projectId),
+        ),
+      )
+      .limit(1);
+    if (!execution) return { runPublicId: null, steps: 0 };
+
+    /* The previous attempt's rows are not this attempt's answer. A job that was
+       reaped and re-handed out reports afresh, and two attempts' steps left side by
+       side would read as one run of twice the length -- the report is ordered by id
+       and has no column saying which attempt a row belongs to. Nothing writes steps
+       before a completion today, so in practice this deletes nothing; it is here
+       because the day something reports incrementally is the day that appears. */
+    await tx.delete(testResults).where(eq(testResults.executionId, execution.id));
+
+    if (report.steps.length) {
+      await tx.insert(testResults).values(
+        report.steps.map((step) => ({
+          executionId: execution.id,
+          stepId: step.stepId,
+          stepName: step.stepName,
+          status: step.status,
+          requestMethod: step.method,
+          routePattern: step.routePattern,
+          requestUrl: step.requestUrl,
+          requestBody: step.requestBody ?? null,
+          responseStatus: step.responseStatus,
+          responseBody: step.responseBody ?? null,
+          responseTimeMs: step.responseTimeMs,
+          assertionResults: step.assertions ?? null,
+          errorMessage: step.errorMessage,
+        })),
+      );
+    }
+
+    /* Still guarded on the unsettled statuses, though the job gate above is the one
+       that actually holds: a reap and a completion both have to move the same
+       `claimed` job, so only one of them gets this far. This is here so that if a run
+       ever does settle by some other route, a late completion cannot overwrite it. */
+    await tx
+      .update(testExecutions)
+      .set({
+        status: report.outcome,
+        completedAt: new Date(),
+        durationMs: report.durationMs,
+        dockerContainerId: report.containerId,
+        errorMessage: report.errorMessage,
+      })
+      .where(
+        and(
+          eq(testExecutions.id, execution.id),
+          inArray(testExecutions.status, ['pending', 'running']),
+        ),
+      );
+
+    return { runPublicId: executionPublicId, steps: report.steps.length };
+  });
+}
+
+/** Whether giving the job back left it retryable, or used up its last attempt. */
+export type Release = 'requeued' | 'dead';
+
+/**
+ * "I cannot do this one." The voluntary version of the reap.
+ *
+ * Without it, a machine that cannot start Docker has only one way to say so: go
+ * quiet and wait ninety seconds to be presumed dead. That is ninety seconds of a
+ * dashboard claiming the run is in progress, and it is the wrong ninety seconds --
+ * the machine is right there and knows the answer now.
+ *
+ * The same backoff as the reap, deliberately. An immediate requeue would be handed
+ * straight back to the machine that just said no, which is a spin rather than a
+ * retry, and the reason a CLI releases a job is usually still true a second later.
+ */
+export async function releaseJob(
+  scope: CliScope,
+  jobPublicId: string,
+  instanceId: string,
+  reason: string | null,
+): Promise<Release | null> {
+  // Two phrasings of the same news, because they are read in different places. The
+  // job's note sits beside the reap's in the queue's own bookkeeping; the run's is
+  // shown to a developer as the whole explanation of a run with no steps.
+  const note = reason ?? 'the machine gave this job back without saying why';
+  const runNote = reason
+    ? `The machine could not run this: ${reason}`
+    : 'The machine gave this run back and did not say why.';
+
+  // The claiming machine's own job, still claimed. The same gate as a completion,
+  // and the same reason: it is what makes saying this twice a no-op.
+  const held = and(
+    eq(jobs.publicId, jobPublicId),
+    eq(jobs.projectId, scope.projectId),
+    eq(jobs.status, 'claimed'),
+    eq(jobs.claimedBy, instanceId),
+  );
+
+  return db.transaction(async (tx) => {
+    const [revived] = await tx
+      .update(jobs)
+      .set({
+        status: 'pending',
+        claimedBy: null,
+        claimedAt: null,
+        nextRetryAt: sql`now() + (interval '10 seconds' * ${jobs.attempts})`,
+        errorMessage: note,
+      })
+      .where(and(held, sql`${jobs.attempts} < ${jobs.maxAttempts}`))
+      .returning({ type: jobs.type, payload: jobs.payload });
+
+    if (revived) {
+      await settleRunOf(tx, revived, scope.projectId, 'pending');
+      return 'requeued';
+    }
+
+    const [dead] = await tx
+      .update(jobs)
+      .set({ status: 'dead', errorMessage: note })
+      .where(and(held, sql`${jobs.attempts} >= ${jobs.maxAttempts}`))
+      .returning({ type: jobs.type, payload: jobs.payload });
+
+    if (dead) {
+      await settleRunOf(tx, dead, scope.projectId, { error: runNote });
+      return 'dead';
+    }
+
+    return null;
+  });
 }
