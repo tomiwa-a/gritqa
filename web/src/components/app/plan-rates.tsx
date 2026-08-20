@@ -18,7 +18,7 @@ export async function PlanRates({
         <li key={p.name}>
           <Link
             href={hrefFor(p.planPublicId)}
-            title={`${p.name} — ${p.rate}% across ${p.runs} runs`}
+            title={`${p.name} — ${p.rate}% across ${p.runs} ${p.runs === 1 ? 'run' : 'runs'}`}
             className="-mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-app-hover"
           >
             <span className={cn('h-2.5 w-2.5 shrink-0 rounded-[3px]', SERIES[p.series - 1])} />

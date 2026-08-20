@@ -1,10 +1,10 @@
 /**
  * One import for every read in the app: `import { getRules } from '@/lib/data'`.
  *
- * The seam is doing the job it was built for. `getUser`, `getSessionUser`,
- * `getProjects` and `getCurrentProject` now read Postgres; everything else still
- * returns a constant out of `src/lib/mock/`, and not one screen changed when they
- * switched. See ./README.md.
+ * The seam is doing the job it was built for. Identity, projects, rules, plans and
+ * runs now read Postgres; coverage, commits, activity and the period selector still
+ * return a constant out of `src/lib/mock/`, and not one screen changed as each
+ * switched over. See ./README.md.
  */
 
 export { getUser, getSessionUser } from './user';

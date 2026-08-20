@@ -181,6 +181,32 @@ const workColumns = (hrefFor: (row: WorkItem) => string): Column<WorkItem>[] => 
   },
 ];
 
+/**
+ * A shift, with its own sign and its own reading.
+ *
+ * The pass rate reads real executions now, so it can fall -- and a hardcoded `+`
+ * rendered that as `+-1.7`. Whether a fall is bad depends on the metric, so the
+ * caller says: a slower median run is an improvement, a lower pass rate is not.
+ */
+function shift(
+  now: number,
+  before: number,
+  { decimals = 0, unit = '', betterWhen = 'up' as 'up' | 'down' },
+): Pick<MetricCell, 'direction' | 'delta' | 'tone'> {
+  const change = now - before;
+  const size = Math.abs(change).toFixed(decimals);
+  if (Number(size) === 0) {
+    return { direction: 'flat', delta: `0${unit}`, tone: 'neutral' };
+  }
+  const up = change > 0;
+  return {
+    direction: up ? 'up' : 'down',
+    // U+2212, not a hyphen: it lines up with the digits beside it.
+    delta: `${up ? '+' : '\u2212'}${size}${unit}`,
+    tone: up === (betterWhen === 'up') ? 'good' : 'bad',
+  };
+}
+
 const metricCells = (
   { coverageTotals, period, runStripStats }: Overview,
   generateHref: string,
@@ -189,9 +215,7 @@ const metricCells = (
     icon: 'check',
     label: 'Pass rate',
     value: `${runStripStats.passRate}%`,
-    direction: 'up',
-    delta: `+${(Number(runStripStats.passRate) - Number(period.passRatePrevious)).toFixed(1)}`,
-    tone: 'good',
+    ...shift(Number(runStripStats.passRate), Number(period.passRatePrevious), { decimals: 1 }),
     comparison: `from ${period.passRatePrevious}%`,
     href: '/dashboard/runs',
   },
@@ -199,9 +223,7 @@ const metricCells = (
     icon: 'runs',
     label: 'Runs',
     value: String(period.runs),
-    direction: 'up',
-    delta: `+${period.runs - period.runsPrevious}`,
-    tone: 'good',
+    ...shift(period.runs, period.runsPrevious, {}),
     comparison: `from ${period.runsPrevious}`,
     href: '/dashboard/runs',
   },

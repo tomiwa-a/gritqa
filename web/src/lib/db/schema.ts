@@ -295,6 +295,14 @@ export const testExecutions = pgTable(
     projectId: bigint('project_id', { mode: 'number' })
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Which version of the plan this run actually ran.
+     *
+     * No default, so a writer has to say. A run whose version is behind the plan's
+     * current one is still a fact, just a fact about older text -- and the runs UI
+     * says so, which it can only do if the number is recorded rather than assumed.
+     */
+    planVersion: integer('plan_version').notNull(),
     status: executionStatusEnum('status').notNull().default('pending'),
     dockerContainerId: varchar('docker_container_id', { length: 64 }),
     startedAt: timestamp('started_at', { withTimezone: true }),
@@ -321,7 +329,18 @@ export const testResults = pgTable(
     stepName: varchar('step_name', { length: 255 }).notNull(),
     status: stepStatusEnum('status').notNull().default('pending'),
     requestMethod: varchar('request_method', { length: 10 }),
+    /** The URL that went over the wire, variables substituted. Replayable. */
     requestUrl: text('request_url'),
+    /**
+     * The same call as a route pattern -- `/checkout/:id/tax`, not
+     * `/checkout/ckt_44e2f8/tax`.
+     *
+     * Coverage, the endpoint pages and a plan's `covers` list are all keyed this
+     * way, so without it a step joins to nothing it exercised. It is recorded
+     * rather than derived because only the runner holds the template and the
+     * values at the same moment; afterwards the plan has moved on.
+     */
+    routePattern: text('route_pattern'),
     requestBody: jsonb('request_body'),
     responseStatus: integer('response_status'),
     responseBody: jsonb('response_body'),
