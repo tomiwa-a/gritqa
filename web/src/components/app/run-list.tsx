@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { StatusDot } from '@/components/ui/badge';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { Meter } from './meter';
-import type { ExecutionStatus, TestExecution } from '@/lib/mock/types';
+import type { ExecutionStatus, TestExecution } from '@/lib/model';
 
 const TONE: Record<ExecutionStatus, 'pass' | 'fail' | 'running' | 'skip'> = {
   passed: 'pass',

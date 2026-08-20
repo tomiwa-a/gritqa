@@ -2,7 +2,7 @@ import { and, asc, eq, not } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { testingRules } from '@/lib/db/schema';
 import type { TestingRuleRow } from '@/lib/db/schema';
-import type { RuleCategory, TestingRule } from '@/lib/mock/types';
+import type { RuleCategory, TestingRule } from '@/lib/model';
 
 /**
  * Rules, which are the one thing in here a developer writes by hand.

@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { currentScope } from '@/lib/db/scope';
 import { executionHistory, recentExecutions, stripStatsOf } from '@/lib/db/runs';
-import type { RunHistoryEntry, TestExecution } from '@/lib/mock/types';
+import type { RunHistoryEntry, TestExecution } from '@/lib/model';
 
 export type { RunStripStats } from '@/lib/db/runs';
 

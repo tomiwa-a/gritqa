@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
-import type { PlanFailureSeed, PlanStepSpec } from '@/lib/mock/types';
+import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 const VERDICT = {
@@ -11,7 +11,7 @@ const VERDICT = {
 
 /**
  * The judgement the product exists to capture. Nothing stores it yet — see the
- * FailureVerdict note in mock/types.ts.
+ * FailureVerdict note in `src/lib/model.ts`.
  */
 export function FailureTriage({
   failure,

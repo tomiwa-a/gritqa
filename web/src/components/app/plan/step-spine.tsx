@@ -3,7 +3,7 @@ import { MethodBadge } from '@/components/ui/method-badge';
 import { Icon } from '@/components/ui/icon';
 import { Leader } from '@/components/ui/rule';
 import { assertionLabel, variablesUsedBy } from '@/lib/plan';
-import type { PlanFailureSeed, PlanStepSpec } from '@/lib/mock/types';
+import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 function Line({ term, children }: { term: string; children: React.ReactNode }) {

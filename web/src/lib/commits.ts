@@ -1,4 +1,4 @@
-import type { Commit, PlanDiffContext } from './mock/types';
+import type { Commit, PlanDiffContext } from './model';
 
 /**
  * `from` is inclusive: it names the oldest commit in the range, because that is

@@ -2,7 +2,7 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { commits, testPlans } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
-import type { Commit } from '@/lib/mock/types';
+import type { Commit } from '@/lib/model';
 
 /**
  * A project's history, newest first.

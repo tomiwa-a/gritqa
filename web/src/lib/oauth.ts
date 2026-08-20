@@ -1,4 +1,4 @@
-import type { Provider } from '@/lib/mock/types';
+import type { Provider } from '@/lib/model';
 
 /**
  * Hand-rolled OAuth, one provider config and one normalizer each.

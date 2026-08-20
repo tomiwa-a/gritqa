@@ -14,7 +14,7 @@ import type {
   PlanStepSpec,
   TestPlan,
   TestPlanDetail,
-} from '@/lib/mock/types';
+} from '@/lib/model';
 
 /**
  * Plans, read back as the shape the screens were designed against.

@@ -4,7 +4,7 @@ import { testExecutions, testPlans, testResults } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
 import { asDate } from '@/lib/db/when';
 import type { Method } from '@/components/ui/method-badge';
-import type { RunHistoryEntry, StepResult, TestExecution } from '@/lib/mock/types';
+import type { RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
 
 /**
  * Executions, at the two levels of detail the screens ask for.

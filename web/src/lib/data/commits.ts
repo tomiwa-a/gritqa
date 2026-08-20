@@ -2,7 +2,7 @@ import { cache } from 'react';
 import { currentScope } from '@/lib/db/scope';
 import { draftedShas, listCommits } from '@/lib/db/commits';
 import { undraftedFrom } from '@/lib/commits';
-import type { Commit } from '@/lib/mock/types';
+import type { Commit } from '@/lib/model';
 
 /** The project's history, newest first. Pushed by the CLI alongside the index. */
 export const getCommits = cache(async (): Promise<Commit[]> => {

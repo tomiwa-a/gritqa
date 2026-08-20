@@ -4,7 +4,7 @@ import { Icon } from '@/components/ui/icon';
 import { StatusDot } from '@/components/ui/badge';
 import { endpointHref } from '@/lib/plan';
 import { STEP_TONE, STEP_WORD } from '@/lib/runs';
-import type { StepResult } from '@/lib/mock/types';
+import type { StepResult } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 const NUMBER: Record<StepResult['status'], string> = {

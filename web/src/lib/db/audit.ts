@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { auditLogs } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
-import type { AuditEntry, AuditTone } from '@/lib/mock/types';
+import type { AuditEntry, AuditTone } from '@/lib/model';
 
 /**
  * The audit log: what happened, and enough of it to read back as a sentence.

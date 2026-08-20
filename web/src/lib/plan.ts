@@ -8,7 +8,7 @@ import type {
   TestPlan,
   TestPlanDetail,
   TestingRule,
-} from '@/lib/mock/types';
+} from '@/lib/model';
 
 export const RUN_TONE: Record<ExecutionStatus, 'pass' | 'fail' | 'running' | 'skip'> = {
   passed: 'pass',

@@ -1,5 +1,5 @@
 import { Icon, type IconName } from '@/components/ui/icon';
-import type { AuditEntry, AuditTone } from '@/lib/mock/types';
+import type { AuditEntry, AuditTone } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 const TONE: Record<AuditTone, { icon: IconName; className: string }> = {

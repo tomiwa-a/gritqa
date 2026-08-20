@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import { codebaseIndex } from '@/lib/db/schema';
-import type { CoverageFile, CoverageState, EndpointCoverage } from '@/lib/mock/types';
+import type { CoverageFile, CoverageState, EndpointCoverage } from '@/lib/model';
 import type { Method } from '@/components/ui/method-badge';
 
 /**

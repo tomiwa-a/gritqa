@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
-import type { TestPlan } from '@/lib/mock/types';
+import type { TestPlan } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 export function QueueRail({

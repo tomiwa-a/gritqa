@@ -13,7 +13,7 @@ import {
 import { endpointHref, type EndpointFocus } from '@/lib/plan';
 import { getRecentRuns, getRunHistory } from '@/lib/data';
 import { failedRunForEndpoint, runRowsOf } from '@/lib/runs';
-import type { CoverageFile, CoverageState, TestPlan } from '@/lib/mock/types';
+import type { CoverageFile, CoverageState, TestPlan } from '@/lib/model';
 
 function Shell({
   eyebrow,

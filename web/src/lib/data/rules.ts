@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { currentScope } from '@/lib/db/scope';
 import { listRules, toTestingRule } from '@/lib/db/rules';
-import type { TestingRule } from '@/lib/mock/types';
+import type { TestingRule } from '@/lib/model';
 
 /**
  * The current project's rules. Four screens read this while rendering one page --

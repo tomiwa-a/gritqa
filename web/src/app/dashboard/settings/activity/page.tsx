@@ -6,7 +6,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getAuditLog } from '@/lib/data';
-import type { AuditEntry, AuditTone } from '@/lib/mock/types';
+import type { AuditEntry, AuditTone } from '@/lib/model';
 
 export const metadata = { title: 'Activity · Settings · GritQA' };
 

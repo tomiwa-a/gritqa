@@ -4,7 +4,7 @@ import { Icon } from '@/components/ui/icon';
 import { Badge } from '@/components/ui/badge';
 import { Drawer, DrawerBlock } from '../drawer';
 import { assertionPredicate, assertionTarget, variablesUsedBy } from '@/lib/plan';
-import type { PlanFailureSeed, PlanStepSpec } from '@/lib/mock/types';
+import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
 
 function Pairs({ rows }: { rows: [string, string][] }) {
   return (

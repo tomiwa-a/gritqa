@@ -5,7 +5,7 @@ import { VariableChain } from './variable-chain';
 import { Provenance } from './provenance';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
-import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
+import type { TestPlan, TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 /** Detail exists for some plans only; the rest say so instead of faking steps. */

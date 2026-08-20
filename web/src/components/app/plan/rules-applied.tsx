@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon';
 import { CATEGORY } from '../rules/categories';
 import { getRules } from '@/lib/data';
 import { rulesFor } from '@/lib/plan';
-import type { RuleCategory, TestPlanDetail } from '@/lib/mock/types';
+import type { RuleCategory, TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 /* Its own order, not the Rules page's: on a plan, what ran and what was checked

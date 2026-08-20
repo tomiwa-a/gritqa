@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { getCoverage, getCurrentProject } from '@/lib/data';
-import type { CoverageFile } from '@/lib/mock/types';
+import type { CoverageFile } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 const RINGS = [

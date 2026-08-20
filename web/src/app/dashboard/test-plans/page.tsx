@@ -24,7 +24,7 @@ import { EndpointFocusHeader, FileFocusHeader } from '@/components/app/coverage-
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { planToken, withOverlay, type PageParams } from '@/lib/overlay';
-import type { CoverageFile, TestPlan } from '@/lib/mock/types';
+import type { CoverageFile, TestPlan } from '@/lib/model';
 
 export const metadata = { title: 'Test plans · GritQA' };
 

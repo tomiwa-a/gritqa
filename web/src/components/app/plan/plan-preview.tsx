@@ -9,7 +9,7 @@ import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, runToken } from '@/lib/overlay';
-import type { TestPlan } from '@/lib/mock/types';
+import type { TestPlan } from '@/lib/model';
 
 const STATUS: Record<
   TestPlan['status'],

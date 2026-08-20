@@ -1,5 +1,5 @@
 import { Icon, type IconName } from '@/components/ui/icon';
-import type { PlanChange, PlanRevision } from '@/lib/mock/types';
+import type { PlanChange, PlanRevision } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 const KIND: Record<

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { variableChain } from '@/lib/plan';
-import type { TestPlanDetail } from '@/lib/mock/types';
+import type { TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 function stepList(indexes: number[]) {

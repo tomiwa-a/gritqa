@@ -2,12 +2,12 @@ import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import type { StepResult } from '@/lib/mock/types';
+import type { StepResult } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 /**
  * The judgement the product exists to capture. Nothing stores it yet — see the
- * FailureVerdict note in mock/types.ts.
+ * FailureVerdict note in `src/lib/model.ts`.
  */
 export function RunTriage({
   step,

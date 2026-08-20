@@ -25,7 +25,7 @@ import {
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
-import type { TestPlan } from '@/lib/mock/types';
+import type { TestPlan } from '@/lib/model';
 
 const TABS = ['steps', 'diff', 'raw'] as const;
 type Tab = (typeof TABS)[number];

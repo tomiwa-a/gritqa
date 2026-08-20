@@ -3,7 +3,7 @@ import { Badge, Kbd } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { PlanBody } from './plan-body';
 import { DecisionBar } from './decision-bar';
-import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
+import type { TestPlan, TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 function Summary({ plan }: { plan: TestPlan }) {

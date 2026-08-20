@@ -7,7 +7,7 @@ import { agoLabelOrNull } from '@/lib/when';
 import { readSession } from '@/lib/session';
 import { getSessionUser } from './user';
 import { findUserByPublicId } from '@/lib/db/auth';
-import type { Project } from '@/lib/mock/types';
+import type { Project } from '@/lib/model';
 
 /**
  * A project row plus the two figures the overview quotes about it.

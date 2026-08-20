@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { Badge } from '@/components/ui/badge';
-import type { PlanRevision, TestPlan } from '@/lib/mock/types';
+import type { PlanRevision, TestPlan } from '@/lib/model';
 import { cn } from '@/lib/cn';
 import type { ReactNode } from 'react';
 

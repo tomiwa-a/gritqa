@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { currentScope } from '@/lib/db/scope';
 import { listCoverage } from '@/lib/db/coverage';
-import type { CoverageFile, CoverageState } from '@/lib/mock/types';
+import type { CoverageFile, CoverageState } from '@/lib/model';
 
 /** Endpoint counts by coverage state. Derived from `getCoverage`, so it cannot disagree. */
 export type CoverageTotals = Record<CoverageState, number> & { total: number };

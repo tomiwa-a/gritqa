@@ -31,7 +31,7 @@ import {
   type Period,
   type RunStripStats,
 } from '@/lib/data';
-import type { Project, TestExecution, TestPlan } from '@/lib/mock/types';
+import type { Project, TestExecution, TestPlan } from '@/lib/model';
 import { cn } from '@/lib/cn';
 import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 

@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { projects, users } from '@/lib/db/schema';
 import type { OAuthProfile } from '@/lib/oauth';
-import type { Provider } from '@/lib/mock/types';
+import type { Provider } from '@/lib/model';
 import type { ProjectRow, UserRow } from '@/lib/db/schema';
 
 /**

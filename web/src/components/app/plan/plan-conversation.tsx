@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { RevisionThread, TurnRow } from './revision-thread';
 import { RefineComposer } from './refine-composer';
 import { getAllPlans, getPlanDetail, getUser } from '@/lib/data';
-import type { TestPlan } from '@/lib/mock/types';
+import type { TestPlan } from '@/lib/model';
 
 /**
  * What a plan is, when nothing about the asking was recorded: the trigger and

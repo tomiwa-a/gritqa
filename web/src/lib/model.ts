@@ -1,3 +1,23 @@
+/**
+ * The read model: every shape a screen renders, and every shape a `lib/db/` mapper returns.
+ *
+ * One vocabulary between the two, which is what makes the seam in `lib/data/` a seam. A
+ * query builds these; a component consumes them; neither knows the other's shape. Renaming
+ * a field here breaks both ends at once, and that is the point of the file.
+ *
+ * Two conventions run through it:
+ *
+ * - **Ids are `publicId`.** The BIGINT primary keys never leave the server -- a URL, a prop
+ *   and an API answer all name a row by its UUID.
+ * - **Labels come with their raw value.** `createdLabel` beside `createdAt`, `whenLabel`
+ *   beside `committedAt`. The label is what a screen shows and the timestamp is what it
+ *   sorts, filters or recomputes by; a screen that only got the label would have to parse
+ *   English back into a date.
+ *
+ * It lived in `lib/mock/types.ts` for as long as the mock did. Nothing about it was ever the
+ * mock's -- these were the shapes the constants had to satisfy -- so it moved out when they
+ * were deleted rather than being renamed in place.
+ */
 import type { Method } from '@/components/ui/method-badge';
 
 export type Provider = 'github' | 'gitlab';

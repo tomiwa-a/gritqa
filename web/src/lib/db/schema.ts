@@ -15,7 +15,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { CommitFile, PlanChange } from '@/lib/mock/types';
+import type { CommitFile, PlanChange } from '@/lib/model';
 
 /**
  * Every table carries the dual-ID pattern from `plan/technical/entities.md`: a

@@ -1,4 +1,4 @@
-import type { CoverageState } from '@/lib/mock/types';
+import type { CoverageState } from '@/lib/model';
 
 export const COVERAGE_FILL: Record<CoverageState, string> = {
   approved: 'bg-pass',

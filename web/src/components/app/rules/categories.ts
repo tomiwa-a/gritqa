@@ -1,6 +1,6 @@
 import type { IconName } from '@/components/ui/icon';
 import { mockTargetOf } from '@/lib/plan';
-import type { RuleCategory, TestingRule } from '@/lib/mock/types';
+import type { RuleCategory, TestingRule } from '@/lib/model';
 
 /**
  * One source for what the four rule categories are called, because three screens

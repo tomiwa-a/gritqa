@@ -1,4 +1,4 @@
-import type { Project, User } from '@/lib/mock/types';
+import type { Project, User } from '@/lib/model';
 
 /**
  * What the shell is allowed to know about the developer and their projects.

@@ -4,7 +4,7 @@ import { findUserByPublicId } from '@/lib/db/auth';
 import { decryptSecret, maskKey } from '@/lib/crypto';
 import { readSession } from '@/lib/session';
 import type { UserRow } from '@/lib/db/schema';
-import type { User } from '@/lib/mock/types';
+import type { User } from '@/lib/model';
 
 /**
  * The signed-in developer, read from the `users` row the session cookie names.

@@ -1,4 +1,4 @@
-import type { ExecutionStatus, RunHistoryEntry, StepResult, TestExecution } from '@/lib/mock/types';
+import type { ExecutionStatus, RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
 
 export const CELL_FILL: Record<string, string> = { p: 'bg-pass', f: 'bg-fail', s: 'bg-skip' };
 export const CELL_WORD: Record<string, string> = { p: 'passed', f: 'failed', s: 'skipped' };

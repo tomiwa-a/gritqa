@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { cn } from '@/lib/cn';
 import { churnOf, isInRange } from '@/lib/commits';
-import type { Commit } from '@/lib/mock/types';
+import type { Commit } from '@/lib/model';
 
 /**
  * The project's history, newest first. Picking a row means "draft from here" —

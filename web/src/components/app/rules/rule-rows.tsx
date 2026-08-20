@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { RuleSwitch } from './rule-switch';
 import { getAllPlans, getPlanDetails, getRules } from '@/lib/data';
 import { reachOf } from '@/lib/plan';
-import type { TestingRule } from '@/lib/mock/types';
+import type { TestingRule } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 /**

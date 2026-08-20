@@ -5,7 +5,7 @@ import { MethodBadge, type Method } from '@/components/ui/method-badge';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { COVERAGE_FILL, COVERAGE_LABEL } from '@/lib/coverage';
-import type { CoverageState } from '@/lib/mock/types';
+import type { CoverageState } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 export type PickerEndpoint = { key: string; method: Method; path: string; state: CoverageState };

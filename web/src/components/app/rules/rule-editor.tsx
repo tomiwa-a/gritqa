@@ -9,7 +9,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CATEGORY, CATEGORY_ORDER } from './categories';
 import { saveRuleAction } from '@/lib/actions/rules';
-import type { RuleCategory, TestingRule } from '@/lib/mock/types';
+import type { RuleCategory, TestingRule } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 /**

@@ -19,7 +19,7 @@ import {
   getCurrentProject,
   getLastDraftedFrom,
 } from '@/lib/data';
-import type { CoverageFile } from '@/lib/mock/types';
+import type { CoverageFile } from '@/lib/model';
 
 const SOURCES = ['changes', 'endpoints', 'blank'] as const;
 type Source = (typeof SOURCES)[number];

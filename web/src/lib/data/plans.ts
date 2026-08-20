@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { currentScope } from '@/lib/db/scope';
 import { listPlanDetails, listPlans, planDetail, planPassRates } from '@/lib/db/plans';
-import type { TestPlan, TestPlanDetail } from '@/lib/mock/types';
+import type { TestPlan, TestPlanDetail } from '@/lib/model';
 
 export type { PlanPassRate } from '@/lib/db/plans';
 

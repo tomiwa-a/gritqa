@@ -8,7 +8,7 @@ import { record } from '@/lib/db/audit';
 import { requireScope } from '@/lib/db/scope';
 import { createRule, deleteRule, toggleRule, updateRule } from '@/lib/db/rules';
 import type { RuleConfig } from '@/lib/db/rules';
-import type { RuleCategory } from '@/lib/mock/types';
+import type { RuleCategory } from '@/lib/model';
 
 /**
  * Writing rules down. Every action re-derives the project from the session rather

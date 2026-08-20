@@ -13,7 +13,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getRules } from '@/lib/data';
 import { ruleToken, withOverlay, type PageParams } from '@/lib/overlay';
-import type { RuleCategory } from '@/lib/mock/types';
+import type { RuleCategory } from '@/lib/model';
 
 export const metadata = { title: 'Rules · GritQA' };
 

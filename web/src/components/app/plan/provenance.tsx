@@ -1,5 +1,5 @@
 import { Icon } from '@/components/ui/icon';
-import type { PlanDiffContext } from '@/lib/mock/types';
+import type { PlanDiffContext } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 function Bar({ additions, deletions }: { additions: number; deletions: number }) {
