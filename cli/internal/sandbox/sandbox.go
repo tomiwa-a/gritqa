@@ -400,7 +400,7 @@ func (s *Sandbox) docker(ctx context.Context, args ...string) (string, error) {
 		if text == "" {
 			return "", cancelled(ctx, err)
 		}
-		return text, cancelled(ctx, errors.New(lastLine(text)))
+		return text, cancelled(ctx, errors.New(dockerReason(text)))
 	}
 	return text, nil
 }
@@ -433,6 +433,45 @@ func containerName(project string) string {
 		clean = clean[:24]
 	}
 	return fmt.Sprintf("gritqa-%s-%04x", clean, rand.IntN(1<<16))
+}
+
+// dockerReason picks the line that says what went wrong. Docker puts the reason
+// first and "Run 'docker run --help'" last, so lastLine would report the one line
+// that carries no information. A denied mount is singled out because it is a
+// Docker Desktop setting rather than anything GritQA can fix, and unexplained it
+// reads as a bug here.
+func dockerReason(text string) string {
+	var lines []string
+	for _, l := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "Run 'docker") || strings.HasPrefix(t, "See http") {
+			continue
+		}
+		lines = append(lines, t)
+	}
+	if len(lines) == 0 {
+		return "no output"
+	}
+	if path := deniedPath(text); path != "" {
+		return fmt.Sprintf("Docker is not allowed to mount %s, so it cannot see your project — "+
+			"add it under Docker Desktop → Settings → Resources → File Sharing, or set "+
+			"run.sandbox.mount to a directory it can reach", path)
+	}
+	return lines[0]
+}
+
+// deniedPath reads the path out of Docker Desktop's file-sharing refusal.
+func deniedPath(text string) string {
+	const marker = "is not shared from the host"
+	i := strings.Index(text, marker)
+	if i < 0 {
+		return ""
+	}
+	before := strings.TrimSpace(text[:i])
+	if j := strings.LastIndex(before, "The path "); j >= 0 {
+		return strings.TrimSpace(before[j+len("The path "):])
+	}
+	return strings.TrimSpace(before[strings.LastIndex(before, "\n")+1:])
 }
 
 func lastLine(s string) string {

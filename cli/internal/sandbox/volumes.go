@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,9 +18,12 @@ type volume struct {
 // so each run.sandbox.writable directory becomes a volume GritQA owns instead: an
 // upload lands in its temp dir and the user's tree is never touched.
 //
-// They start empty on purpose. A baseline that counted whatever happened to be in
-// api/uploads would differ between machines and between runs, and the ledger's
-// claim is that two runs of an unchanged project read the same.
+// They start with no files on purpose. A baseline that counted whatever happened
+// to be in api/uploads would differ between machines and between runs, and the
+// ledger's claim is that two runs of an unchanged project read the same. The
+// directory skeleton is mirrored, because an app writing to uploads/room_type/
+// needs that directory to exist and a directory is not something the ledger
+// counts.
 func (s *Sandbox) MakeWritable() error {
 	work := containerPath("/app", s.recipe.Workdir)
 	for _, d := range s.recipe.Writable {
@@ -31,10 +35,28 @@ func (s *Sandbox) MakeWritable() error {
 		if err := os.MkdirAll(host, 0o755); err != nil {
 			return err
 		}
+		from := filepath.Join(s.recipe.Mount, filepath.FromSlash(s.recipe.Workdir), filepath.FromSlash(rel))
+		if err := mirrorDirs(from, host); err != nil {
+			return err
+		}
 		s.volumes = append(s.volumes, volume{host: host, container: containerPath(work, rel)})
 		s.Watch(host)
 	}
 	return nil
+}
+
+// mirrorDirs recreates a directory tree without any of its files.
+func mirrorDirs(from, to string) error {
+	return filepath.WalkDir(from, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil || rel == "." {
+			return nil
+		}
+		return os.MkdirAll(filepath.Join(to, rel), 0o755)
+	})
 }
 
 func (s *Sandbox) volumeArgs() []string {

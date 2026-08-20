@@ -174,9 +174,23 @@ func TestTheAppContainerKeepsTheSecretInAFile(t *testing.T) {
 func TestWritableDirectoriesAreNotTheUsersTree(t *testing.T) {
 	s := testbox(t)
 	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, "api", "uploads", "room_type"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(project, "api", "uploads", "room_type", "old.jpg"), "x")
 	s.Use(Recipe{Base: "php:8.2-cli", Mount: project, Workdir: "api", Writable: []string{"uploads"}}, "img")
 	if err := s.MakeWritable(); err != nil {
 		t.Fatal(err)
+	}
+
+	// The skeleton is there so an app writing to uploads/room_type/ can, and none
+	// of the user's own files are, so the baseline is the same on any machine.
+	vol := filepath.Join(s.dir, "writable", "uploads")
+	if _, err := os.Stat(filepath.Join(vol, "room_type")); err != nil {
+		t.Errorf("the directory skeleton was not mirrored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vol, "room_type", "old.jpg")); err == nil {
+		t.Error("the volume inherited a file, so two machines would baseline differently")
 	}
 
 	args := s.containerArgs(filepath.Join(s.dir, "env"))
@@ -187,10 +201,6 @@ func TestWritableDirectoriesAreNotTheUsersTree(t *testing.T) {
 	if !contains(args, want) {
 		t.Errorf("uploads is not a volume GritQA owns: %v", args)
 	}
-	if entries, _ := os.ReadDir(project); len(entries) != 0 {
-		t.Errorf("the project directory gained files: %v", entries)
-	}
-
 	// And the ledger counts that volume, so it keeps reporting uploads honestly.
 	if len(s.watch) != 1 || s.watch[0] != filepath.Join(s.dir, "writable", "uploads") {
 		t.Errorf("the ledger watches %v", s.watch)
@@ -266,5 +276,26 @@ func TestWatermarkStamped(t *testing.T) {
 	w := &Watermark{At: time.Now()}
 	if w.At.IsZero() {
 		t.Error("a reading with no time cannot be ordered against another")
+	}
+}
+
+// Docker puts the reason first and a useless "Run 'docker run --help'" last, and
+// a denied mount is a Docker Desktop setting that unexplained reads as a bug here.
+func TestDockerErrorsSayWhatWentWrong(t *testing.T) {
+	if got := dockerReason("docker: no such image: x\n\nRun 'docker run --help' for more information\n"); got != "docker: no such image: x" {
+		t.Errorf("dockerReason = %q", got)
+	}
+	denied := "docker: Error response from daemon: Mounts denied: \n" +
+		"The path /Applications/XAMPP/xamppfiles/htdocs/hotel is not shared from the host " +
+		"and is not known to Docker.\nRun 'docker run --help' for more information\n"
+	got := dockerReason(denied)
+	if !strings.Contains(got, "/Applications/XAMPP/xamppfiles/htdocs/hotel") {
+		t.Errorf("the reason does not name the path: %q", got)
+	}
+	if !strings.Contains(got, "File Sharing") || !strings.Contains(got, "run.sandbox.mount") {
+		t.Errorf("the reason does not say what to do: %q", got)
+	}
+	if dockerReason("   \n") != "no output" {
+		t.Error("an empty failure should still say something")
 	}
 }
