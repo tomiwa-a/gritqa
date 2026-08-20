@@ -31,8 +31,15 @@ func main() {
 			"changed, and waits while you review them. Approve one in the dashboard and this\n" +
 			"process runs it against a throwaway database on your machine.\n\n" +
 			"Press Ctrl-C to stop.",
-		Version:       version,
-		Args:          cobra.NoArgs,
+		Version: version,
+		Args: func(cmd *cobra.Command, args []string) error {
+			// --serve carries NoOptDefVal so a bare --serve means stdio, which also
+			// means an address has to be attached with an equals sign.
+			if len(args) > 0 && cmd.Flags().Changed("serve") {
+				return fmt.Errorf("--serve takes its address attached: --serve=%s", args[0])
+			}
+			return cobra.NoArgs(cmd, args)
+		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,6 +66,9 @@ func main() {
 	f.BoolVar(&opts.Logout, "logout", false, "forget the stored token and exit")
 	f.StringVar(&opts.ConfigPath, "config", "", "path to config.yaml")
 	f.StringVar(&opts.Server, "server", "", "dashboard base URL (default https://app.gritqa.dev)")
+	f.StringVar(&opts.Serve, "serve", "", "serve this project's tools over MCP; bare for stdio, or --serve=127.0.0.1:7391")
+	f.Lookup("serve").NoOptDefVal = "stdio"
+	f.BoolVar(&opts.Execute, "execute", false, "also serve the tools that run plans and tear the sandbox down")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

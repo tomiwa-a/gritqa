@@ -32,6 +32,12 @@ type Options struct {
 	Logout     bool
 	ConfigPath string
 	Server     string
+
+	// Serve is "stdio", or a loopback address for Streamable HTTP.
+	Serve string
+	// Execute advertises the tools that write. Off by default, so a local AI host
+	// gets reads unless the user asked for more.
+	Execute bool
 }
 
 func (o Options) server() string {
@@ -52,6 +58,12 @@ func Run(ctx context.Context, opts Options) error {
 
 	if opts.Logout {
 		return logout(w, opts)
+	}
+
+	// Before the banner: in stdio mode stdout carries JSON-RPC, and one line of
+	// ours on it is a protocol error at the client.
+	if opts.Serve != "" {
+		return runServer(ctx, opts)
 	}
 
 	w.Write(term.Line{Kind: term.Cmd, Text: "gritqa"})

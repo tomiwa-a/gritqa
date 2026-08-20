@@ -60,6 +60,16 @@ CREATE TABLE IF NOT EXISTS sandbox_recipe (
   saved_at    TEXT NOT NULL
 );
 
+-- A proposal is deliberately not a row in sandbox_recipe: Recipe() feeds the next
+-- run's derivation, so a table the agent can write would boot on its own answer.
+CREATE TABLE IF NOT EXISTS sandbox_proposal (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  fingerprint TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  recipe      TEXT NOT NULL,
+  saved_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS plan_changes (
   revision_id INTEGER NOT NULL REFERENCES plan_revisions(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
@@ -432,6 +442,24 @@ func (s *Store) Recipe() (string, error) {
 		return "", nil
 	}
 	return body, err
+}
+
+// Proposal is a recipe an agent worked out, waiting on a human. Nothing reads it
+// on the way into a run.
+func (s *Store) Proposal() (string, error) {
+	var body string
+	err := s.db.QueryRow(`SELECT recipe FROM sandbox_proposal WHERE id = 1`).Scan(&body)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return body, err
+}
+
+func (s *Store) SaveProposal(fingerprint, author, body string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO sandbox_proposal
+	  (id, fingerprint, author, recipe, saved_at) VALUES (1, ?, ?, ?, ?)`,
+		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
+	return err
 }
 
 func (s *Store) SaveRecipe(fingerprint, author, body string) error {
