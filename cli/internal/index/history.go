@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS execution_state (
   PRIMARY KEY (execution_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS sandbox_recipe (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  fingerprint TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  recipe      TEXT NOT NULL,
+  saved_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS plan_changes (
   revision_id INTEGER NOT NULL REFERENCES plan_revisions(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
@@ -412,4 +420,23 @@ func nullInt(n int) any {
 		return nil
 	}
 	return n
+}
+
+// Recipe is the environment a previous run worked out, as JSON. It sits beside
+// history rather than in the cache because a cache rebuild is routine and an
+// agent-derived recipe costs a model call to replace.
+func (s *Store) Recipe() (string, error) {
+	var body string
+	err := s.db.QueryRow(`SELECT recipe FROM sandbox_recipe WHERE id = 1`).Scan(&body)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return body, err
+}
+
+func (s *Store) SaveRecipe(fingerprint, author, body string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO sandbox_recipe
+	  (id, fingerprint, author, recipe, saved_at) VALUES (1, ?, ?, ?, ?)`,
+		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
+	return err
 }

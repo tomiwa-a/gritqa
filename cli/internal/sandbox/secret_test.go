@@ -81,6 +81,28 @@ func TestTheGeneratedPasswordStaysOut(t *testing.T) {
 		t.Errorf("Secrets() = %v, want the generated password", got)
 	}
 
+	// A built image's Dockerfile is written to disk and its tag is a build
+	// argument, so neither may carry the credential.
+	s.Use(Recipe{Base: "php:8.2-cli", Mount: t.TempDir(), Fingerprint: "abc"}, "")
+	body, err := s.recipe.Dockerfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, file, err := s.buildContext(s.recipe, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(dir, s.dir) {
+		t.Errorf("the build context is at %s, want it under %s", dir, s.dir)
+	}
+	rendered, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rendered), pw) {
+		t.Error("the rendered Dockerfile carries the password")
+	}
+
 	// The state ledger is the one thing about the sandbox that gets recorded.
 	moved := mark(Row{Name: "guests", Rows: 2, High: "43"}).Diff(mark(Row{Name: "guests", Rows: 1, High: "41"}))
 	for _, m := range moved {
@@ -90,52 +112,106 @@ func TestTheGeneratedPasswordStaysOut(t *testing.T) {
 	}
 }
 
-// The generated router holds the password by necessity — it is how the app
-// process learns where its database is. What matters is that it is 0600 and
-// lives in GritQA's own temp directory: decision 26 promises nothing is written
-// into the user's tree.
-func TestRouterStaysOutOfTheProject(t *testing.T) {
+// The app container learns where its database is through an env file, because an
+// argument list is world-readable through ps. What matters is that the file is
+// 0600 and in GritQA's own temp directory: nothing is written into the user's tree.
+func TestTheAppContainerKeepsTheSecretInAFile(t *testing.T) {
 	s := testbox(t)
 	project := t.TempDir()
-	if err := os.WriteFile(filepath.Join(project, "index.php"), []byte("<?php\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	s.Use(Recipe{Base: "php:8.2-cli", Mount: project, Workdir: "api"}, "gritqa-app:test")
 
-	path, err := s.writeRouter(project, "index.php")
+	args, err := s.appArgs(s.name+"-app", AppOptions{}, 8080, "php -S 0.0.0.0:$PORT")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(path) != s.dir {
-		t.Errorf("router written to %s, want it under %s", path, s.dir)
+
+	pw := s.creds.Password
+	for _, a := range args {
+		if strings.Contains(a, pw) {
+			t.Errorf("docker run argv carries the password: %q", a)
+		}
 	}
 
-	info, err := os.Stat(path)
+	envFile := ""
+	for i, a := range args {
+		if a == "--env-file" && i+1 < len(args) {
+			envFile = args[i+1]
+		}
+	}
+	if envFile == "" {
+		t.Fatal("the container was given no env file")
+	}
+	if filepath.Dir(envFile) != s.dir {
+		t.Errorf("the env file is at %s, want it under %s", envFile, s.dir)
+	}
+	info, err := os.Stat(envFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if mode := info.Mode().Perm(); mode != 0o600 {
-		t.Errorf("router is %o, want 600", mode)
+		t.Errorf("the env file is %o, want 600", mode)
 	}
 
-	entries, err := os.ReadDir(project)
+	body, err := os.ReadFile(envFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 {
+	if !strings.Contains(string(body), "DB_PASSWORD="+pw) {
+		t.Error("the app cannot reach the sandbox without the password")
+	}
+	// Over the run's network, not the mapped loopback port, which is the host's.
+	if !strings.Contains(string(body), "DB_HOST="+dbAlias) {
+		t.Errorf("the app was pointed at %s", "something other than "+dbAlias)
+	}
+
+	if entries, _ := os.ReadDir(project); len(entries) != 0 {
+		t.Errorf("the project directory gained files: %v", entries)
+	}
+}
+
+// The source is mounted read-only and each writable directory is a volume GritQA
+// owns, which is what closes the gap M4 had to report as open.
+func TestWritableDirectoriesAreNotTheUsersTree(t *testing.T) {
+	s := testbox(t)
+	project := t.TempDir()
+	s.Use(Recipe{Base: "php:8.2-cli", Mount: project, Workdir: "api", Writable: []string{"uploads"}}, "img")
+	if err := s.MakeWritable(); err != nil {
+		t.Fatal(err)
+	}
+
+	args := s.containerArgs(filepath.Join(s.dir, "env"))
+	if !contains(args, project+":/app:ro") {
+		t.Errorf("the source is not mounted read-only: %v", args)
+	}
+	want := filepath.Join(s.dir, "writable", "uploads") + ":/app/api/uploads"
+	if !contains(args, want) {
+		t.Errorf("uploads is not a volume GritQA owns: %v", args)
+	}
+	if entries, _ := os.ReadDir(project); len(entries) != 0 {
 		t.Errorf("the project directory gained files: %v", entries)
 	}
 
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	// And the ledger counts that volume, so it keeps reporting uploads honestly.
+	if len(s.watch) != 1 || s.watch[0] != filepath.Join(s.dir, "writable", "uploads") {
+		t.Errorf("the ledger watches %v", s.watch)
 	}
-	// chdir is load-bearing: the front controller requires ../vendor/autoload.php,
-	// a relative path, so php -S's own working directory is not enough.
-	for _, want := range []string{"$_ENV[$k] = $v", "chdir($__doc)", "DB_PASSWORD"} {
-		if !strings.Contains(string(body), want) {
-			t.Errorf("router is missing %q", want)
+}
+
+func TestWritableRefusesAPathOutOfTheProject(t *testing.T) {
+	s := testbox(t)
+	s.Use(Recipe{Mount: t.TempDir(), Writable: []string{"../../etc"}}, "img")
+	if err := s.MakeWritable(); err == nil {
+		t.Fatal("a writable directory above the project was accepted")
+	}
+}
+
+func contains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
 		}
 	}
+	return false
 }
 
 func TestEnvNamesBothConventions(t *testing.T) {
@@ -151,6 +227,16 @@ func TestEnvNamesBothConventions(t *testing.T) {
 	}
 	if env["DB_PORT"] != "54321" {
 		t.Errorf("DB_PORT = %q, want the mapped port", env["DB_PORT"])
+	}
+
+	// A container on the run's network reaches the database by alias instead, on
+	// its own port. The mapped one belongs to the host.
+	in := testbox(t).ContainerEnv()
+	if in["DB_HOST"] != dbAlias || in["DB_PORT"] != "3306" {
+		t.Errorf("ContainerEnv points at %s:%s", in["DB_HOST"], in["DB_PORT"])
+	}
+	if !strings.Contains(in["DATABASE_URL"], "@"+dbAlias+":3306/") {
+		t.Errorf("DATABASE_URL = %q, want the alias", in["DATABASE_URL"])
 	}
 }
 

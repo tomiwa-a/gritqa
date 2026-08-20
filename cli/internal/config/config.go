@@ -80,15 +80,50 @@ type Sandbox struct {
 	Image string `yaml:"image"`
 	// Database names the schema created inside it, "gritqa" when unset.
 	Database string `yaml:"database,omitempty"`
-	// Docroot holds the front controller, when it is not the project root. Only
-	// used when run.start is empty and GritQA generates the entry point.
+	// Docroot holds the front controller, relative to the project root. It is what
+	// $DOCROOT is set to for the serve command.
 	Docroot string `yaml:"docroot,omitempty"`
 	// Tables limits what the state ledger watches. Empty watches every table.
 	Tables []string `yaml:"tables,omitempty"`
-	// Watch names directories to count files in. The sandbox isolates the
-	// database, not the filesystem, so an uploads directory is reported rather
-	// than pretended away.
+	// Watch names directories to count files in, relative to the project root.
 	Watch []string `yaml:"watch,omitempty"`
+	// Writable are directories the app may write to. The source is mounted
+	// read-only, so each of these becomes a volume GritQA owns instead. Separate
+	// from Watch on purpose: a cache directory has to be writable and is noise in
+	// a ledger, and a directory worth watching is not automatically one worth
+	// letting the app write to.
+	Writable []string `yaml:"writable,omitempty"`
+
+	// Runtime is auto, host, an image reference, or a path to a Dockerfile. host
+	// is the escape hatch: GritQA runs run.start on this machine instead.
+	Runtime string `yaml:"runtime,omitempty"`
+	// Recipe is refresh, reuse or always — what a changed fingerprint means.
+	Recipe string `yaml:"recipe,omitempty"`
+	// Mount is the directory the container sees as the project, relative to the
+	// project root. It defaults to the git root, because a migration calling
+	// ../vendor/bin/phinx has to still resolve.
+	Mount string `yaml:"mount,omitempty"`
+	// Workdir is where commands run, relative to Mount. It defaults to wherever
+	// the project root sits inside the mount.
+	Workdir string `yaml:"workdir,omitempty"`
+	// Install builds the dependencies into the image instead of mounting the
+	// host's, which is what a native extension compiled for macOS needs.
+	Install string `yaml:"install,omitempty"`
+}
+
+// RecipeMode is what to do with a cached recipe: reuse it regardless, re-derive
+// always, or refresh when the environment's own files changed.
+func (s Sandbox) RecipeMode() string {
+	switch mode := strings.ToLower(strings.TrimSpace(s.Recipe)); mode {
+	case "reuse", "always":
+		return mode
+	}
+	return "refresh"
+}
+
+// OnHost is runtime: host — no container for the app, and run.start is required.
+func (s Sandbox) OnHost() bool {
+	return strings.EqualFold(strings.TrimSpace(s.Runtime), "host")
 }
 
 // Sandboxed is true when a run should bring its own database up. Nil-safe,

@@ -53,6 +53,10 @@ type Sandbox struct {
 	port     int
 	db       *sql.DB
 	dir      string
+	network  string
+	recipe   Recipe
+	image    string
+	volumes  []volume
 	units    []unit
 	only     []string
 	baseline *Snapshot
@@ -63,6 +67,10 @@ type Sandbox struct {
 const (
 	defaultReady = 90 * time.Second
 	loopback     = "127.0.0.1"
+	// dbAlias is how the app container reaches the database. The port stays
+	// published on loopback as well, because the CLI's own *sql.DB takes every
+	// watermark from the host side.
+	dbAlias = "db"
 )
 
 // Up creates the container and returns once the database answers. The caller
@@ -131,6 +139,14 @@ func (s *Sandbox) start(ctx context.Context, img Image) error {
 		return err
 	}
 
+	// A network per run, so the app container reaches this database and nothing
+	// else, and two concurrent runs cannot see each other's.
+	s.network = s.name + "-net"
+	if _, err := s.docker(ctx, "network", "create", "--label", "gritqa=1", s.network); err != nil {
+		s.network = ""
+		return fmt.Errorf("could not create a network for this run: %w", err)
+	}
+
 	// The password goes in a 0600 env file rather than on the command line: an
 	// argument is visible to every process on the machine through ps.
 	envFile := filepath.Join(s.dir, "env")
@@ -155,13 +171,16 @@ func (s *Sandbox) start(ctx context.Context, img Image) error {
 }
 
 func (s *Sandbox) runArgs(img Image, envFile string) []string {
-	return []string{"run", "-d",
+	args := []string{"run", "-d",
 		"--name", s.name,
 		"--label", "gritqa=1",
 		"--env-file", envFile,
 		"-p", fmt.Sprintf("%s::%d", loopback, img.Port),
-		img.Ref,
 	}
+	if s.network != "" {
+		args = append(args, "--network", s.network, "--network-alias", dbAlias)
+	}
+	return append(args, img.Ref)
 }
 
 func (s *Sandbox) pull(ctx context.Context, ref string) error {
@@ -180,7 +199,12 @@ func (s *Sandbox) mappedPort(ctx context.Context, container int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// "127.0.0.1:54321", possibly several lines when both families are bound.
+	return firstPort(out, container)
+}
+
+// firstPort reads docker port's output, which is "127.0.0.1:54321" and may carry
+// several lines when both address families are bound.
+func firstPort(out string, container int) (int, error) {
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if i := strings.LastIndexByte(line, ':'); i >= 0 {
 			if n, err := strconv.Atoi(strings.TrimSpace(line[i+1:])); err == nil && n > 0 {
@@ -233,14 +257,18 @@ func (s *Sandbox) await(ctx context.Context, limit time.Duration) error {
 }
 
 func (s *Sandbox) alive(ctx context.Context) (bool, string) {
-	out, err := s.docker(ctx, "inspect", "-f", "{{.State.Running}}", s.name)
+	return s.aliveNamed(ctx, s.name)
+}
+
+func (s *Sandbox) aliveNamed(ctx context.Context, name string) (bool, string) {
+	out, err := s.docker(ctx, "inspect", "-f", "{{.State.Running}}", name)
 	if err != nil {
 		return false, "the container is gone"
 	}
 	if strings.TrimSpace(out) == "true" {
 		return true, ""
 	}
-	logs, _ := s.docker(ctx, "logs", "--tail", "12", s.name)
+	logs, _ := s.docker(ctx, "logs", "--tail", "12", name)
 	return false, lastLine(logs)
 }
 
@@ -278,10 +306,29 @@ func (s *Sandbox) cleanup(ctx context.Context) error {
 		s.db = nil
 	}
 	if s.name != "" {
-		if _, err := s.docker(ctx, "rm", "-f", "-v", s.name); err != nil && first == nil {
-			first = err
+		// The app container too, and before the network it joined. App.Stop has
+		// usually taken it already, but an interrupt between the two would otherwise
+		// leave a container the user cannot account for. Removing a container that is
+		// already gone is not an error.
+		s.docker(ctx, "rm", "-f", "-v", s.appName())
+		if _, err := s.docker(ctx, "rm", "-f", "-v", s.name); err != nil {
+			if first == nil {
+				first = err
+			}
+		} else {
+			// Cleared only on success, so a second Down retries rather than forgetting
+			// what it failed to remove.
+			s.name = ""
 		}
-		s.name = ""
+	}
+	if s.network != "" {
+		if _, err := s.docker(ctx, "network", "rm", s.network); err != nil {
+			if first == nil {
+				first = err
+			}
+		} else {
+			s.network = ""
+		}
 	}
 	if s.dir != "" {
 		if err := os.RemoveAll(s.dir); err != nil && first == nil {
@@ -318,6 +365,27 @@ func (s *Sandbox) Env() map[string]string {
 		"DATABASE_URL": fmt.Sprintf("%s://%s:%s@%s:%s/%s",
 			s.img.Driver, s.creds.User, s.creds.Password, s.host, port, s.creds.Database),
 	}
+}
+
+// ContainerEnv is the same thing as another container on this run's network sees
+// it: the database answers as db on its own port, not on the mapped loopback one.
+func (s *Sandbox) ContainerEnv() map[string]string {
+	out := s.Env()
+	port := strconv.Itoa(s.img.Port)
+	out["DB_HOST"] = dbAlias
+	out["DB_PORT"] = port
+	out["DATABASE_URL"] = fmt.Sprintf("%s://%s:%s@%s:%s/%s",
+		s.img.Driver, s.creds.User, s.creds.Password, dbAlias, port, s.creds.Database)
+	return out
+}
+
+// Network is this run's private network, for a container that has to join it.
+func (s *Sandbox) Network() string { return s.network }
+
+// Use records the environment this run's migrations and app run inside. An empty
+// image is runtime: host, where everything below falls back to this machine.
+func (s *Sandbox) Use(r Recipe, image string) {
+	s.recipe, s.image = r, image
 }
 
 // Secrets are the values that must not survive into a transcript or a prompt,

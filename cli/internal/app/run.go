@@ -40,10 +40,15 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 			strings.Join(vars.Missing, ", "))
 	}
 
+	store, snap := cache(w, cfg)
+	if store != nil {
+		defer store.Close()
+	}
+
 	var st *staged
 	var base string
 	if cfg.Run.Sandboxed() {
-		if st, err = stage(ctx, w, cfg); err != nil {
+		if st, err = stage(ctx, w, cfg, store, snap); err != nil {
 			return err
 		}
 		defer st.close(context.WithoutCancel(ctx))
@@ -58,11 +63,6 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		if err := probe(ctx, cfg, base); err != nil {
 			return err
 		}
-	}
-
-	store, snap := cache(w, cfg)
-	if store != nil {
-		defer store.Close()
 	}
 
 	judge, err := repairer(w, cfg)

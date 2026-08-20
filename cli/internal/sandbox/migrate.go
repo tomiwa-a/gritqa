@@ -11,9 +11,9 @@ import (
 )
 
 // Command is one line from run.migrate or run.seed, run as written so a project's
-// own tooling is what touches its schema. Nothing runs inside the container: the
-// database image has no PHP, no composer and no ruby, which is also why nothing
-// here needs a shell tool.
+// own tooling is what touches its schema. It runs inside the app image, where that
+// tooling lives — never inside the database container, which has no toolchain at
+// all, and which is also why nothing here needs a shell tool.
 type Command struct {
 	Label string
 	Line  string
@@ -54,16 +54,19 @@ func (s *Sandbox) Prepare(ctx context.Context, root string, cmds []Command, extr
 	s.units = units
 
 	if len(units) == 0 {
-		return out, fmt.Errorf("%s reported success and the sandbox is still empty, "+
-			"so it migrated something else — check that it reads DB_HOST and DB_NAME from the "+
-			"environment (a PHP project that loads .env with phpdotenv needs "+
-			"php -d variables_order=EGPCS, or $_ENV is never populated and it falls back to its "+
-			"own default)", out[0].Label)
+		return out, fmt.Errorf("%s reported success and the sandbox is still empty, so it migrated "+
+			"something else — check that it reads DB_HOST and DB_NAME from the environment rather "+
+			"than from a file it found on disk", out[0].Label)
 	}
 	return out, nil
 }
 
+// shell runs one line where the project's toolchain lives: inside the app image,
+// or on this machine under runtime: host.
 func (s *Sandbox) shell(ctx context.Context, dir, line string, extra map[string]string) error {
+	if s.image != "" {
+		return s.inImage(ctx, line, extra)
+	}
 	name, flag := "sh", "-c"
 	if runtime.GOOS == "windows" {
 		name, flag = "cmd", "/c"
@@ -97,4 +100,18 @@ func (s *Sandbox) environ(extra map[string]string) []string {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+// inImage runs a command in a throwaway container on the run's network. It is
+// --rm, so there is no second lifecycle to manage, and it writes through the same
+// volumes the app does — a seeder planting a file lands where an upload would.
+func (s *Sandbox) inImage(ctx context.Context, line string, extra map[string]string) error {
+	envFile, err := s.containerEnvFile("prepare", extra)
+	if err != nil {
+		return err
+	}
+	args := append([]string{"run", "--rm"}, s.containerArgs(envFile)...)
+	args = append(args, s.image, "sh", "-c", line)
+	_, err = s.docker(ctx, args...)
+	return err
 }
