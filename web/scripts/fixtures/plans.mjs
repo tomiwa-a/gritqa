@@ -19,6 +19,8 @@
  * endpoint in the index, the other is a request. Deriving either from the other
  * would be guessing at where a path variable came from.
  */
+import { diffContextOf } from './commits.mjs';
+import { DAY, HOUR, MONTH, WEEK } from './time.mjs';
 import { CHECKOUT_TAX, PARTIAL_REFUND, SEED, WEBHOOK_REPLAY } from './steps.mjs';
 import {
   ADMIN_FLAG,
@@ -36,11 +38,6 @@ import {
 } from './bodies.mjs';
 
 export const BASE_URL = 'http://localhost:8080';
-
-export const HOUR = 60;
-export const DAY = 24 * HOUR;
-export const WEEK = 7 * DAY;
-export const MONTH = 30 * DAY;
 
 const e = (method, path) => ({ method, path });
 
@@ -67,18 +64,10 @@ export const PLANS = [
       e('GET', '/checkout/:id'),
     ],
     steps: CHECKOUT_TAX,
-    diffContext: {
-      branch: 'main',
-      commit: 'a91f3c2',
-      message: 'tax: split VAT by product band',
-      additions: 148,
-      deletions: 22,
-      files: [
-        { path: 'internal/tax/rate.go', additions: 71, deletions: 9 },
-        { path: 'internal/tax/band.go', additions: 43, deletions: 7 },
-        { path: 'internal/http/checkout.go', additions: 34, deletions: 6 },
-      ],
-    },
+    // The push this was drafted from, read out of the history rather than restated
+    // here. A plan quoting a commit the project has no record of was the whole
+    // reason `commits` exists.
+    diffContext: diffContextOf('a91f3c2'),
     revisions: [
       {
         version: 1,
@@ -101,17 +90,7 @@ export const PLANS = [
     variables: SEED,
     covers: [e('POST', '/orders'), e('POST', '/refunds'), e('GET', '/refunds/:id')],
     steps: PARTIAL_REFUND,
-    diffContext: {
-      branch: 'main',
-      commit: '7d2e04b',
-      message: 'refunds: only unshipped lines are refundable',
-      additions: 148,
-      deletions: 59,
-      files: [
-        { path: 'internal/store/refunds.go', additions: 96, deletions: 41 },
-        { path: 'internal/http/refunds.go', additions: 52, deletions: 18 },
-      ],
-    },
+    diffContext: diffContextOf('7d2e04b'),
     revisions: [
       {
         version: 1,

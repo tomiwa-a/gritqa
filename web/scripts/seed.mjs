@@ -1,6 +1,6 @@
 /**
  * Local fixture data: one developer, the projects the dashboard was designed
- * against, and a small index for the first of them.
+ * against, and for the first of them an index, a git history, rules, plans and runs.
  *
  * Everything here is fixture, not truth. The `codebase_index` rows in particular
  * are a stand-in for what `gritqa` will push once the CLI indexes for real, and
@@ -20,6 +20,7 @@ import { PLANS, BASE_URL, revisionsFor } from './fixtures/plans.mjs';
 import { executions, resolveUrl, patternOf } from './fixtures/runs.mjs';
 import { INDEX } from './fixtures/index.mjs';
 import { ACTIVITY } from './fixtures/activity.mjs';
+import { COMMITS } from './fixtures/commits.mjs';
 
 process.loadEnvFile?.(join(dirname(fileURLToPath(import.meta.url)), '..', '.env.local'));
 
@@ -181,6 +182,40 @@ try {
     }
     const endpoints = INDEX.reduce((n, f) => n + f.endpoints.length, 0);
     console.log(`${INDEX.length} indexed files, ${endpoints} endpoints on ${first.name}`);
+
+    // History for the one indexed project, upserted on `(project_id, sha)`: the same
+    // commit seen twice is one row, which is what that unique index is for and what
+    // the CLI will rely on when it pushes the same range twice.
+    //
+    // The totals are summed from `files` here rather than carried in the fixture, so
+    // the two numbers and the array they count cannot drift. `authored_at` is the
+    // only date -- `created_at` is when we heard about the commit, which defaults.
+    for (const commit of COMMITS) {
+      const additions = commit.files.reduce((n, f) => n + f.additions, 0);
+      const deletions = commit.files.reduce((n, f) => n + f.deletions, 0);
+      await sql`
+        INSERT INTO commits
+          (project_id, sha, subject, author, branch, authored_at, files, additions, deletions)
+        VALUES (
+          ${first.id}, ${commit.sha}, ${commit.subject}, ${commit.author}, ${commit.branch},
+          now() - make_interval(mins => ${commit.agoMinutes}),
+          ${sql.json(commit.files)}, ${additions}, ${deletions}
+        )
+        ON CONFLICT (project_id, sha)
+          DO UPDATE SET subject = EXCLUDED.subject,
+                        author = EXCLUDED.author,
+                        branch = EXCLUDED.branch,
+                        authored_at = EXCLUDED.authored_at,
+                        files = EXCLUDED.files,
+                        additions = EXCLUDED.additions,
+                        deletions = EXCLUDED.deletions
+      `;
+    }
+    const churn = COMMITS.reduce(
+      (n, c) => n + c.files.reduce((m, f) => m + f.additions + f.deletions, 0),
+      0,
+    );
+    console.log(`${COMMITS.length} commits, ${churn} lines of churn on ${first.name}`);
 
     // Matched on name rather than upserted, because there is no unique index on
     // (project_id, name) -- two rules may legitimately share one. That keeps

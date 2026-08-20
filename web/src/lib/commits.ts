@@ -8,6 +8,27 @@ function indexOf(commits: Commit[], from: string) {
   return commits.findIndex((c) => c.shortHash === from || c.hash === from);
 }
 
+/**
+ * Where the history opens: the oldest commit nothing has been drafted for yet.
+ *
+ * Take the newest commit some plan already quotes, and start one row above it -- that
+ * is "everything since the last draft", which is the range a developer coming back to
+ * the wizard means. `drafted` holds short hashes off `diff_context`, so they are
+ * matched as prefixes rather than compared.
+ *
+ * Two cases fall back to the newest commit, and they are the same case: there is no
+ * range of undrafted work to open on. Nothing has been drafted at all, or the newest
+ * commit is itself the one that was.
+ */
+export function undraftedFrom(commits: Commit[], drafted: string[]): string | null {
+  if (commits.length === 0) return null;
+
+  const isDrafted = (commit: Commit) => drafted.some((hash) => commit.hash.startsWith(hash));
+  const newestDrafted = commits.findIndex(isDrafted);
+  if (newestDrafted <= 0) return commits[0].shortHash;
+  return commits[newestDrafted - 1].shortHash;
+}
+
 export function resolveFrom(commits: Commit[], asked: string | undefined, fallback: string) {
   if (!asked) return fallback;
   return indexOf(commits, asked) >= 0 ? asked : fallback;

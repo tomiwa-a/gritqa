@@ -16,7 +16,8 @@
  * Failures follow the plan's own `onFailure`. A step that aborts leaves the rest of
  * the run skipped, which is why a failed run rarely has exactly one bad cell.
  */
-import { PLANS, DAY, HOUR } from './plans.mjs';
+import { PLANS } from './plans.mjs';
+import { DAY, HOUR } from './time.mjs';
 
 /** Values a run would have substituted into the step URLs, so `request_url` is a URL. */
 const RESOLVED = {

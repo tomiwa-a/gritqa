@@ -106,13 +106,13 @@ export type PlanRevision = {
   createdAt: string;
   /** Who started the turn. A revision by 'you' is an instruction the model answered. */
   author: 'ai' | 'you';
-  /** SCHEMA GAP: no table stores refine instructions — versions alone lose the why. */
+  /** `plan_revisions.instruction`. Null on the agent's own turns: nobody asked. */
   instruction?: string;
   summary: string;
   changes: PlanChange[];
 };
 
-/** SCHEMA GAP: test_executions records what happened, never the human's read of it. */
+/** `test_results.verdict`. Per failed step, not per run: one run can break twice. */
 export type FailureVerdict = 'real_bug' | 'bad_test' | 'undecided';
 
 export type PlanFailureSeed = {
@@ -139,9 +139,8 @@ export type PlanDiffContext = {
 export type CommitFile = { path: string; additions: number; deletions: number };
 
 /**
- * NO COLUMN FOR THIS. `test_plans.diff_context` holds one JSONB blob per plan,
- * so there is nowhere to browse a project's history from and no way to look a
- * commit up by hash. Drafting from a range needs both.
+ * A row in `commits`. The short hash is derived on read rather than stored -- a
+ * prefix of a sha is not a second fact about the commit.
  */
 export type Commit = {
   hash: string;

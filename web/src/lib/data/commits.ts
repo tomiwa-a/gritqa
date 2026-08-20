@@ -1,20 +1,27 @@
-import { commits, lastDraftedFrom, pendingChanges } from '@/lib/mock/data';
-import type { Commit, PlanDiffContext } from '@/lib/mock/types';
+import { cache } from 'react';
+import { currentScope } from '@/lib/db/scope';
+import { draftedShas, listCommits } from '@/lib/db/commits';
+import { undraftedFrom } from '@/lib/commits';
+import type { Commit } from '@/lib/mock/types';
+
+/** The project's history, newest first. Pushed by the CLI alongside the index. */
+export const getCommits = cache(async (): Promise<Commit[]> => {
+  const scope = await currentScope();
+  if (!scope) return [];
+  return listCommits(scope.projectId);
+});
 
 /**
- * The project's history, newest first. There is no table for this yet — the schema
- * keeps one diff blob per plan, so a project's history has nowhere to live and a
- * commit cannot be looked up by hash. Both are needed to draft from a range.
+ * The oldest commit nothing has been drafted for — where "what moved" starts reading.
+ *
+ * Derived from the two tables rather than stored, because a column for it would be a
+ * third answer that can disagree with the plans and the history it is computed from.
+ * Empty string when the project has no commits: `resolveFrom` treats it as a hash
+ * matching nothing, and the wizard already renders a history of none.
  */
-export async function getCommits(): Promise<Commit[]> {
-  return commits;
-}
-
-/** The oldest commit nothing has been drafted for — where "what moved" starts reading. */
-export async function getLastDraftedFrom(): Promise<string> {
-  return lastDraftedFrom;
-}
-
-export async function getPendingChanges(): Promise<PlanDiffContext | null> {
-  return pendingChanges;
-}
+export const getLastDraftedFrom = cache(async (): Promise<string> => {
+  const scope = await currentScope();
+  if (!scope) return '';
+  const [history, drafted] = await Promise.all([getCommits(), draftedShas(scope.projectId)]);
+  return undraftedFrom(history, drafted) ?? '';
+});

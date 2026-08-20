@@ -11,7 +11,7 @@
  * machine on a different network, which is the sort of thing an audit log exists to
  * make visible.
  */
-import { DAY, HOUR } from './plans.mjs';
+import { DAY, HOUR } from './time.mjs';
 
 const HERE = '102.89.34.7';
 const ELSEWHERE = '41.58.120.19';
