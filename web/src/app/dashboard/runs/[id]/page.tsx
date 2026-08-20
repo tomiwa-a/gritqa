@@ -12,7 +12,15 @@ import { Icon } from '@/components/ui/icon';
 import { runPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, isSettled, runRowFor, runRowsOf, runsForPlan } from '@/lib/runs';
+import {
+  brokeAt,
+  isSettled,
+  runOutcome,
+  runRowFor,
+  runRowsOf,
+  runsForPlan,
+  stoppedAt,
+} from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { askToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
@@ -56,11 +64,33 @@ export default async function RunDetailPage({
   const plan = allPlans.find((p) => p.publicId === run.planPublicId);
   const detail = run.detail;
   const broke = brokeAt(run);
-  const brokeIndex = detail && broke ? detail.steps.indexOf(broke) : -1;
+  const brokeIndex = stoppedAt(run);
   const cliConnected = currentProject.lastIndexedLabel !== null;
   /* Queued or running: asked for, and with nothing to report yet. Every readout
      below that describes what a run *did* has to say what it will do instead. */
   const inFlight = !isSettled(run.status);
+  /* Settled with nothing to show for itself. Reachable since runs became real: a
+     machine that stops reporting is reaped into `error`, and its run made no
+     request at all. Every sentence about what this run *did* has to give way. */
+  const stepless = !inFlight && run.steps === 0;
+
+  const standfirstLead =
+    run.status === 'pending'
+      ? 'This run will execute '
+      : stepless
+        ? 'This run was going to execute '
+        : 'This run executed ';
+
+  /* What follows the plan name depends on whether there is anything below to point
+     at -- "each step below" pointing at an empty panel is the same lie in prose. */
+  const standfirstTail =
+    run.steps > 0
+      ? 'Each step below is one request, in the order it went out.'
+      : run.status === 'pending'
+        ? 'Your machine picks it up on its next check, and the steps appear here as they go out.'
+        : run.status === 'running'
+          ? 'Your machine has it now, and each step appears below as its request comes back.'
+          : 'It stopped before the first request went out.';
 
   const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
@@ -116,38 +146,41 @@ export default async function RunDetailPage({
           </div>
 
           <h2 className="mt-2 text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-            {broke
-              ? `Stopped on step ${brokeIndex + 1} of ${run.steps}`
-              : run.status === 'running'
-                ? 'Running now'
-                : run.status === 'pending'
-                  ? 'Waiting for your machine'
-                  : `All ${run.steps} steps passed`}
+            {runOutcome(run)}
           </h2>
 
           <p className="mt-1 max-w-[68ch] text-[13.5px] leading-relaxed text-ink-muted">
-            {run.status === 'pending' ? 'This run will execute ' : 'This run executed '}
+            {standfirstLead}
             <Link
               href={planHref}
               className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
             >
               {run.planName.toLowerCase()}
             </Link>{' '}
-            against your API on your machine.{' '}
-            {run.status === 'pending'
-              ? 'Your machine picks it up on its next check, and the steps appear here as they go out.'
-              : 'Each step below is one request, in the order it went out.'}
+            against your API on your machine. {standfirstTail}
           </p>
 
-          {/* A queued run has no cells to draw and no tally to report. Rendering an
-              empty strip beside "0 of 0 steps passed" would read as a run that did
-              nothing, rather than one that has not begun. */}
-          {run.status !== 'pending' && (
+          {/* No steps, no strip and no tally. The guard is on the cells rather than on
+              `pending`, because a run reaped after its machine went quiet is settled
+              and has none either -- and an empty strip beside "0 of 0 steps passed"
+              reads as a run that did nothing rather than one that never began. */}
+          {run.steps > 0 && (
             <p className="mt-3 flex flex-wrap items-center gap-3">
               <RunCells cells={run.cells} size="md" />
               <span className="nums text-[12.5px] text-ink-subtle">
                 {run.passed} of {run.steps} steps passed
               </span>
+            </p>
+          )}
+
+          {/* Why the run ended the way it did, when its steps do not explain it: a run
+              whose machine went quiet mid-way has green steps and no failure to point
+              at, and the status badge alone does not say what happened. Left out when
+              there are no steps, because the panel below carries it there instead of
+              saying the same sentence twice. */}
+          {run.errorMessage && run.steps > 0 && (
+            <p className="mt-3 max-w-[68ch] rounded-md border border-fail/25 bg-fail/[0.04] px-3 py-2 text-[12.5px] leading-relaxed text-ink-muted">
+              {run.errorMessage}
             </p>
           )}
         </header>
@@ -173,20 +206,45 @@ export default async function RunDetailPage({
           </Panel>
         )}
 
-        {run.status === 'pending' ? (
+        {run.steps === 0 ? (
           <Panel
             className="mt-4"
             title="Step by step"
-            subtitle="Filled in as your machine works through the plan"
+            subtitle={
+              stepless ? 'Nothing went out' : 'Filled in as your machine works through the plan'
+            }
             bodyClassName="p-4"
           >
-            <p className="text-[13px] leading-relaxed text-ink-muted">
-              Nothing has gone out yet. The plan is approved and the run is written down; your
-              machine claims it on its next check and reports each step back here.
-            </p>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
-              Nothing is lost if the machine is off. A queued run waits.
-            </p>
+            {run.status === 'pending' ? (
+              <>
+                <p className="text-[13px] leading-relaxed text-ink-muted">
+                  Nothing has gone out yet. The plan is approved and the run is written down; your
+                  machine claims it on its next check and reports each step back here.
+                </p>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
+                  Nothing is lost if the machine is off. A queued run waits.
+                </p>
+              </>
+            ) : run.status === 'running' ? (
+              <p className="text-[13px] leading-relaxed text-ink-muted">
+                Your machine has this run and has not reported a step yet. The first one appears
+                here as soon as its request comes back.
+              </p>
+            ) : (
+              /* The one state with nothing to show and something to say. `errorMessage`
+                 is the whole of what is known about a run whose machine went quiet, and
+                 until this panel existed there was nowhere for it to be read. */
+              <>
+                <p className="text-[13px] leading-relaxed text-ink-muted">
+                  No request went out.{' '}
+                  {run.errorMessage ?? 'Nothing was recorded about why this run stopped.'}
+                </p>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
+                  Nothing was tested, so nothing here says anything about your API yet. Running it
+                  again is the next move.
+                </p>
+              </>
+            )}
           </Panel>
         ) : detail ? (
           <Panel
@@ -212,7 +270,9 @@ export default async function RunDetailPage({
             <p className="text-[13px] leading-relaxed text-ink-muted">
               This run is older than the reports kept on hand, so only its shape survives:{' '}
               {run.steps} steps, {run.passed} of them green.{' '}
-              {broke
+              {/* From the strip, which every run in the window has -- `broke` needs the
+                  report this branch exists because we do not have. */}
+              {brokeIndex >= 0
                 ? 'Which step broke is recorded, but not what came back.'
                 : 'Nothing failed in it.'}
             </p>

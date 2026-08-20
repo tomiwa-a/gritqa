@@ -32,6 +32,7 @@ type HistoryRow = {
   started_at: Date | string | null;
   /** `coalesce(started_at, created_at)` -- see `at` in the query below. */
   at: Date | string;
+  error_message: string | null;
   cells: string | null;
 };
 
@@ -55,7 +56,7 @@ export async function executionHistory(
 ): Promise<RunHistoryEntry[]> {
   const rows = (await raw`
     SELECT e.public_id, p.public_id AS plan_public_id, p.name AS plan_name, e.status,
-           e.started_at, coalesce(e.started_at, e.created_at) AS at,
+           e.started_at, coalesce(e.started_at, e.created_at) AS at, e.error_message,
            (
              SELECT string_agg(
                CASE r.status
@@ -83,6 +84,9 @@ export async function executionHistory(
       // Empty for a queued run, which has no steps yet. The strip draws nothing
       // and the legend counts nothing, which is the truth about it.
       cells: row.cells ?? '',
+      // The only thing a reaped run has to say for itself, so it travels with the
+      // window rather than with the report a run that never started does not have.
+      errorMessage: row.error_message,
       whenLabel: agoLabel(asDate(row.at)),
       startedAt: row.started_at ? asDate(row.started_at).toISOString() : null,
     }))

@@ -163,6 +163,44 @@ export const deviceCodes = pgTable(
   (t) => [index('device_codes_expires_idx').on(t.expiresAt)],
 );
 
+/**
+ * Which of a developer's machines is connected to a project, and when it last said so.
+ *
+ * One row per machine per project. A column on `projects` would have had to pick one
+ * machine and call it "the" CLI, and a laptop plus a desktop is an ordinary setup --
+ * this also lets a screen name the machine, which is a better sentence than
+ * "connected".
+ *
+ * Liveness is `lastSeenAt` measured against an interval, never a stored boolean. The
+ * event that ends a connection is a lid closing or a process being killed, and nobody
+ * is there to write `false` when it happens, so a boolean would go stale by design.
+ */
+export const cliInstances = pgTable(
+  'cli_instances',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * The CLI's own stable name for the machine, sent on every poll. Not a credential
+     * -- the bearer token authorises the request and this only says which machine sent
+     * it, so the worst a CLI can do by lying is impersonate another machine of the same
+     * developer's.
+     */
+    instanceId: varchar('instance_id', { length: 255 }).notNull(),
+    hostname: varchar('hostname', { length: 255 }),
+    version: varchar('version', { length: 64 }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** The upsert target, so a poll updates one row rather than piling up sightings. */
+    uniqueIndex('cli_instances_identity_idx').on(t.projectId, t.instanceId),
+    index('cli_instances_seen_idx').on(t.projectId, t.lastSeenAt),
+  ],
+);
+
 export const ruleCategoryEnum = pgEnum('rule_category', [
   'ordering',
   'mock',
@@ -527,6 +565,7 @@ export const codebaseIndexRelations = relations(codebaseIndex, ({ one }) => ({
 export type UserRow = typeof users.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type DeviceCodeRow = typeof deviceCodes.$inferSelect;
+export type CliInstanceRow = typeof cliInstances.$inferSelect;
 export type CodebaseFileRow = typeof codebaseIndex.$inferSelect;
 export type TestingRuleRow = typeof testingRules.$inferSelect;
 export type TestPlanRow = typeof testPlans.$inferSelect;

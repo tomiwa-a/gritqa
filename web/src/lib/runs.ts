@@ -58,6 +58,39 @@ export function brokeAt(run: RunRow): StepResult | undefined {
   return run.detail?.steps.find((s) => s.status === 'failed' || s.status === 'error');
 }
 
+/**
+ * Where a run stopped, as a step index, or -1 if nothing stopped it.
+ *
+ * Read off `cells` rather than off the step report: both are the same `test_results`
+ * rows in the same order, and every run in the window carries its cells while only
+ * the newest carry a report. So this still answers for a run whose requests are no
+ * longer on hand -- which is the case the fallback panel below the report describes.
+ */
+export function stoppedAt(run: RunRow): number {
+  return run.cells.indexOf('f');
+}
+
+/**
+ * Where a run got to, in one sentence.
+ *
+ * Two screens ask this -- the run report and the list's preview drawer -- and each
+ * had its own ternary over the same states. They drifted, which is how the drawer
+ * came to tell a queued run that all zero of its steps had passed.
+ *
+ * The last arm is the one that matters: it belongs to `passed` alone. A run can
+ * settle without any single step failing and still not have succeeded -- a machine
+ * that stops reporting is reaped into `error`, and that run passed nothing.
+ */
+export function runOutcome(run: RunRow): string {
+  const stopped = stoppedAt(run);
+  if (stopped >= 0) return `Stopped on step ${stopped + 1} of ${run.steps}`;
+  if (run.status === 'pending') return 'Waiting for your machine';
+  if (run.status === 'running') return 'Running now';
+  if (run.status === 'passed') return `All ${run.steps} steps passed`;
+  if (run.steps === 0) return 'Stopped before the first step';
+  return `Stopped after ${run.steps} step${run.steps === 1 ? '' : 's'}`;
+}
+
 /** The most recent run that broke on a given endpoint, when we have the report. */
 export function failedRunForEndpoint(
   rows: RunRow[],

@@ -7,7 +7,7 @@ import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { getRecentRuns, getRunHistory } from '@/lib/data';
-import { brokeAt, runRowFor, runRowsOf, runsForPlan, STEP_WORD } from '@/lib/runs';
+import { brokeAt, runOutcome, runRowFor, runRowsOf, runsForPlan, STEP_WORD } from '@/lib/runs';
 import { planToken } from '@/lib/overlay';
 
 const BADGE = {
@@ -81,20 +81,23 @@ export async function RunPreview({
           <span className="nums text-[11.5px] text-ink-subtle">{run.whenLabel}</span>
         </div>
 
-        <p className="mt-2.5 text-[13px] leading-snug text-ink">
-          {broke
-            ? `Stopped on step ${brokeIndex + 1} of ${run.steps}.`
-            : run.status === 'running'
-              ? 'Running now.'
-              : `All ${run.steps} steps passed.`}
-        </p>
+        {/* One sentence, written once in `runOutcome`. This drawer used to keep its
+            own copy of the run report's ternary, without the queued arm -- so a run
+            that had not started was told all zero of its steps had passed. */}
+        <p className="mt-2.5 text-[13px] leading-snug text-ink">{`${runOutcome(run)}.`}</p>
 
-        <p className="mt-2.5 flex flex-wrap items-center gap-2">
-          <RunCells cells={run.cells} />
-          <span className="nums text-[12px] text-ink-subtle">
-            {run.passed}/{run.steps} passed
-          </span>
-        </p>
+        {run.steps > 0 && (
+          <p className="mt-2.5 flex flex-wrap items-center gap-2">
+            <RunCells cells={run.cells} />
+            <span className="nums text-[12px] text-ink-subtle">
+              {run.passed}/{run.steps} passed
+            </span>
+          </p>
+        )}
+
+        {run.errorMessage && (
+          <p className="mt-2.5 text-[12.5px] leading-snug text-ink-muted">{run.errorMessage}</p>
+        )}
       </DrawerBlock>
 
       {broke && (
@@ -130,7 +133,12 @@ export async function RunPreview({
               label: 'Took',
               value: detail?.durationMs ? `${(detail.durationMs / 1000).toFixed(1)}s` : '—',
             },
-            { label: 'Steps', value: `${run.passed} of ${run.steps} passed` },
+            /* A run with no steps borrows the dash the row above already uses for a
+               value that does not exist, rather than reporting `0 of 0 passed`. */
+            {
+              label: 'Steps',
+              value: run.steps > 0 ? `${run.passed} of ${run.steps} passed` : '—',
+            },
             { label: 'Runs of this plan', value: String(siblings) },
           ]}
         />

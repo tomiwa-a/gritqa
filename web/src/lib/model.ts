@@ -220,6 +220,14 @@ export type RunHistoryEntry = {
   status: ExecutionStatus;
   /** One character per step: p passed, f failed, s skipped or not reached. */
   cells: string;
+  /**
+   * Why the run ended the way it did, when there is anything to say -- in practice
+   * only ever set for `error`. A run reaped after its machine stopped reporting has
+   * this and nothing else: no steps, no duration, no failed assertion to read. It is
+   * on the window's own model rather than on the step report, because a run that
+   * never made a request is exactly the run whose report is empty.
+   */
+  errorMessage: string | null;
   whenLabel: string;
   /**
    * The label reads from when the run *happened*; this reads from when it started,

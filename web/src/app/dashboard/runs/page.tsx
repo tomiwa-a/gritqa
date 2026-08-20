@@ -92,18 +92,21 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
           </span>
         );
       }
-      /* `pending` first, and it is why this arm exists at all: without it a queued
-         run fell through to `Ran clean`, which claimed an outcome for a run that
-         had not started. Nothing has stopped anywhere yet. */
+      /* Two arms here exist because of what fell through to `Ran clean` without them,
+         each claiming an outcome for a run that never reached one: a queued run that
+         had not started, and an `error` run whose machine stopped reporting. Only a
+         `passed` run ran clean. */
       return (
         <span className="text-[12px] text-ink-subtle">
           {run.status === 'pending'
             ? 'Not started yet'
             : run.status === 'running'
               ? 'Still going'
-              : run.status === 'failed'
-                ? 'A step failed'
-                : 'Ran clean'}
+              : run.status === 'error'
+                ? 'The run did not finish'
+                : run.status === 'failed'
+                  ? 'A step failed'
+                  : 'Ran clean'}
         </span>
       );
     },
