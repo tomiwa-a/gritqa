@@ -42,6 +42,16 @@ CREATE TABLE IF NOT EXISTS plan_revisions (
   accepted     INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS execution_state (
+  execution_id INTEGER NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
+  seq          INTEGER NOT NULL,
+  unit         TEXT NOT NULL,
+  rows_moved   INTEGER NOT NULL,
+  from_value   TEXT NOT NULL DEFAULT '',
+  to_value     TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (execution_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS plan_changes (
   revision_id INTEGER NOT NULL REFERENCES plan_revisions(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
@@ -60,6 +70,8 @@ var added = []struct{ table, column, decl string }{
 	{"step_results", "verdict", "TEXT NOT NULL DEFAULT 'undecided'"},
 	{"executions", "confirmed", "INTEGER"},
 	{"executions", "confirm_note", "TEXT NOT NULL DEFAULT ''"},
+	{"step_results", "moved", "TEXT NOT NULL DEFAULT ''"},
+	{"executions", "state_note", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // upgrade adds those columns to a cache that predates them. A run that cannot be
@@ -113,6 +125,21 @@ type Execution struct {
 	Confirmed   sql.NullBool
 	ConfirmNote string
 	Revisions   []Revision
+	// Moved is the run's state ledger: what the database looked like after,
+	// against before the first step. Empty for a run with no sandbox watching.
+	Moved []MovedRow
+	// StateNote is why the ledger is incomplete, when it is. It never decides the
+	// run's status.
+	StateNote string
+}
+
+// MovedRow is one unit that changed over a run. Rows is signed: a delete moving
+// a count down is as much a finding as an insert moving it up.
+type MovedRow struct {
+	Unit string
+	Rows int64
+	From string
+	To   string
 }
 
 // StepRow is one step. Code and Duration are zero when the request never
@@ -126,6 +153,9 @@ type StepRow struct {
 	Code     int
 	Duration time.Duration
 	Detail   string
+	// Moved is what this step changed, rendered. Empty for a step that changed
+	// nothing, which for a POST is a finding of its own.
+	Moved string
 	// Verdict is the human's call on a failure — real_bug, bad_test or undecided.
 	// It is the one thing a machine cannot work out.
 	Verdict string
@@ -160,10 +190,11 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO executions (plan, plan_file, status, duration_ms, started_at, confirmed, confirm_note)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO executions
+		   (plan, plan_file, status, duration_ms, started_at, confirmed, confirm_note, state_note)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.Plan, e.PlanFile, e.Status, e.Duration.Milliseconds(),
-		e.StartedAt.UTC().Format(time.RFC3339), e.Confirmed, e.ConfirmNote)
+		e.StartedAt.UTC().Format(time.RFC3339), e.Confirmed, e.ConfirmNote, e.StateNote)
 	if err != nil {
 		return 0, err
 	}
@@ -175,8 +206,9 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 
 	insert, err := tx.Prepare(
 		`INSERT INTO step_results
-		   (execution_id, seq, step_id, name, status, method, path, code, duration_ms, detail, verdict)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		   (execution_id, seq, step_id, name, status, method, path, code, duration_ms, detail,
+		    verdict, moved)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -185,7 +217,15 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 	for i, st := range e.Steps {
 		if _, err := insert.Exec(id, i, st.StepID, st.Name, st.Status, st.Method, st.Path,
 			nullInt(st.Code), nullInt(int(st.Duration.Milliseconds())), st.Detail,
-			orUndecided(st.Verdict)); err != nil {
+			orUndecided(st.Verdict), st.Moved); err != nil {
+			return 0, err
+		}
+	}
+
+	for i, m := range e.Moved {
+		if _, err := tx.Exec(
+			`INSERT INTO execution_state (execution_id, seq, unit, rows_moved, from_value, to_value)
+			 VALUES (?, ?, ?, ?, ?, ?)`, id, i, m.Unit, m.Rows, m.From, m.To); err != nil {
 			return 0, err
 		}
 	}
@@ -194,6 +234,27 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 		return 0, err
 	}
 	return id, tx.Commit()
+}
+
+// Moved returns one run's state ledger, in the order it was recorded.
+func (s *Store) Moved(executionID int64) ([]MovedRow, error) {
+	rows, err := s.db.Query(
+		`SELECT unit, rows_moved, from_value, to_value
+		 FROM execution_state WHERE execution_id = ? ORDER BY seq`, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []MovedRow
+	for rows.Next() {
+		var m MovedRow
+		if err := rows.Scan(&m.Unit, &m.Rows, &m.From, &m.To); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func saveRevisions(tx *sql.Tx, id int64, revs []Revision) error {
@@ -279,7 +340,8 @@ func (s *Store) changes(revisionID int64) ([]ChangeRow, error) {
 // Executions returns the most recent runs, newest first.
 func (s *Store) Executions(limit int) ([]Execution, error) {
 	rows, err := s.db.Query(
-		`SELECT id, plan, plan_file, status, duration_ms, started_at, confirmed, confirm_note
+		`SELECT id, plan, plan_file, status, duration_ms, started_at, confirmed, confirm_note,
+		        state_note
 		 FROM executions ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -292,7 +354,7 @@ func (s *Store) Executions(limit int) ([]Execution, error) {
 		var ms int64
 		var started string
 		if err := rows.Scan(&e.ID, &e.Plan, &e.PlanFile, &e.Status, &ms, &started,
-			&e.Confirmed, &e.ConfirmNote); err != nil {
+			&e.Confirmed, &e.ConfirmNote, &e.StateNote); err != nil {
 			return nil, err
 		}
 		e.Duration = time.Duration(ms) * time.Millisecond
@@ -307,13 +369,16 @@ func (s *Store) Executions(limit int) ([]Execution, error) {
 		if out[i].Steps, err = s.steps(out[i].ID); err != nil {
 			return nil, err
 		}
+		if out[i].Moved, err = s.Moved(out[i].ID); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
 
 func (s *Store) steps(id int64) ([]StepRow, error) {
 	rows, err := s.db.Query(
-		`SELECT step_id, name, status, method, path, code, duration_ms, detail, verdict
+		`SELECT step_id, name, status, method, path, code, duration_ms, detail, verdict, moved
 		 FROM step_results WHERE execution_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err
@@ -325,7 +390,7 @@ func (s *Store) steps(id int64) ([]StepRow, error) {
 		var st StepRow
 		var code, ms sql.NullInt64
 		if err := rows.Scan(&st.StepID, &st.Name, &st.Status, &st.Method, &st.Path,
-			&code, &ms, &st.Detail, &st.Verdict); err != nil {
+			&code, &ms, &st.Detail, &st.Verdict, &st.Moved); err != nil {
 			return nil, err
 		}
 		st.Code = int(code.Int64)

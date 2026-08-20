@@ -69,6 +69,40 @@ type Run struct {
 	Variables map[string]string `yaml:"variables,omitempty"`
 	Model     *Model            `yaml:"model,omitempty"`
 	Repair    *Repair           `yaml:"repair,omitempty"`
+	Sandbox   *Sandbox          `yaml:"sandbox,omitempty"`
+}
+
+// Sandbox is the throwaway database GritQA creates for a run. With it set, a run
+// never touches the user's own database and needs no credential from them: GritQA
+// generates the password because it owns the instance.
+type Sandbox struct {
+	// Image is "mysql:8" shaped. Set it and the sandbox is on.
+	Image string `yaml:"image"`
+	// Database names the schema created inside it, "gritqa" when unset.
+	Database string `yaml:"database,omitempty"`
+	// Docroot holds the front controller, when it is not the project root. Only
+	// used when run.start is empty and GritQA generates the entry point.
+	Docroot string `yaml:"docroot,omitempty"`
+	// Tables limits what the state ledger watches. Empty watches every table.
+	Tables []string `yaml:"tables,omitempty"`
+	// Watch names directories to count files in. The sandbox isolates the
+	// database, not the filesystem, so an uploads directory is reported rather
+	// than pretended away.
+	Watch []string `yaml:"watch,omitempty"`
+}
+
+// Sandboxed is true when a run should bring its own database up. Nil-safe,
+// because run: is itself optional.
+func (r *Run) Sandboxed() bool {
+	return r != nil && r.Sandbox != nil && strings.TrimSpace(r.Sandbox.Image) != ""
+}
+
+// SandboxOpts returns the sandbox settings, zeroed when there are none.
+func (r *Run) SandboxOpts() Sandbox {
+	if !r.Sandboxed() {
+		return Sandbox{}
+	}
+	return *r.Sandbox
 }
 
 // Repair bounds what a failed run may spend on the model. An unbounded agent

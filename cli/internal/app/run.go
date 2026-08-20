@@ -32,17 +32,32 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		return err
 	}
 
-	base, err := baseURL(w, cfg, p)
-	if err != nil {
-		return err
-	}
+	// Checked before anything is brought up: a missing password is a cheap
+	// failure and pulling an image first would make it an expensive one.
 	vars := cfg.Run.ResolvedVariables()
 	if len(vars.Missing) > 0 {
 		return fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
 			strings.Join(vars.Missing, ", "))
 	}
-	if err := probe(ctx, cfg, base); err != nil {
-		return err
+
+	var st *staged
+	var base string
+	if cfg.Run.Sandboxed() {
+		if st, err = stage(ctx, w, cfg); err != nil {
+			return err
+		}
+		defer st.close(context.WithoutCancel(ctx))
+		if err := st.reset(ctx, w); err != nil {
+			return err
+		}
+		base = st.base
+	} else {
+		if base, err = baseURL(w, cfg, p); err != nil {
+			return err
+		}
+		if err := probe(ctx, cfg, base); err != nil {
+			return err
+		}
 	}
 
 	store, snap := cache(w, cfg)
@@ -69,7 +84,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	engine := &run.Engine{
 		BaseURL:   base,
 		Variables: vars.Values,
-		Secrets:   vars.Secrets(),
+		Secrets:   secrets(vars, st),
 		OnStep: func(s run.StepResult) {
 			done++
 			w.Write(term.Line{
@@ -86,6 +101,9 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 			}
 			pending = pending[:0]
 		},
+	}
+	if st != nil {
+		engine.State = st.box
 	}
 	if judge != nil {
 		o := cfg.Run.RepairOpts()
@@ -125,6 +143,9 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 			Meta: term.Dur(res.Elapsed),
 		})
 		proof(w, sure)
+		if st != nil {
+			ledger(w, res)
+		}
 		return nil
 	}
 
@@ -138,10 +159,24 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 			w.Write(term.Line{Kind: term.Info, Text: s.Name + ": " + r})
 		}
 	}
+	if st != nil {
+		ledger(w, res)
+	}
 	if needsVerdict(all) {
 		w.Write(term.Line{Kind: term.Info, Text: "awaiting your verdict: real bug, or bad test"})
 	}
 	return nil
+}
+
+// secrets are the values that must not reach a transcript, a recorded run or a
+// prompt. The sandbox password is generated rather than the user's, and it still
+// belongs on this list: a run that echoes it has taught the habit of echoing one.
+func secrets(vars config.Variables, st *staged) []string {
+	out := vars.Secrets()
+	if st != nil {
+		out = append(out, st.box.Secrets()...)
+	}
+	return out
 }
 
 // needsVerdict is true when repair left the disagreement to the human. A refused
@@ -355,6 +390,10 @@ func execution(file, base string, started time.Time, res *run.Result) *index.Exe
 		Duration:  res.Elapsed,
 		StartedAt: started,
 		Steps:     make([]index.StepRow, 0, len(res.Steps)),
+		StateNote: res.StateErr,
+	}
+	for _, m := range res.Moved {
+		e.Moved = append(e.Moved, index.MovedRow{Unit: m.Unit, Rows: m.Rows, From: m.From, To: m.To})
 	}
 	for _, s := range res.Steps {
 		e.Steps = append(e.Steps, index.StepRow{
@@ -366,6 +405,7 @@ func execution(file, base string, started time.Time, res *run.Result) *index.Exe
 			Code:     s.Code,
 			Duration: s.Elapsed,
 			Detail:   strings.Join(reasons(s), "; "),
+			Moved:    moved(s.Moved),
 		})
 	}
 	return e
@@ -429,10 +469,14 @@ func stepMeta(s run.StepResult) string {
 			return ""
 		}
 	}
+	out := fmt.Sprintf("%d, %s", s.Code, term.Dur(s.Elapsed))
 	if s.Attempts > 1 {
-		return fmt.Sprintf("%d %s, %s", s.Code, term.Count(s.Attempts, "try", "tries"), term.Dur(s.Elapsed))
+		out = fmt.Sprintf("%d %s, %s", s.Code, term.Count(s.Attempts, "try", "tries"), term.Dur(s.Elapsed))
 	}
-	return fmt.Sprintf("%d, %s", s.Code, term.Dur(s.Elapsed))
+	if m := moved(s.Moved); m != "" {
+		return out + " · " + m
+	}
+	return out
 }
 
 func tone(s run.StepStatus) term.Status {

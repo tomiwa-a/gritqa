@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gritqa/cli/internal/plan"
@@ -48,9 +49,14 @@ type Engine struct {
 	Attempts int
 	Budget   int
 
-	plan  string
-	spent int
-	masks []string
+	// State is optional, exactly as Repairer is. With none, a run takes no
+	// readings and reports what it reported before M4.
+	State State
+
+	plan     string
+	spent    int
+	masks    []string
+	stateErr string
 }
 
 type Result struct {
@@ -61,6 +67,12 @@ type Result struct {
 	Elapsed time.Duration
 	// Repairs is how many model calls the run spent fixing steps.
 	Repairs int
+	// Moved is the whole run's ledger: what the world looks like after, against
+	// what it looked like before the first step.
+	Moved []Moved
+	// StateErr is why a reading failed, when one did. It never changes Status:
+	// the HTTP result stands on its own and the delta is annotation.
+	StateErr string
 }
 
 // RunID is seeded before every run and is different each time. A plan that signs
@@ -98,9 +110,11 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 		vars[k] = v
 	}
 
-	e.plan, e.spent = p.Name, 0
+	e.plan, e.spent, e.stateErr = p.Name, 0, ""
 
 	started := time.Now()
+	before := e.mark(ctx)
+	last := before
 	out := &Result{Plan: p.Name, Steps: make([]StepResult, 0, len(order)), Vars: vars}
 	settled := make(map[string]StepStatus, len(order))
 	aborted := false
@@ -117,6 +131,13 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 			r = e.step(ctx, s, vars)
 			if e.Repairer != nil && (r.Status == StepFailed || r.Status == StepError) {
 				r = e.repair(ctx, s, r, vars)
+			}
+			// After repair settles, so the delta covers the attempt that stuck
+			// rather than the one that failed.
+			if e.State != nil && writes(s) {
+				if now := e.mark(ctx); now != nil {
+					r.Moved, last = diff(last, now), now
+				}
 			}
 		}
 
@@ -136,7 +157,19 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 	out.Elapsed = time.Since(started)
 	out.Repairs = e.spent
 	out.Status = statusOf(out.Steps)
+	out.Moved = diff(before, e.mark(ctx))
+	out.StateErr = e.stateErr
 	return out, nil
+}
+
+// writes is true for a method that can change something. A read-only plan takes
+// no readings at all, which keeps a green GET run at the cost of its HTTP.
+func writes(s plan.Step) bool {
+	switch strings.ToUpper(s.Request.Method) {
+	case "", "GET", "HEAD", "OPTIONS":
+		return false
+	}
+	return true
 }
 
 func (r *Result) Passed() int {

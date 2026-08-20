@@ -48,6 +48,9 @@ type StepResult struct {
 	Checks   []Check
 	Body     []byte
 	Err      string
+	// Moved is what this step changed in the world, when a State was watching.
+	// Empty is a finding in its own right for a step that claimed to write.
+	Moved []Moved
 }
 
 // step runs one step: interpolate once, then send until it passes or the retry

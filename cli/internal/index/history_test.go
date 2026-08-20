@@ -198,3 +198,66 @@ func TestUpgradeAddsColumnsToAnExistingHistory(t *testing.T) {
 		t.Error("a run that predates confirm has no verdict on it")
 	}
 }
+
+func TestStateLedgerRoundTrip(t *testing.T) {
+	s := open(t, t.TempDir())
+
+	e := run("guest-signup")
+	e.StateNote = "one table could not be read"
+	e.Moved = []MovedRow{
+		{Unit: "guests", Rows: 3, From: "41", To: "44"},
+		{Unit: "audit_logs", Rows: 3},
+		{Unit: "bookings", Rows: -1, From: "12", To: "12"},
+	}
+	e.Steps[1].Moved = "guests +3, audit_logs +3"
+
+	if _, err := s.SaveExecution(e); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Executions(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("%d executions, want 1", len(got))
+	}
+
+	// The order the ledger was written in is the order it is read back in: it was
+	// already ranked by how far each unit moved.
+	if len(got[0].Moved) != 3 {
+		t.Fatalf("%d units, want 3: %+v", len(got[0].Moved), got[0].Moved)
+	}
+	for i, want := range e.Moved {
+		if got[0].Moved[i] != want {
+			t.Errorf("[%d] got %+v, want %+v", i, got[0].Moved[i], want)
+		}
+	}
+	if got[0].StateNote != e.StateNote {
+		t.Errorf("StateNote = %q, want %q", got[0].StateNote, e.StateNote)
+	}
+	if got[0].Steps[1].Moved != "guests +3, audit_logs +3" {
+		t.Errorf("the step lost its delta: %q", got[0].Steps[1].Moved)
+	}
+	// A step that wrote nothing says so by saying nothing.
+	if got[0].Steps[0].Moved != "" {
+		t.Errorf("Steps[0].Moved = %q, want empty", got[0].Steps[0].Moved)
+	}
+}
+
+// A read-only run records no ledger at all, rather than a row of zeroes.
+func TestNoLedgerForARunThatTookNoReadings(t *testing.T) {
+	s := open(t, t.TempDir())
+	if _, err := s.SaveExecution(run("read-only")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Executions(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got[0].Moved) != 0 {
+		t.Errorf("Moved = %+v, want nothing", got[0].Moved)
+	}
+	if got[0].StateNote != "" {
+		t.Errorf("StateNote = %q, want empty", got[0].StateNote)
+	}
+}
