@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import postgres from 'postgres';
 import { PLANS, BASE_URL, revisionsFor } from './fixtures/plans.mjs';
 import { executions, resolveUrl, patternOf } from './fixtures/runs.mjs';
+import { INDEX } from './fixtures/index.mjs';
 
 process.loadEnvFile?.(join(dirname(fileURLToPath(import.meta.url)), '..', '.env.local'));
 
@@ -121,67 +122,6 @@ const RULES = [
   ['Test password', 'fixture', true, 'testPassword -- generated per run'],
   ['Test amount', 'fixture', true, 'testAmount -- 50000 minor units'],
   ['Test currency', 'fixture', true, 'testCurrency -- NGN'],
-];
-
-/** Shaped like what a tree-sitter pass over a Go API would produce. */
-const INDEX = [
-  {
-    filePath: 'internal/http/checkout.go',
-    language: 'go',
-    symbols: ['QuoteHandler', 'CheckoutHandler', 'TaxHandler'],
-    dependencies: ['internal/tax/rate.go', 'internal/store/orders.go'],
-    endpoints: [
-      { method: 'POST', path: '/checkout/quote' },
-      { method: 'POST', path: '/checkout' },
-      { method: 'POST', path: '/checkout/:id/tax' },
-    ],
-  },
-  {
-    filePath: 'internal/http/orders.go',
-    language: 'go',
-    symbols: ['ListOrders', 'GetOrder', 'CancelOrder'],
-    dependencies: ['internal/store/orders.go'],
-    endpoints: [
-      { method: 'GET', path: '/orders' },
-      { method: 'GET', path: '/orders/:id' },
-      { method: 'POST', path: '/orders/:id/cancel' },
-    ],
-  },
-  {
-    filePath: 'internal/http/auth.go',
-    language: 'go',
-    symbols: ['Login', 'Refresh', 'Revoke'],
-    dependencies: ['internal/token/sign.go'],
-    endpoints: [
-      { method: 'POST', path: '/auth/login' },
-      { method: 'POST', path: '/auth/refresh' },
-      { method: 'POST', path: '/auth/revoke' },
-    ],
-  },
-  {
-    filePath: 'internal/http/refunds.go',
-    language: 'go',
-    symbols: ['CreateRefund', 'GetRefund'],
-    dependencies: ['internal/store/refunds.go', 'internal/tax/rate.go'],
-    endpoints: [
-      { method: 'POST', path: '/refunds' },
-      { method: 'GET', path: '/refunds/:id' },
-    ],
-  },
-  {
-    filePath: 'internal/tax/rate.go',
-    language: 'go',
-    symbols: ['RateFor', 'Jurisdiction', 'applyCompound'],
-    dependencies: [],
-    endpoints: [],
-  },
-  {
-    filePath: 'internal/store/orders.go',
-    language: 'go',
-    symbols: ['Insert', 'ByID', 'Cancel'],
-    dependencies: [],
-    endpoints: [],
-  },
 ];
 
 const sql = postgres(url, { max: 1, onnotice: () => {} });

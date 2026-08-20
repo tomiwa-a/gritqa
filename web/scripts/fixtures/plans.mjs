@@ -74,9 +74,9 @@ export const PLANS = [
       additions: 148,
       deletions: 22,
       files: [
-        { path: 'handlers/tax.go', additions: 71, deletions: 9 },
-        { path: 'models/tax_band.go', additions: 43, deletions: 7 },
-        { path: 'routes/checkout.go', additions: 34, deletions: 6 },
+        { path: 'internal/tax/rate.go', additions: 71, deletions: 9 },
+        { path: 'internal/tax/band.go', additions: 43, deletions: 7 },
+        { path: 'internal/http/checkout.go', additions: 34, deletions: 6 },
       ],
     },
     revisions: [
@@ -108,8 +108,8 @@ export const PLANS = [
       additions: 148,
       deletions: 59,
       files: [
-        { path: 'services/refund.go', additions: 96, deletions: 41 },
-        { path: 'routes/refunds.go', additions: 52, deletions: 18 },
+        { path: 'internal/store/refunds.go', additions: 96, deletions: 41 },
+        { path: 'internal/http/refunds.go', additions: 52, deletions: 18 },
       ],
     },
     revisions: [

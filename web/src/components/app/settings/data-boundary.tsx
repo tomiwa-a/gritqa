@@ -1,9 +1,15 @@
 import { Icon } from '@/components/ui/icon';
 
+/**
+ * An illustration, not a reading: a plausible last draft, so the boundary has
+ * something concrete to point at. The paths follow the indexed project's layout,
+ * because a made-up directory here would quietly claim the index has files it does
+ * not. When drafting is real this reads the transcript's file list instead.
+ */
 const SENT = [
-  { path: 'routes/checkout.go', lines: 148 },
-  { path: 'handlers/pay.go', lines: 96 },
-  { path: 'models/order.go', lines: 61 },
+  { path: 'internal/http/checkout.go', lines: 148 },
+  { path: 'internal/tax/rate.go', lines: 96 },
+  { path: 'internal/store/orders.go', lines: 61 },
 ];
 
 const HELD = [
