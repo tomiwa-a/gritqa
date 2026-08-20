@@ -10,7 +10,7 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { runPlanAction } from '@/lib/actions/plans';
-import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
+import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import {
   brokeAt,
@@ -50,9 +50,9 @@ export default async function RunDetailPage({
   const { id } = await params;
   const query = await searchParams;
 
-  const [allPlans, currentProject, history, recent] = await Promise.all([
+  const [allPlans, cliConnected, history, recent] = await Promise.all([
     getAllPlans(),
-    getCurrentProject(),
+    isCliConnected(),
     getRunHistory(),
     getRecentRuns(),
   ]);
@@ -65,7 +65,6 @@ export default async function RunDetailPage({
   const detail = run.detail;
   const broke = brokeAt(run);
   const brokeIndex = stoppedAt(run);
-  const cliConnected = currentProject.lastIndexedLabel !== null;
   /* Queued or running: asked for, and with nothing to report yet. Every readout
      below that describes what a run *did* has to say what it will do instead. */
   const inFlight = !isSettled(run.status);

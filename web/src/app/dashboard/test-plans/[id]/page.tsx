@@ -17,7 +17,7 @@ import { CodeBlock } from '@/components/ui/code-block';
 import { Icon } from '@/components/ui/icon';
 import {
   getAllPlans,
-  getCurrentProject,
+  isCliConnected,
   getPlanDetail,
   getRecentRuns,
   getRunHistory,
@@ -179,9 +179,9 @@ export default async function PlanDetailPage({
   const stepParam = typeof query.step === 'string' ? query.step : undefined;
   const versionParam = typeof query.v === 'string' ? query.v : undefined;
 
-  const [allPlans, currentProject, history, recent] = await Promise.all([
+  const [allPlans, cliConnected, history, recent] = await Promise.all([
     getAllPlans(),
-    getCurrentProject(),
+    isCliConnected(),
     getRunHistory(),
     getRecentRuns(),
   ]);
@@ -192,7 +192,6 @@ export default async function PlanDetailPage({
   const detail = await getPlanDetail(plan.publicId);
   const tab: Tab = isTab(tabParam) ? tabParam : 'steps';
   const status = STATUS[plan.status];
-  const cliConnected = currentProject.lastIndexedLabel !== null;
 
   const base = `/dashboard/test-plans/${plan.publicId}`;
   const hrefFor = (next: Tab) => (next === 'steps' ? base : `${base}?tab=${next}`);

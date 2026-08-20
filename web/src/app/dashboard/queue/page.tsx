@@ -9,7 +9,7 @@ import { PlanReader } from '@/components/app/plan/plan-reader';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { getCurrentProject, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
+import { isCliConnected, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
 import { askToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
@@ -18,8 +18,8 @@ const QUEUE = '/dashboard/queue';
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
-  const [currentProject, plansAwaitingReview] = await Promise.all([
-    getCurrentProject(),
+  const [cliConnected, plansAwaitingReview] = await Promise.all([
+    isCliConnected(),
     getPlansAwaitingReview(),
   ]);
   const planParam = typeof params.plan === 'string' ? params.plan : undefined;
@@ -103,7 +103,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         <PlanReader
           plan={selected}
           detail={detail}
-          cliConnected={currentProject.lastIndexedLabel !== null}
+          cliConnected={cliConnected}
           selectedStepId={step?.id}
           stepHrefFor={stepHrefFor}
           askHref={askHref}

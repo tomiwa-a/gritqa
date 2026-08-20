@@ -6,7 +6,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { approvePlanAction, runPlanAction, sendBackPlanAction } from '@/lib/actions/plans';
-import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
+import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, runToken } from '@/lib/overlay';
@@ -37,9 +37,9 @@ export async function PlanPreview({
   /** Swaps this panel for the conversation, so asking stays one click deep. */
   askDrawerHref?: (token: string) => string;
 }) {
-  const [allPlans, currentProject, history, recent] = await Promise.all([
+  const [allPlans, cliConnected, history, recent] = await Promise.all([
     getAllPlans(),
-    getCurrentProject(),
+    isCliConnected(),
     getRunHistory(),
     getRecentRuns(),
   ]);
@@ -48,7 +48,6 @@ export async function PlanPreview({
   if (!plan) return null;
 
   const status = STATUS[plan.status];
-  const cliConnected = currentProject.lastIndexedLabel !== null;
   const base = `/dashboard/test-plans/${plan.publicId}`;
 
   /* The third outcome, and it reads like the other two rather than a trip.

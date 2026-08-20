@@ -21,7 +21,7 @@ export function SetupFlow({ done, aiKeyMasked }: { done: number; aiKeyMasked: st
       short: 'Connect',
       title: 'Connect this machine',
       description: 'Point it at a project once and it links itself to your account.',
-      body: <ConnectStep connected={done >= 2} />,
+      body: <ConnectStep />,
     },
     {
       short: 'Provider',

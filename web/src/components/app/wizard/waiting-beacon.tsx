@@ -1,5 +1,5 @@
 import { Icon } from '@/components/ui/icon';
-import { getCoverage, getCurrentProject } from '@/lib/data';
+import { getCoverage, getCurrentProject, getMachineStatus } from '@/lib/data';
 import type { CoverageFile } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -57,19 +57,37 @@ function Beacon({ connected }: { connected: boolean }) {
 }
 
 export async function WaitingBeacon() {
-  const [coverage, currentProject] = await Promise.all([getCoverage(), getCurrentProject()]);
+  const [coverage, currentProject, machine] = await Promise.all([
+    getCoverage(),
+    getCurrentProject(),
+    getMachineStatus(),
+  ]);
   const methodMix = methodMixOf(coverage);
-  const connected = currentProject.lastIndexedLabel !== null;
+
+  /* Two facts, and this panel needs both. The beacon is asking "is a machine
+     listening", which is liveness; the readout below it is showing what the last
+     index found, which is history. One variable answered the first question with
+     the second one, so a project indexed in March said a laptop was standing by. */
+  const connected = machine.connected;
+  const known = machine.machines[0] ?? null;
+  const indexed = currentProject.lastIndexedLabel !== null;
 
   return (
     <div className="flex h-full flex-col justify-center">
       <Beacon connected={connected} />
 
       <p className="mt-2 text-center font-mono text-[11px] tracking-[0.08em] text-term-dim">
-        {connected ? `read ${currentProject.lastIndexedLabel}` : 'listening for your first run'}
+        {/* The index label is not a fallback for this. A project read in March by a
+            machine that is now switched off has no last-seen, and saying "last seen
+            4mo ago" about a poll that never happened is the guess this replaced. */}
+        {connected
+          ? (known?.hostname ?? 'connected')
+          : known
+            ? `last seen ${known.lastSeenLabel}`
+            : 'listening for your first run'}
       </p>
 
-      {connected ? (
+      {indexed ? (
         <div className="mt-4 rounded-lg border border-rule-dark bg-surface-dark-raised p-3">
           <p className="font-mono text-[10.5px] tracking-[0.16em] text-term-dim uppercase">
             What it found

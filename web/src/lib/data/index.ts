@@ -23,3 +23,4 @@ export { getCoverage, getCoverageTotals, type CoverageTotals } from './coverage'
 export { getCommits, getLastDraftedFrom } from './commits';
 export { getAuditLog } from './activity';
 export { getPeriod, type Period } from './period';
+export { getMachineStatus, isCliConnected } from './machine';

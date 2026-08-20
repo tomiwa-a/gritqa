@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon';
 import { CodeBlock } from '@/components/ui/code-block';
 import { buttonVariants } from '@/components/ui/button';
 import { CopyCommand } from '../copy-command';
-import { getCurrentProject } from '@/lib/data';
+import { getCurrentProject, getMachineStatus } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 export function InstallStep() {
@@ -41,8 +41,21 @@ path: ~/code/payments-api
 branch: main
 `;
 
-export async function ConnectStep({ connected }: { connected: boolean }) {
-  const currentProject = await getCurrentProject();
+/**
+ * Three states, off the machine rows and nothing else.
+ *
+ * It used to say "Connected -- payments-api was read 4mo ago", which is two different
+ * facts wearing one sentence: an index timestamp is not a liveness signal, and a
+ * machine that indexed a project in March is not standing by. The checklist's own tick
+ * still comes from the index -- a step should not un-tick when a laptop lid closes --
+ * but that belongs to `SetupFlow`, not to this pill, so the prop is gone.
+ */
+export async function ConnectStep() {
+  const [currentProject, machine] = await Promise.all([getCurrentProject(), getMachineStatus()]);
+  const connected = machine.connected;
+  /* Has any machine ever polled -- which is a different question from whether the
+     project has ever been indexed, and the only one this pill can answer honestly. */
+  const known = machine.machines[0] ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -64,23 +77,31 @@ export async function ConnectStep({ connected }: { connected: boolean }) {
       <div
         className={cn(
           'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-[12.5px]',
-          connected ? 'border-pass/25 bg-pass-soft text-pass' : 'border-rule bg-app text-ink-muted',
+          connected
+            ? 'border-pass/25 bg-pass-soft text-pass'
+            : known
+              ? 'border-warn/25 bg-warn-soft text-warn'
+              : 'border-rule bg-app text-ink-muted',
         )}
       >
         <span className="relative flex h-2 w-2">
+          {/* Only the live state pings. A pulsing dot reads as activity, and there is
+              none in the other two. */}
+          {connected && (
+            <span className="absolute inset-0 animate-ping rounded-full bg-pass opacity-60" />
+          )}
           <span
             className={cn(
-              'absolute inset-0 animate-ping rounded-full opacity-60',
-              connected ? 'bg-pass' : 'bg-skip',
+              'relative h-2 w-2 rounded-full',
+              connected ? 'bg-pass' : known ? 'bg-warn' : 'bg-skip',
             )}
-          />
-          <span
-            className={cn('relative h-2 w-2 rounded-full', connected ? 'bg-pass' : 'bg-skip')}
           />
         </span>
         {connected
-          ? `Connected — ${currentProject.name} was read ${currentProject.lastIndexedLabel}`
-          : 'Waiting for your first run on this machine'}
+          ? `Connected — ${known?.hostname ?? currentProject.name}, polling now`
+          : known
+            ? `Last seen ${known.lastSeenLabel} — start the CLI again to run anything`
+            : 'Waiting for your first run on this machine'}
       </div>
     </div>
   );

@@ -45,6 +45,29 @@ export type Project = {
   endpointCount: number;
 };
 
+/**
+ * One machine that has polled for this project.
+ *
+ * `connected` is a fact with a shelf life -- 30 seconds from `lastSeenAt` -- so it is
+ * computed at read time and never stored. Nothing writes `false` when a laptop lid
+ * closes, because that is precisely the event nobody gets to observe.
+ */
+export type Machine = {
+  instanceId: string;
+  /** What the machine calls itself. Null when the CLI did not say. */
+  hostname: string | null;
+  version: string | null;
+  connected: boolean;
+  lastSeenLabel: string;
+  lastSeenAt: string;
+};
+
+export type MachineStatus = {
+  connected: boolean;
+  /** Newest first. Empty for a project no CLI has ever polled for. */
+  machines: Machine[];
+};
+
 export type TestPlanStatus = 'draft' | 'approved' | 'archived';
 export type ExecutionStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error';
 export type StepStatus = 'pending' | 'passed' | 'failed' | 'skipped' | 'error';
