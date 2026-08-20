@@ -1,11 +1,11 @@
 /**
  * Instants into the words the screens use.
  *
- * The inverse of `mock/when.ts`, and the direction that matters once rows are
- * real: the fixture was written as `4m ago` and derived a timestamp from it, while
- * a database row has the timestamp and needs the label. The vocabulary is
- * deliberately the same one the fixture used -- `Just now`, `Yesterday`,
- * `4m/2h/6d/3w/4mo ago` -- so a screen cannot tell which source it is rendering.
+ * The fixture was written the other way round -- `4m ago`, turned into a timestamp on
+ * the way into the database -- and this is the direction that matters now the rows are
+ * real: the column has the instant, and the screen wants the words. The vocabulary is
+ * deliberately the one the fixture used -- `Just now`, `Yesterday`, `4m/2h/6d/3w/4mo
+ * ago` -- because every screen was designed against it.
  */
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

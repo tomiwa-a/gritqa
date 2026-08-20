@@ -1,9 +1,9 @@
 /**
  * One import for every read in the app: `import { getRules } from '@/lib/data'`.
  *
- * The seam is doing the job it was built for. Everything here reads Postgres except
- * the period selector, which still returns a constant out of `src/lib/mock/`, and not
- * one screen changed as each switched over. See ./README.md.
+ * The seam is doing the job it was built for: every function here reads Postgres, the
+ * mock it was built over is deleted, and not one screen changed as each entity switched
+ * across. See ./README.md.
  */
 
 export { getUser, getSessionUser } from './user';

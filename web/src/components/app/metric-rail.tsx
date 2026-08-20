@@ -7,9 +7,15 @@ export type MetricCell = {
   label: string;
   value: string;
   unit?: string;
-  direction: DeltaDirection;
-  delta: string;
-  tone: DeltaTone;
+  /**
+   * All three or none. A metric whose previous value is not recorded anywhere has no
+   * delta to show, and a `flat` badge would be a claim that it did not move -- which
+   * is a different thing from not knowing. Those cells carry a plain comparison
+   * instead.
+   */
+  direction?: DeltaDirection;
+  delta?: string;
+  tone?: DeltaTone;
   comparison: string;
   /** Where the number came from, when there is a page that shows it. */
   href?: string;
@@ -38,7 +44,9 @@ function Body({ cell }: { cell: MetricCell }) {
           {cell.unit && <span className="text-[13px] text-ink-subtle">{cell.unit}</span>}
         </p>
         <div className="mt-2.5 flex items-center gap-2">
-          <Delta direction={cell.direction} value={cell.delta} tone={cell.tone} />
+          {cell.direction && cell.delta !== undefined && (
+            <Delta direction={cell.direction} value={cell.delta} tone={cell.tone ?? 'neutral'} />
+          )}
           <span className="nums truncate text-[11.5px] text-ink-subtle">{cell.comparison}</span>
         </div>
       </div>

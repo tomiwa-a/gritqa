@@ -207,15 +207,20 @@ function shift(
   };
 }
 
-const metricCells = (
-  { coverageTotals, period, runStripStats }: Overview,
-  generateHref: string,
-): MetricCell[] => [
+/**
+ * Four numbers about the window, and each one's own previous.
+ *
+ * Three of them are measurements of a period and can be compared to the period before
+ * it. The fourth is a state -- how much of the API has an approved plan today -- and
+ * nothing records what that was a month ago: plans carry a status, not a history of
+ * statuses. So it shows what is left to do instead of a delta it would have to invent.
+ */
+const metricCells = ({ coverageTotals, period }: Overview, generateHref: string): MetricCell[] => [
   {
     icon: 'check',
     label: 'Pass rate',
-    value: `${runStripStats.passRate}%`,
-    ...shift(Number(runStripStats.passRate), Number(period.passRatePrevious), { decimals: 1 }),
+    value: `${period.passRate}%`,
+    ...shift(Number(period.passRate), Number(period.passRatePrevious), { decimals: 1 }),
     comparison: `from ${period.passRatePrevious}%`,
     href: '/dashboard/runs',
   },
@@ -231,9 +236,14 @@ const metricCells = (
     icon: 'clock',
     label: 'Median run',
     value: period.medianRun,
-    direction: 'down',
-    delta: '−0.4s',
-    tone: 'good',
+    /* A faster run is a better one, so a fall is the good direction here. */
+    ...(period.medianRunSeconds !== null && period.medianRunPreviousSeconds !== null
+      ? shift(period.medianRunSeconds, period.medianRunPreviousSeconds, {
+          decimals: 1,
+          unit: 's',
+          betterWhen: 'down',
+        })
+      : {}),
     comparison: `from ${period.medianRunPrevious}`,
   },
   {
@@ -241,15 +251,14 @@ const metricCells = (
     label: 'Endpoints covered',
     value: String(coverageTotals.approved),
     unit: `/ ${coverageTotals.total}`,
-    ...shift(coverageTotals.approved, period.endpointsCoveredPrevious, {}),
-    comparison: `from ${period.endpointsCoveredPrevious}`,
+    comparison: `${coverageTotals.none} with no plan yet`,
     href: generateHref,
   },
 ];
 
 /* The five things that happen to a plan, in order, each one a place to stand. */
 const stagesOf = (d: Overview): Stage[] => {
-  const { allPlans, currentProject, plansAwaitingReview, runStripStats } = d;
+  const { allPlans, currentProject, period, plansAwaitingReview } = d;
   const approvedPlans = allPlans.filter((p) => p.status === 'approved').length;
 
   return [
@@ -285,9 +294,9 @@ const stagesOf = (d: Overview): Stage[] => {
       key: 'ran',
       icon: 'runs',
       label: 'Ran',
-      value: String(runStripStats.runs),
+      value: String(period.runs),
       unit: 'runs',
-      hint: `${runStripStats.total} requests went out in the last 30 days`,
+      hint: `${period.steps} requests went out in the last ${period.days} days`,
       href: '/dashboard/runs',
     },
     {
@@ -363,7 +372,7 @@ export default async function OverviewPage({
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 items-center gap-1.5 rounded-md border border-rule bg-app-panel px-2.5 text-[12.5px] text-ink-muted">
               <Icon name="calendar" size={13} className="text-ink-subtle" />
-              Last 30 days
+              Last {period.days} days
             </span>
             <span className="hidden font-mono text-[11.5px] text-ink-subtle sm:inline">
               {currentProject.name} · {currentProject.defaultBranch}

@@ -1,7 +1,7 @@
 /**
- * The three plan bodies that were authored by hand, lifted out of
- * `src/lib/mock/plans.ts` unchanged so the seed and the mock cannot disagree
- * about them.
+ * The three plan bodies that were authored by hand, lifted out of the mock they were
+ * written in. They are the only steps in the fixture a person wrote line by line; the
+ * rest are generated around them.
  *
  * Plain JS rather than TypeScript because `node scripts/seed.mjs` has no
  * compiler in front of it. The types are still enforced -- on the way out, by
