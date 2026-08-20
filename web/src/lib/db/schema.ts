@@ -314,6 +314,19 @@ export const testExecutions = pgTable(
   (t) => [
     index('test_executions_project_idx').on(t.projectId, t.createdAt),
     index('test_executions_plan_idx').on(t.testPlanId, t.createdAt),
+    /**
+     * At most one unsettled run per plan, which is the whole concurrency story of
+     * queueing. Two clicks on `Ask to run` race, one inserts, the other violates
+     * this, and `enqueueRun` reads the violation as "already queued" -- so the
+     * second click lands on the run that exists rather than starting a second
+     * container for the same plan.
+     *
+     * Partial over the two unsettled statuses, so it stays the size of what is in
+     * flight rather than the size of the history.
+     */
+    uniqueIndex('test_executions_one_live_idx')
+      .on(t.testPlanId)
+      .where(sql`status IN ('pending', 'running')`),
   ],
 );
 

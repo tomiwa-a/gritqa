@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Kbd } from '@/components/ui/badge';
-import { approvePlanAction, sendBackPlanAction } from '@/lib/actions/plans';
+import {
+  approveAndRunPlanAction,
+  approvePlanAction,
+  sendBackPlanAction,
+} from '@/lib/actions/plans';
 import { cn } from '@/lib/cn';
 
 /**
@@ -10,7 +14,7 @@ import { cn } from '@/lib/cn';
  * Sits beside the plan's title rather than at the foot of the page, so the
  * decision is in reach the moment you land instead of a scroll away.
  *
- * One form, two `formAction`s. The plan's id is written once in a hidden field
+ * One form, three `formAction`s. The plan's id is written once in a hidden field
  * rather than into each button, and the buttons keep their `data-decision` hooks
  * because the queue's keyboard shortcuts reach them by clicking -- a click on a
  * submit button submits the form it is in, so `A` and `E` now decide rather than
@@ -52,12 +56,13 @@ export function DecisionBar({
           {showKeys && <Kbd className="ml-0.5 border-white/25 bg-white/10 text-ink-inverse">A</Kbd>}
         </Button>
 
-        {/* Approving and queueing the run is one write, and it is not written yet.
-            `type="button"` until it is: a submit with no action of its own would
-            take the form's default and approve without queueing anything, which is
-            a worse answer than the button not working. */}
+        {/* Two writes behind one button, and the order matters: approve, then queue.
+            Its own action rather than the form's default, because a submit that fell
+            through to `approvePlanAction` would approve and queue nothing while
+            looking like it had done both. */}
         <Button
-          type="button"
+          type="submit"
+          formAction={approveAndRunPlanAction}
           variant="secondary"
           size="sm"
           disabled={!cliConnected}

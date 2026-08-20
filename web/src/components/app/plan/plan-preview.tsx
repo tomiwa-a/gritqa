@@ -5,10 +5,10 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { approvePlanAction, sendBackPlanAction } from '@/lib/actions/plans';
+import { approvePlanAction, runPlanAction, sendBackPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { runRowsOf, runsForPlan } from '@/lib/runs';
+import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, runToken } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/model';
 
@@ -61,6 +61,10 @@ export async function PlanPreview({
       ? runDrawerHref(runToken(lastRun.publicId))
       : `/dashboard/runs/${lastRun.publicId}`
     : undefined;
+
+  /* A run that has been asked for but has not finished. Held as the row rather than
+     as a boolean so the branch below can read its status and its id. */
+  const inFlight = lastRun && !isSettled(lastRun.status) ? lastRun : undefined;
 
   return (
     <Drawer
@@ -124,22 +128,48 @@ export async function PlanPreview({
             </>
           ) : (
             <>
-              {/* Queueing a run is the next write to land; see `decision-bar.tsx`. */}
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                className="w-full"
-                disabled={!cliConnected}
-                title={
-                  cliConnected
-                    ? 'Ask your machine to run this plan now'
-                    : 'Runs happen on your machine, and it is not connected right now'
-                }
-              >
-                <Icon name="runs" size={14} />
-                Ask to run
-              </Button>
+              {/* A run already in flight is not something to ask for again -- it is
+                  something to go and read. The button becomes the way there, which
+                  is where the answer will appear anyway. */}
+              {inFlight ? (
+                <Link
+                  href={lastRunHref ?? `/dashboard/runs/${inFlight.publicId}`}
+                  scroll={false}
+                  className={buttonVariants({
+                    variant: 'secondary',
+                    size: 'sm',
+                    className: 'w-full',
+                  })}
+                >
+                  <StatusDot
+                    tone={RUN_TONE[inFlight.status]}
+                    pulse={inFlight.status === 'running'}
+                  />
+                  {RUN_WORD[inFlight.status]}
+                </Link>
+              ) : (
+                <form>
+                  <input type="hidden" name="publicId" value={plan.publicId} />
+                  <Button
+                    type="submit"
+                    formAction={runPlanAction}
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
+                    disabled={!cliConnected || plan.status !== 'approved'}
+                    title={
+                      plan.status !== 'approved'
+                        ? 'Archived plans are kept for the record, never run again'
+                        : cliConnected
+                          ? 'Ask your machine to run this plan now'
+                          : 'Runs happen on your machine, and it is not connected right now'
+                    }
+                  >
+                    <Icon name="runs" size={14} />
+                    Ask to run
+                  </Button>
+                </form>
+              )}
               {/* Archived plans are kept for the record, never redrafted. */}
               {plan.status === 'approved' && (
                 <Link

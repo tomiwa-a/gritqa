@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { clientIp } from '@/lib/client-ip';
 import { record } from '@/lib/db/audit';
+import { enqueueRun } from '@/lib/db/jobs';
 import { movePlanStatus } from '@/lib/db/plans';
 import { requireScope } from '@/lib/db/scope';
 import type { TestPlanRow } from '@/lib/db/schema';
@@ -42,6 +43,22 @@ function revalidateDecision(publicId: string): void {
   revalidatePath('/dashboard/queue');
   revalidatePath('/dashboard/test-plans');
   revalidatePath(`/dashboard/test-plans/${publicId}`);
+  revalidatePath('/dashboard/settings/activity');
+}
+
+/**
+ * A queued run is a new row in three lists and a new page of its own.
+ *
+ * The plan's page is in here too, and for a different reason than the decisions
+ * above: it reads `lastRun`, and the run just queued is now the last one -- which
+ * is what turns `Ask to run` into `Queued` without a second query.
+ */
+function revalidateRun(planPublicId: string, executionPublicId: string): void {
+  revalidatePath('/dashboard');
+  revalidatePath('/dashboard/runs');
+  revalidatePath(`/dashboard/runs/${executionPublicId}`);
+  revalidatePath('/dashboard/test-plans');
+  revalidatePath(`/dashboard/test-plans/${planPublicId}`);
   revalidatePath('/dashboard/settings/activity');
 }
 
@@ -99,4 +116,66 @@ export async function archivePlanAction(formData: FormData): Promise<void> {
 
   await log('test_plan.archived', row, scope.userId);
   revalidateDecision(publicId);
+}
+
+/**
+ * Ask the machine to run an approved plan.
+ *
+ * The whole write is in `enqueueRun`: a `pending` execution, which is the run, and
+ * an `execute_tests` job, which is the errand. Nothing here waits for either -- the
+ * CLI polls, and a laptop that is closed makes this a run that has not started
+ * rather than a run that failed.
+ *
+ * `created: false` means a run of this plan was already in flight. That is not a
+ * failure and it is not logged twice: one entry per run, and the run already has
+ * one. Revalidating anyway is deliberate -- whoever clicked is looking at a page
+ * that does not know about the run yet.
+ */
+export async function runPlanAction(formData: FormData): Promise<void> {
+  const publicId = publicIdOf(formData);
+  if (!publicId) return;
+
+  const scope = await requireScope();
+  const queued = await enqueueRun(scope.projectId, publicId);
+  if (!queued) return;
+
+  if (queued.created) {
+    await record({
+      userId: scope.userId,
+      action: 'test_execution.queued',
+      entityType: 'test_executions',
+      entityId: queued.executionId,
+      values: { name: queued.plan.name, planVersion: queued.plan.version },
+      ip: await clientIp(),
+    });
+  }
+
+  revalidateRun(publicId, queued.executionPublicId);
+}
+
+/**
+ * The two-in-one button: approve the draft, then queue the run.
+ *
+ * Written as approve-then-run rather than as a third kind of write, so both halves
+ * keep the guards they already have. The approval only moves a `draft`, and the
+ * queue only accepts an `approved` plan -- which means a replay of this form
+ * approves nothing the second time and queues nothing either, and a plan somebody
+ * else already approved still runs. The composition is idempotent because each
+ * half is.
+ *
+ * Two audit rows, not one. The decision and the run are separate events and the
+ * timeline should read as two lines: a plan was approved, and a run was asked for.
+ */
+export async function approveAndRunPlanAction(formData: FormData): Promise<void> {
+  const publicId = publicIdOf(formData);
+  if (!publicId) return;
+
+  const scope = await requireScope();
+  const approved = await movePlanStatus(scope.projectId, publicId, ['draft'], 'approved');
+  if (approved) {
+    await log('test_plan.approved', approved, scope.userId);
+    revalidateDecision(publicId);
+  }
+
+  await runPlanAction(formData);
 }

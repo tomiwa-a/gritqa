@@ -45,36 +45,48 @@ const stepsOf = (row: TestPlanRow): PlanStepSpec[] => planJsonOf(row).steps ?? [
  * That prefix is the whole reason `test_executions.plan_version` exists: without
  * it every result is silently attributed to the plan as it reads today.
  */
-function lastRunLabel(startedAt: Date, runVersion: number, planVersion: number): string {
-  const ago = agoLabel(startedAt);
+function lastRunLabel(at: Date, runVersion: number, planVersion: number): string {
+  const ago = agoLabel(at);
   return runVersion < planVersion ? `v${runVersion}, ${ago.toLowerCase()}` : ago;
 }
 
 type LastRun = NonNullable<TestPlan['lastRun']>;
 
 /** The tally plus the two facts the label needs, before the plan supplies its own. */
-type LastRunSeed = Omit<LastRun, 'label'> & { planVersion: number; startedAt: Date };
+type LastRunSeed = Omit<LastRun, 'label'> & { planVersion: number; at: Date };
 
 type LastRunRow = {
   test_plan_id: string;
   status: LastRun['status'];
   plan_version: number;
-  started_at: Date | string;
+  /** `coalesce(started_at, created_at)`: a queued run is dated from the ask. */
+  at: Date | string;
   total: string;
   passed: string;
 };
 
-/** The newest execution of every plan in the project, with its step tally. */
+/**
+ * The newest execution of every plan in the project, with its step tally.
+ *
+ * Newest by `coalesce(started_at, created_at)`, so a run that has been asked for
+ * but not started is still the plan's latest. That is the whole reason the plan
+ * pages can say "Queued" without a second query: a live run is the newest run, and
+ * `lastRun.status` already carries it.
+ *
+ * A queued run tallies 0 of 0, which the meter draws as empty rather than as
+ * failing -- it has no steps yet, not zero passing ones.
+ */
 async function lastRuns(projectId: number): Promise<Map<string, LastRunSeed>> {
   const rows = (await raw`
     SELECT DISTINCT ON (e.test_plan_id)
-      e.test_plan_id, e.status, e.plan_version, e.started_at,
+      e.test_plan_id, e.status, e.plan_version,
+      coalesce(e.started_at, e.created_at) AS at,
       (SELECT count(*) FROM test_results r WHERE r.execution_id = e.id) AS total,
       (SELECT count(*) FROM test_results r
         WHERE r.execution_id = e.id AND r.status = 'passed') AS passed
     FROM test_executions e
     WHERE e.project_id = ${projectId}
-    ORDER BY e.test_plan_id, e.started_at DESC
+    ORDER BY e.test_plan_id, coalesce(e.started_at, e.created_at) DESC
   `) as unknown as LastRunRow[];
 
   return new Map(
@@ -85,7 +97,7 @@ async function lastRuns(projectId: number): Promise<Map<string, LastRunSeed>> {
         passed: Number(row.passed),
         total: Number(row.total),
         planVersion: row.plan_version,
-        startedAt: asDate(row.started_at),
+        at: asDate(row.at),
       },
     ]),
   );
@@ -165,7 +177,7 @@ function toTestPlan(row: TestPlanRow, lastRun: LastRunSeed | undefined): TestPla
           status: lastRun.status,
           passed: lastRun.passed,
           total: lastRun.total,
-          label: lastRunLabel(lastRun.startedAt, lastRun.planVersion, row.version),
+          label: lastRunLabel(lastRun.at, lastRun.planVersion, row.version),
         }
       : null,
   };

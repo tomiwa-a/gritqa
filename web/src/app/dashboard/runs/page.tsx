@@ -59,14 +59,21 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
   {
     key: 'steps',
     header: 'Steps',
-    cell: (run) => (
-      <span className="flex items-center gap-2.5">
-        <RunCells cells={run.cells} />
-        <span className="nums hidden text-[11.5px] text-ink-subtle lg:inline">
-          {run.passed}/{run.steps}
+    cell: (run) =>
+      /* A queued run has no strip to draw and no tally to report. `0/0` beside an
+         empty strip reads as a run that did nothing rather than one that has not
+         begun, so it borrows the dash the `Took` column already uses for a value
+         that does not exist yet. */
+      run.status === 'pending' ? (
+        <span className="text-[12px] text-ink-subtle">&mdash;</span>
+      ) : (
+        <span className="flex items-center gap-2.5">
+          <RunCells cells={run.cells} />
+          <span className="nums hidden text-[11.5px] text-ink-subtle lg:inline">
+            {run.passed}/{run.steps}
+          </span>
         </span>
-      </span>
-    ),
+      ),
   },
   {
     key: 'broke',
@@ -85,13 +92,18 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
           </span>
         );
       }
+      /* `pending` first, and it is why this arm exists at all: without it a queued
+         run fell through to `Ran clean`, which claimed an outcome for a run that
+         had not started. Nothing has stopped anywhere yet. */
       return (
         <span className="text-[12px] text-ink-subtle">
-          {run.status === 'running'
-            ? 'Still going'
-            : run.status === 'failed'
-              ? 'A step failed'
-              : 'Ran clean'}
+          {run.status === 'pending'
+            ? 'Not started yet'
+            : run.status === 'running'
+              ? 'Still going'
+              : run.status === 'failed'
+                ? 'A step failed'
+                : 'Ran clean'}
         </span>
       );
     },

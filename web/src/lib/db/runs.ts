@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import { testExecutions, testPlans, testResults } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
@@ -29,7 +29,9 @@ type HistoryRow = {
   plan_public_id: string;
   plan_name: string;
   status: RunHistoryEntry['status'];
-  started_at: Date | string;
+  started_at: Date | string | null;
+  /** `coalesce(started_at, created_at)` -- see `at` in the query below. */
+  at: Date | string;
   cells: string | null;
 };
 
@@ -39,6 +41,13 @@ type HistoryRow = {
  * Returned oldest-first because `src/lib/runs.ts` reverses it, and that module is
  * pure derivation shared by four screens -- changing its input order to save a
  * reverse here would move the surprise somewhere harder to see.
+ *
+ * Ordered by `coalesce(started_at, created_at)` rather than by the start alone,
+ * because a queued run has not started and would otherwise sort by a NULL --
+ * which in Postgres is NULLS FIRST on a DESC, so the answer would have been right
+ * by accident today and wrong the moment a second queued run appeared. The
+ * coalesce says what was meant: order runs by when they happened, and a run that
+ * has not started yet happened when it was asked for.
  */
 export async function executionHistory(
   projectId: number,
@@ -46,7 +55,7 @@ export async function executionHistory(
 ): Promise<RunHistoryEntry[]> {
   const rows = (await raw`
     SELECT e.public_id, p.public_id AS plan_public_id, p.name AS plan_name, e.status,
-           e.started_at,
+           e.started_at, coalesce(e.started_at, e.created_at) AS at,
            (
              SELECT string_agg(
                CASE r.status
@@ -61,23 +70,22 @@ export async function executionHistory(
     FROM test_executions e
     JOIN test_plans p ON p.id = e.test_plan_id
     WHERE e.project_id = ${projectId}
-    ORDER BY e.started_at DESC
+    ORDER BY coalesce(e.started_at, e.created_at) DESC
     LIMIT ${limit}
   `) as unknown as HistoryRow[];
 
   return rows
-    .map((row) => {
-      const startedAt = asDate(row.started_at);
-      return {
-        publicId: row.public_id,
-        planPublicId: row.plan_public_id,
-        planName: row.plan_name,
-        status: row.status,
-        cells: row.cells ?? '',
-        whenLabel: agoLabel(startedAt),
-        startedAt: startedAt.toISOString(),
-      };
-    })
+    .map((row) => ({
+      publicId: row.public_id,
+      planPublicId: row.plan_public_id,
+      planName: row.plan_name,
+      status: row.status,
+      // Empty for a queued run, which has no steps yet. The strip draws nothing
+      // and the legend counts nothing, which is the truth about it.
+      cells: row.cells ?? '',
+      whenLabel: agoLabel(asDate(row.at)),
+      startedAt: row.started_at ? asDate(row.started_at).toISOString() : null,
+    }))
     .reverse();
 }
 
@@ -103,13 +111,17 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       status: testExecutions.status,
       durationMs: testExecutions.durationMs,
       startedAt: testExecutions.startedAt,
+      // Both columns rather than a `coalesce` in the select: these two are real
+      // columns, so the builder types them as Dates, and a raw expression here
+      // would come back as an unknown needing `asDate`.
+      createdAt: testExecutions.createdAt,
       planPublicId: testPlans.publicId,
       planName: testPlans.name,
     })
     .from(testExecutions)
     .innerJoin(testPlans, eq(testPlans.id, testExecutions.testPlanId))
     .where(eq(testExecutions.projectId, projectId))
-    .orderBy(desc(testExecutions.startedAt))
+    .orderBy(desc(sql`coalesce(${testExecutions.startedAt}, ${testExecutions.createdAt})`))
     .limit(limit);
 
   if (!rows.length) return [];
@@ -158,8 +170,8 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
     planName: row.planName,
     status: row.status,
     durationMs: row.durationMs,
-    startedLabel: agoLabel(row.startedAt ?? new Date()),
-    startedAt: (row.startedAt ?? new Date()).toISOString(),
+    startedLabel: agoLabel(row.startedAt ?? row.createdAt),
+    startedAt: row.startedAt?.toISOString() ?? null,
     steps: byExecution.get(String(row.id)) ?? [],
   }));
 }

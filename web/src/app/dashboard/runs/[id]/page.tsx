@@ -9,9 +9,10 @@ import { RunCells } from '@/components/app/run-cells';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { runPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, runRowFor, runRowsOf, runsForPlan } from '@/lib/runs';
+import { brokeAt, isSettled, runRowFor, runRowsOf, runsForPlan } from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { askToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
@@ -57,6 +58,9 @@ export default async function RunDetailPage({
   const broke = brokeAt(run);
   const brokeIndex = detail && broke ? detail.steps.indexOf(broke) : -1;
   const cliConnected = currentProject.lastIndexedLabel !== null;
+  /* Queued or running: asked for, and with nothing to report yet. Every readout
+     below that describes what a run *did* has to say what it will do instead. */
+  const inFlight = !isSettled(run.status);
 
   const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
@@ -116,27 +120,36 @@ export default async function RunDetailPage({
               ? `Stopped on step ${brokeIndex + 1} of ${run.steps}`
               : run.status === 'running'
                 ? 'Running now'
-                : `All ${run.steps} steps passed`}
+                : run.status === 'pending'
+                  ? 'Waiting for your machine'
+                  : `All ${run.steps} steps passed`}
           </h2>
 
           <p className="mt-1 max-w-[68ch] text-[13.5px] leading-relaxed text-ink-muted">
-            This run executed{' '}
+            {run.status === 'pending' ? 'This run will execute ' : 'This run executed '}
             <Link
               href={planHref}
               className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
             >
               {run.planName.toLowerCase()}
             </Link>{' '}
-            against your API on your machine. Each step below is one request, in the order it went
-            out.
+            against your API on your machine.{' '}
+            {run.status === 'pending'
+              ? 'Your machine picks it up on its next check, and the steps appear here as they go out.'
+              : 'Each step below is one request, in the order it went out.'}
           </p>
 
-          <p className="mt-3 flex flex-wrap items-center gap-3">
-            <RunCells cells={run.cells} size="md" />
-            <span className="nums text-[12.5px] text-ink-subtle">
-              {run.passed} of {run.steps} steps passed
-            </span>
-          </p>
+          {/* A queued run has no cells to draw and no tally to report. Rendering an
+              empty strip beside "0 of 0 steps passed" would read as a run that did
+              nothing, rather than one that has not begun. */}
+          {run.status !== 'pending' && (
+            <p className="mt-3 flex flex-wrap items-center gap-3">
+              <RunCells cells={run.cells} size="md" />
+              <span className="nums text-[12.5px] text-ink-subtle">
+                {run.passed} of {run.steps} steps passed
+              </span>
+            </p>
+          )}
         </header>
 
         {broke && detail && (
@@ -160,7 +173,22 @@ export default async function RunDetailPage({
           </Panel>
         )}
 
-        {detail ? (
+        {run.status === 'pending' ? (
+          <Panel
+            className="mt-4"
+            title="Step by step"
+            subtitle="Filled in as your machine works through the plan"
+            bodyClassName="p-4"
+          >
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Nothing has gone out yet. The plan is approved and the run is written down; your
+              machine claims it on its next check and reports each step back here.
+            </p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
+              Nothing is lost if the machine is off. A queued run waits.
+            </p>
+          </Panel>
+        ) : detail ? (
           <Panel
             className="mt-4"
             title="Step by step"
@@ -210,15 +238,27 @@ export default async function RunDetailPage({
           subtitle="A run is evidence — the decision is somewhere else"
           bodyClassName="p-0"
         >
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
+          <form className="flex flex-wrap items-center gap-2 px-4 py-3.5">
+            <input type="hidden" name="publicId" value={run.planPublicId} />
+
+            {/* The same write as the plan's `Ask to run`, reached from the evidence.
+                Off while this run is unfinished -- there is nothing to repeat yet --
+                and off for a plan that has since been archived, which `enqueueRun`
+                would refuse anyway. */}
             <Button
+              type="submit"
+              formAction={runPlanAction}
               variant="primary"
               size="sm"
-              disabled={!cliConnected}
+              disabled={!cliConnected || inFlight || plan?.status !== 'approved'}
               title={
-                cliConnected
-                  ? 'Ask your machine to run this plan again'
-                  : 'Runs happen on your machine, and it is not connected right now'
+                plan?.status !== 'approved'
+                  ? 'This plan is no longer approved, so it cannot be run again'
+                  : inFlight
+                    ? 'This run has not finished yet'
+                    : cliConnected
+                      ? 'Ask your machine to run this plan again'
+                      : 'Runs happen on your machine, and it is not connected right now'
               }
             >
               <Icon name="refresh" size={14} />
@@ -256,7 +296,7 @@ export default async function RunDetailPage({
                 className="transition-transform duration-200 group-hover:translate-x-0.5"
               />
             </Link>
-          </div>
+          </form>
 
           {!cliConnected && (
             <p className="border-t border-rule-soft px-4 py-2.5 text-[11.5px] text-ink-subtle">

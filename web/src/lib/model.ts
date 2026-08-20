@@ -199,7 +199,13 @@ export type TestExecution = {
   status: ExecutionStatus;
   durationMs: number | null;
   startedLabel: string;
-  startedAt: string;
+  /**
+   * The label reads from when the run *happened*; this reads from when it started,
+   * and for a queued run those are not the same thing. A run exists from the moment
+   * it is asked for, so a `pending` one is labelled from that moment and has no
+   * start yet -- null here means "not yet", not "unknown".
+   */
+  startedAt: string | null;
   steps: StepResult[];
 };
 
@@ -215,7 +221,13 @@ export type RunHistoryEntry = {
   /** One character per step: p passed, f failed, s skipped or not reached. */
   cells: string;
   whenLabel: string;
-  startedAt: string;
+  /**
+   * The label reads from when the run *happened*; this reads from when it started,
+   * and for a queued run those are not the same thing. A run exists from the moment
+   * it is asked for, so a `pending` one is labelled from that moment and has no
+   * start yet -- null here means "not yet", not "unknown".
+   */
+  startedAt: string | null;
 };
 
 export type TestingRule = {

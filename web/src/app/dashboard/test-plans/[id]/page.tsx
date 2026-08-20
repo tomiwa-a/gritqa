@@ -22,9 +22,9 @@ import {
   getRecentRuns,
   getRunHistory,
 } from '@/lib/data';
-import { archivePlanAction } from '@/lib/actions/plans';
+import { archivePlanAction, runPlanAction } from '@/lib/actions/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { runRowsOf, runsForPlan } from '@/lib/runs';
+import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/model';
 
@@ -64,6 +64,11 @@ function SettledBar({
   /** Where the last-run readout goes — a preview over this page, when there is a run. */
   runHref?: string;
 }) {
+  /* A run asked for and not yet finished. The plan's own `lastRun` answers this --
+     the newest run is the live one when there is a live one -- so knowing whether
+     to offer another costs nothing. */
+  const inFlight = plan.lastRun && !isSettled(plan.lastRun.status);
+
   const lastRun = plan.lastRun && (
     <>
       <StatusDot tone={RUN_TONE[plan.lastRun.status]} pulse={plan.lastRun.status === 'running'} />
@@ -82,21 +87,39 @@ function SettledBar({
       <form className="flex flex-wrap items-center gap-2 lg:justify-end">
         <input type="hidden" name="publicId" value={plan.publicId} />
 
-        {/* Queueing a run is the next write to land; see `decision-bar.tsx`. */}
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          disabled={!cliConnected}
-          title={
-            cliConnected
-              ? 'Ask your machine to run this plan now'
-              : 'Runs happen on your machine, and it is not connected right now'
-          }
-        >
-          <Icon name="runs" size={14} />
-          Ask to run
-        </Button>
+        {/* One run at a time. While one is in flight the button goes to it instead
+            of offering a second -- `enqueueRun` would refuse anyway, and a button
+            that silently does nothing is worse than one that says why. */}
+        {inFlight && runHref ? (
+          <Link
+            href={runHref}
+            scroll={false}
+            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+          >
+            <Icon name="runs" size={14} />
+            See the run
+          </Link>
+        ) : (
+          <Button
+            type="submit"
+            formAction={runPlanAction}
+            variant="primary"
+            size="sm"
+            disabled={!cliConnected || inFlight || plan.status !== 'approved'}
+            title={
+              plan.status !== 'approved'
+                ? 'Archived plans are kept for the record, never run again'
+                : inFlight
+                  ? 'A run of this plan is already waiting on your machine'
+                  : cliConnected
+                    ? 'Ask your machine to run this plan now'
+                    : 'Runs happen on your machine, and it is not connected right now'
+            }
+          >
+            <Icon name="runs" size={14} />
+            Ask to run
+          </Button>
+        )}
 
         <Link
           href={askHref}

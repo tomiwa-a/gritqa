@@ -43,6 +43,10 @@ export function RunList({
                       <span className="truncate font-mono">{broke.path}</span>
                       <span className="nums shrink-0 text-fail">{broke.responseStatus}</span>
                     </>
+                  ) : run.status === 'pending' ? (
+                    /* No steps and no duration, because it has not started. The row
+                       said "0 steps · running" before, which was two lies. */
+                    <span className="truncate">Waiting for your machine</span>
                   ) : (
                     <span className="nums truncate">
                       {run.steps.length} steps

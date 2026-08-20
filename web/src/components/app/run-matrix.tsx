@@ -23,8 +23,13 @@ export async function RunMatrix({
     getRecentRuns(),
     getRunStripStats(),
   ]);
-  /* Oldest on the left, so the strip reads the way time does. */
-  const COLUMNS = [...runRowsOf(history, recent)].reverse();
+  /* Oldest on the left, so the strip reads the way time does.
+   *
+   * A run with no steps is left out rather than drawn. One column is one run and one
+   * square is one step, so a queued run's column has no squares in it -- an invisible
+   * two-pixel link whose tooltip would have claimed "all 0 steps passed". It joins the
+   * strip when its first step comes back. */
+  const COLUMNS = [...runRowsOf(history, recent)].reverse().filter((run) => run.cells.length > 0);
 
   return (
     <div>

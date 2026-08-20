@@ -108,6 +108,11 @@ function labelFor(action: string, entityType: string, values: Values): string {
         ? `${subject} redrafted as v${version}`
         : `${subject} redrafted`;
     }
+    case 'test_execution.queued':
+      // Deliberately not "run": nothing has run. The web app wrote down that it
+      // should, and the machine has not answered yet -- a timeline that said "run"
+      // here would be claiming an outcome for a container that may not have started.
+      return `${subject} queued to run`;
     case 'test_execution.completed': {
       const step = values.failedStep;
       if (typeof step === 'number') return `${subject} failed on step ${step}`;
