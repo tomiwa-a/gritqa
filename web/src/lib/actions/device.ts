@@ -2,6 +2,8 @@
 
 import { redirect } from 'next/navigation';
 import { readSession } from '@/lib/session';
+import { clientIp } from '@/lib/client-ip';
+import { record } from '@/lib/db/audit';
 import { findUserByPublicId } from '@/lib/db/auth';
 import {
   approveDevice,
@@ -18,6 +20,10 @@ import {
  *
  * Denying is gated the same way. It is the harmless half of the decision, but an
  * ungated one lets anyone who can guess a code cancel someone else's sign-in.
+ *
+ * Both outcomes are audited, and the denial matters more than the approval: a code
+ * this developer never asked for, denied from an address they do not recognise, is
+ * the one event in the app that says someone else has been holding a device code.
  */
 function loginFor(code: string): string {
   return `/login?next=${encodeURIComponent(`/auth/cli?code=${code}`)}`;
@@ -43,6 +49,18 @@ async function decide(formData: FormData, approve: boolean): Promise<never> {
   } else {
     await denyDevice(code);
   }
+
+  // The hostname and path are the machine as it described itself, which is what the
+  // developer was shown and said yes or no to. Recording them means the entry reads
+  // as the decision that was actually made rather than as a code being spent.
+  await record({
+    userId: user.id,
+    action: approve ? 'device.approved' : 'device.denied',
+    entityType: 'device_codes',
+    entityId: row.id,
+    values: { hostname: row.hostname, localPath: row.localPath },
+    ip: await clientIp(),
+  });
 
   redirect(`/auth/cli?code=${code}`);
 }

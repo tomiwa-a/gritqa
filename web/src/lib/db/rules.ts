@@ -131,10 +131,19 @@ export async function toggleRule(
   return row ?? null;
 }
 
-export async function deleteRule(projectId: number, publicId: string): Promise<boolean> {
-  const rows = await db
+/**
+ * Returns the row it removed, because the audit entry has to be phrased from it: a
+ * deleted rule cannot be looked up afterwards to find out what it was called, and
+ * "A rule removed" is a worse record than "Pagination envelope removed". Null means
+ * nothing matched, which is a rule that was already gone.
+ */
+export async function deleteRule(
+  projectId: number,
+  publicId: string,
+): Promise<TestingRuleRow | null> {
+  const [row] = await db
     .delete(testingRules)
     .where(and(eq(testingRules.publicId, publicId), eq(testingRules.projectId, projectId)))
-    .returning({ id: testingRules.id });
-  return rows.length > 0;
+    .returning();
+  return row ?? null;
 }

@@ -1,9 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { clientIp } from '@/lib/client-ip';
 import { encryptSecret } from '@/lib/crypto';
+import { record } from '@/lib/db/audit';
 import { findUserByPublicId, setAiKey } from '@/lib/db/auth';
 import { readSession } from '@/lib/session';
+import type { UserRow } from '@/lib/db/schema';
 
 /**
  * The two writes behind the model-key field.
@@ -14,6 +17,10 @@ import { readSession } from '@/lib/session';
  * layer sees it, never returned, never revalidated into a payload, and never
  * passed to anything that could log it. The error strings below are deliberately
  * about the *shape* of what was pasted and never quote it back.
+ *
+ * Both writes are audited, and the audit row carries no part of the key -- not a
+ * prefix, not a length. That a key changed is what the timeline needs; the value is
+ * the thing this file exists to keep out of everything, the log included.
  */
 export type KeyFormState = { error: string } | { ok: true } | null;
 
@@ -29,11 +36,11 @@ function problemWith(key: string): string | null {
   return null;
 }
 
-async function currentUserId(): Promise<number | null> {
+/** The row, not just the id: whether a key was already there decides the wording. */
+async function currentUser(): Promise<UserRow | null> {
   const session = await readSession();
   if (!session) return null;
-  const user = await findUserByPublicId(session.uid);
-  return user?.id ?? null;
+  return findUserByPublicId(session.uid);
 }
 
 export async function saveAiKeyAction(
@@ -46,20 +53,37 @@ export async function saveAiKeyAction(
   const problem = problemWith(key);
   if (problem) return { error: problem };
 
-  const userId = await currentUserId();
-  if (!userId) return { error: 'Your session has expired. Sign in and try again.' };
+  const user = await currentUser();
+  if (!user) return { error: 'Your session has expired. Sign in and try again.' };
 
-  await setAiKey(userId, encryptSecret(key));
+  await setAiKey(user.id, encryptSecret(key));
+  await record({
+    userId: user.id,
+    action: 'user.ai_key.updated',
+    entityType: 'users',
+    entityId: user.id,
+    values: { replaced: Boolean(user.aiApiKey) },
+    ip: await clientIp(),
+  });
   revalidatePath('/dashboard/settings/ai');
   revalidatePath('/dashboard/setup');
+  revalidatePath('/dashboard/settings/activity');
   return { ok: true };
 }
 
 export async function removeAiKeyAction(): Promise<void> {
-  const userId = await currentUserId();
-  if (!userId) return;
+  const user = await currentUser();
+  if (!user) return;
 
-  await setAiKey(userId, null);
+  await setAiKey(user.id, null);
+  await record({
+    userId: user.id,
+    action: 'user.ai_key.removed',
+    entityType: 'users',
+    entityId: user.id,
+    ip: await clientIp(),
+  });
   revalidatePath('/dashboard/settings/ai');
   revalidatePath('/dashboard/setup');
+  revalidatePath('/dashboard/settings/activity');
 }

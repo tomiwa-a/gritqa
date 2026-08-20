@@ -3,6 +3,8 @@ import type { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { listProjectsForUser } from '@/lib/db/auth';
+import { clientIp } from '@/lib/client-ip';
+import { record } from '@/lib/db/audit';
 import { newSession, writeSession } from '@/lib/session';
 import { safePath } from '@/lib/after-auth';
 
@@ -34,6 +36,17 @@ export async function GET(request: NextRequest) {
 
   const projects = await listProjectsForUser(user.id);
   await writeSession(newSession(user.publicId, projects[0]?.publicId ?? null));
+
+  // Audited like any other sign-in, and named for what it is. A back door that leaves
+  // the same entry as GitHub would be the one part of this route worth objecting to.
+  await record({
+    userId: user.id,
+    action: 'user.login',
+    entityType: 'users',
+    entityId: user.id,
+    values: { provider: 'the local dev route' },
+    ip: await clientIp(),
+  });
 
   // No provider hop, so there is no cookie to read the destination back out of --
   // it is still on the URL the login page linked to.

@@ -1,7 +1,11 @@
-import { auditLog } from '@/lib/mock/data';
+import { cache } from 'react';
+import { currentScope } from '@/lib/db/scope';
+import { listAudit } from '@/lib/db/audit';
 import type { AuditEntry } from '@/lib/mock/types';
 
-/** Append-only by design: the table grants INSERT and blocks UPDATE and DELETE. */
-export async function getAuditLog(): Promise<AuditEntry[]> {
-  return auditLog;
-}
+/** Append-only by design: the table grants INSERT and a trigger refuses the rest. */
+export const getAuditLog = cache(async (): Promise<AuditEntry[]> => {
+  const scope = await currentScope();
+  if (!scope) return [];
+  return listAudit(scope.userId);
+});

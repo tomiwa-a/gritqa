@@ -14,10 +14,12 @@
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import postgres from 'postgres';
 import { PLANS, BASE_URL, revisionsFor } from './fixtures/plans.mjs';
 import { executions, resolveUrl, patternOf } from './fixtures/runs.mjs';
 import { INDEX } from './fixtures/index.mjs';
+import { ACTIVITY } from './fixtures/activity.mjs';
 
 process.loadEnvFile?.(join(dirname(fileURLToPath(import.meta.url)), '..', '.env.local'));
 
@@ -358,6 +360,30 @@ try {
       }
     }
     console.log(`${runs.length} executions, ${resultCount} step results on ${first.name}`);
+  }
+
+  // The audit log is the one table the seed cannot rewrite. A trigger refuses UPDATE
+  // and DELETE, so there is no upsert to reach for and no way to clean up a previous
+  // run -- appending twice would leave both timelines in place, permanently. So it is
+  // written once, and a log that already has entries is left exactly as it is. That is
+  // the table behaving correctly, not a limitation to work around.
+  const [{ count: logged }] = await sql`
+    SELECT count(*)::int AS count FROM audit_logs WHERE user_id = ${user.id}
+  `;
+  if (logged < ACTIVITY.length) {
+    for (const [agoMinutes, action, entityType, values, ip] of ACTIVITY) {
+      await sql`
+        INSERT INTO audit_logs (user_id, action, entity_type, new_values, ip_address, created_at)
+        VALUES (
+          ${user.id}, ${action}, ${entityType},
+          ${gzipSync(Buffer.from(JSON.stringify(values), 'utf8'))},
+          ${ip}, now() - make_interval(mins => ${agoMinutes})
+        )
+      `;
+    }
+    console.log(`${ACTIVITY.length} audit entries for ${user.email}`);
+  } else {
+    console.log(`audit log left alone (${logged} entries, append-only)`);
   }
 
   console.log('Seeded. Sign in at http://localhost:3000/api/auth/dev');

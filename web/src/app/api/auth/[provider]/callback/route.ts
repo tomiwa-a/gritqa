@@ -4,6 +4,8 @@ import type { NextRequest } from 'next/server';
 import { STATE_COOKIE } from '../route';
 import { OAuthError, PROVIDERS, exchangeCode, isProvider } from '@/lib/oauth';
 import { listProjectsForUser, upsertUserFromProfile } from '@/lib/db/auth';
+import { clientIp } from '@/lib/client-ip';
+import { record } from '@/lib/db/audit';
 import { newSession, writeSession } from '@/lib/session';
 import { takeAfterAuth } from '@/lib/after-auth';
 
@@ -55,6 +57,18 @@ async function handle(request: NextRequest, provider: keyof typeof PROVIDERS): P
     const projects = await listProjectsForUser(user.id);
 
     await writeSession(newSession(user.publicId, projects[0]?.publicId ?? null));
+
+    // The first entry in most timelines, and the one an unfamiliar address is most
+    // worth seeing on. Nothing depends on it landing -- `record` swallows its own
+    // failures, because a developer who has just signed in has signed in.
+    await record({
+      userId: user.id,
+      action: 'user.login',
+      entityType: 'users',
+      entityId: user.id,
+      values: { provider: PROVIDERS[provider].label },
+      ip: await clientIp(),
+    });
 
     // A developer with no project has nothing for the dashboard to show, and the
     // thing they need next is the CLI. Send them where the work is -- unless they
