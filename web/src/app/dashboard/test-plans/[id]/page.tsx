@@ -22,6 +22,7 @@ import {
   getRecentRuns,
   getRunHistory,
 } from '@/lib/data';
+import { archivePlanAction } from '@/lib/actions/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runRowsOf, runsForPlan } from '@/lib/runs';
 import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
@@ -78,8 +79,12 @@ function SettledBar({
 
   return (
     <div className="flex flex-col gap-2 lg:items-end">
-      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      <form className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <input type="hidden" name="publicId" value={plan.publicId} />
+
+        {/* Queueing a run is the next write to land; see `decision-bar.tsx`. */}
         <Button
+          type="button"
           variant="primary"
           size="sm"
           disabled={!cliConnected}
@@ -103,13 +108,15 @@ function SettledBar({
           Ask for a change
         </Link>
 
+        {/* Only an approved plan can be retired. An archived one is already there,
+            and the bar renders without this button rather than with a dead one. */}
         {plan.status === 'approved' && (
-          <Button variant="ghost" size="sm">
+          <Button type="submit" formAction={archivePlanAction} variant="ghost" size="sm">
             <Icon name="archive" size={14} />
             Archive
           </Button>
         )}
-      </div>
+      </form>
 
       {/* How it last went, under the buttons that decide what happens next. */}
       {plan.lastRun ? (

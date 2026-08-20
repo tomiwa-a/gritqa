@@ -95,6 +95,11 @@ function labelFor(action: string, entityType: string, values: Values): string {
     }
     case 'test_plan.approved':
       return `${subject} approved by you`;
+    case 'test_plan.rejected':
+      // Not `archived`, though the column says so. A draft turned down and a plan
+      // retired after a year of runs are the same status and different events, and
+      // the timeline is the one place that distinction survives.
+      return `${subject} sent back`;
     case 'test_plan.archived':
       return `${subject} archived`;
     case 'test_plan.revised': {

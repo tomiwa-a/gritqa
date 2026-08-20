@@ -5,6 +5,7 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
+import { approvePlanAction, sendBackPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, getCurrentProject, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { runRowsOf, runsForPlan } from '@/lib/runs';
@@ -72,8 +73,13 @@ export async function PlanPreview({
         <div className="flex flex-col gap-2">
           {plan.status === 'draft' ? (
             <>
-              <div className="flex gap-2">
+              {/* The same two decisions as the plan's own page, and the same two
+                  actions behind them. A drawer is where most of them get made. */}
+              <form className="flex gap-2">
+                <input type="hidden" name="publicId" value={plan.publicId} />
                 <Button
+                  type="submit"
+                  formAction={approvePlanAction}
                   variant="primary"
                   size="sm"
                   className="flex-1"
@@ -83,11 +89,18 @@ export async function PlanPreview({
                   <Icon name="check" size={14} />
                   Approve
                 </Button>
-                <Button variant="ghost" size="sm" data-decision="reject" data-plan={plan.publicId}>
+                <Button
+                  type="submit"
+                  formAction={sendBackPlanAction}
+                  variant="ghost"
+                  size="sm"
+                  data-decision="reject"
+                  data-plan={plan.publicId}
+                >
                   <Icon name="archive" size={14} />
                   Send back
                 </Button>
-              </div>
+              </form>
               <Link
                 href={askHref}
                 scroll={false}
@@ -111,7 +124,9 @@ export async function PlanPreview({
             </>
           ) : (
             <>
+              {/* Queueing a run is the next write to land; see `decision-bar.tsx`. */}
               <Button
+                type="button"
                 variant="primary"
                 size="sm"
                 className="w-full"

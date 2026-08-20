@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import { planRevisions, testPlans } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
@@ -14,6 +14,7 @@ import type {
   PlanStepSpec,
   TestPlan,
   TestPlanDetail,
+  TestPlanStatus,
 } from '@/lib/model';
 
 /**
@@ -365,4 +366,39 @@ export async function planPassRates(
       delta: shift > 0 ? `+${shift}` : String(shift),
     };
   });
+}
+
+/**
+ * A decision, written as the transition it is allowed to make.
+ *
+ * `from` is part of the WHERE rather than a check before it, and that is what makes
+ * every one of these safe to call twice. Two tabs both clicking Approve means one
+ * UPDATE finds a draft and the other finds nothing, so the second is a no-op instead
+ * of a second audit row for an event that happened once. A form replayed against a
+ * plan somebody already archived does nothing at all.
+ *
+ * Scoped by `project_id` as well as `public_id`, because the id arrives in a form
+ * body: the client says which plan, never whose.
+ *
+ * Returns the row as it now stands, which is what the audit entry is phrased from --
+ * the name and the status it actually reached, not the ones this request assumed.
+ */
+export async function movePlanStatus(
+  projectId: number,
+  publicId: string,
+  from: TestPlanStatus[],
+  to: TestPlanStatus,
+): Promise<TestPlanRow | null> {
+  const [row] = await db
+    .update(testPlans)
+    .set({ status: to })
+    .where(
+      and(
+        eq(testPlans.projectId, projectId),
+        eq(testPlans.publicId, publicId),
+        inArray(testPlans.status, from),
+      ),
+    )
+    .returning();
+  return row ?? null;
 }
