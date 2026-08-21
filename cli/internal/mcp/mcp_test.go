@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/gritqa/cli/internal/index"
@@ -312,6 +314,25 @@ func TestDBRefusesAnythingThatWrites(t *testing.T) {
 	}
 	if got, _ := readOnly(" SELECT 1 ; "); got != "SELECT 1" {
 		t.Errorf("the trailing semicolon survived: %q", got)
+	}
+
+	// A CTE puts the write past a verb check — `WITH x AS (...) DELETE FROM t` reads
+	// as WITH. The READ ONLY transaction in db() is what actually refuses it, and
+	// only OUTFILE, which writes outside the transaction, is caught here.
+	for _, sql := range []string{
+		"SELECT * FROM guests INTO OUTFILE '/tmp/leak.csv'",
+		"SELECT * FROM guests INTO DUMPFILE '/tmp/leak'",
+	} {
+		if _, err := readOnly(sql); err == nil {
+			t.Errorf("%q was allowed", sql)
+		}
+	}
+	if err := wrote(&mysql.MySQLError{Number: mysqlReadOnly, Message: "Cannot execute statement"}); err == nil ||
+		!strings.Contains(err.Error(), "review") {
+		t.Errorf("a refused write reads as %v", err)
+	}
+	if err := wrote(errors.New("boom")); err == nil || err.Error() != "boom" {
+		t.Errorf("an unrelated error was rewritten to %v", err)
 	}
 }
 

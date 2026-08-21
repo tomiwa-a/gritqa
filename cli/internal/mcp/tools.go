@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/gritqa/cli/internal/index"
@@ -390,9 +392,20 @@ func (s *Server) db(ctx context.Context, _ *sdk.CallToolRequest, in dbIn) (*sdk.
 	if err != nil {
 		return nil, dbOut{}, err
 	}
-	rows, err := box.DB().QueryContext(ctx, stmt)
+
+	// The real guard, because readOnly parses a verb and MySQL parses SQL: a
+	// READ ONLY transaction refuses every write the server can see, including the
+	// ones hiding behind a CTE. Rolled back either way, so nothing is held open
+	// long enough to freeze another connection's watermark.
+	tx, err := box.DB().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, dbOut{}, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, stmt)
+	if err != nil {
+		return nil, dbOut{}, wrote(err)
 	}
 	defer rows.Close()
 
@@ -430,16 +443,39 @@ func readOnly(sql string) (string, error) {
 	if strings.Contains(stmt, ";") {
 		return "", errors.New("one statement at a time")
 	}
-	verb := strings.ToUpper(stmt)
+	// OUTFILE and DUMPFILE write to the database server's own filesystem, which a
+	// READ ONLY transaction does not cover.
+	upper := strings.ToUpper(stmt)
+	for _, out := range []string{"OUTFILE", "DUMPFILE"} {
+		if strings.Contains(upper, out) {
+			return "", fmt.Errorf("%s writes a file on the database server — db reads rows and "+
+				"nothing else", out)
+		}
+	}
+	verb := upper
 	if i := strings.IndexAny(verb, " \t\n("); i > 0 {
 		verb = verb[:i]
 	}
 	switch verb {
-	case "SELECT", "SHOW", "EXPLAIN", "DESCRIBE", "DESC", "WITH":
+	case "SELECT", "SHOW", "EXPLAIN", "DESCRIBE", "DESC", "WITH", "TABLE", "VALUES":
 		return stmt, nil
 	}
 	return "", fmt.Errorf("db is read-only, and %s is not — a plan is how writes happen, "+
 		"and it goes through review first", verb)
+}
+
+// mysqlReadOnly is what the server answers when a statement would write inside a
+// READ ONLY transaction. Reported in GritQA's own terms, because "Cannot execute
+// statement" tells a model nothing about why.
+const mysqlReadOnly = 1792
+
+func wrote(err error) error {
+	var my *mysql.MySQLError
+	if errors.As(err, &my) && my.Number == mysqlReadOnly {
+		return errors.New("that statement writes, and db reads — a plan is how writes happen, " +
+			"and it goes through review first")
+	}
+	return err
 }
 
 func render(cells []any) []any {
