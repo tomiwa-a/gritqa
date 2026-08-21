@@ -113,8 +113,6 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	// Start the MCP server in the background so the web app can discover it
-	// automatically. The poll loop passes the address on every heartbeat.
 	mcpURL, mcpToken := startMCP(ctx, w, cfg, opts, got)
 	return attach(ctx, w, cfg, opts, got.snap, mcpURL, mcpToken)
 }
@@ -151,8 +149,7 @@ func startMCP(ctx context.Context, w *term.Writer, cfg *config.Config, opts Opti
 	if addr == "" {
 		return "", ""
 	}
-	tokens := srv.Tokens()
-	return "http://" + addr, tokens[mcp.Read]
+	return "http://" + addr, srv.Tokens()[mcp.Read]
 }
 
 // resolveConfig finds the project root and loads its config, writing one on
