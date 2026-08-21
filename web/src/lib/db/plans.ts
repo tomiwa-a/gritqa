@@ -414,3 +414,23 @@ export async function movePlanStatus(
     .returning();
   return row ?? null;
 }
+
+/**
+ * Where the last plan in this project was written to run.
+ *
+ * The generate wizard has to put *something* in the address field, and there is no
+ * column on `projects` holding it -- the base URL lives in the CLI's own
+ * `.gritqa/config.yaml`, on the developer's machine, which the dashboard cannot
+ * read. The last plan is the closest thing the database knows, and it is right
+ * every time after the first.
+ */
+export async function lastBaseUrl(projectId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ baseUrl: testPlans.baseUrl })
+    .from(testPlans)
+    .where(eq(testPlans.projectId, projectId))
+    .orderBy(desc(testPlans.id))
+    .limit(1);
+
+  return row?.baseUrl ?? null;
+}

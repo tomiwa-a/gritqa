@@ -11,6 +11,7 @@ export { getProjects, getCurrentProject, getCurrentProjectOrNull } from './proje
 export { getRules } from './rules';
 export {
   getAllPlans,
+  getLastBaseUrl,
   getPlanDetail,
   getPlanDetails,
   getPlanPassRates,

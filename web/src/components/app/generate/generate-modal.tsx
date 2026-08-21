@@ -2,11 +2,11 @@ import Link from 'next/link';
 import { Modal } from '../modal';
 import { CommitHistory } from './commit-history';
 import { CommitSearch } from './commit-search';
+import { DraftForm } from './draft-form';
 import { EndpointPicker, type PickerFile } from './endpoint-picker';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon, type IconName } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
 import { cn } from '@/lib/cn';
 import { diffFrom, resolveFrom, searchCommits } from '@/lib/commits';
@@ -17,6 +17,7 @@ import {
   getCoverage,
   getCoverageTotals,
   getCurrentProject,
+  getLastBaseUrl,
   getLastDraftedFrom,
 } from '@/lib/data';
 import type { CoverageFile } from '@/lib/model';
@@ -24,41 +25,64 @@ import type { CoverageFile } from '@/lib/model';
 const SOURCES = ['changes', 'endpoints', 'blank'] as const;
 type Source = (typeof SOURCES)[number];
 
-const STEPS = ['source', 'scope', 'drafting'] as const;
+/**
+ * Two steps on the URL, not three. Drafting used to be one, which is how the
+ * wizard managed to show a progress bar over no work -- a `<Link>` to `g=drafting`
+ * cost nothing and looked like everything. It belongs to `DraftForm` now, which is
+ * on step three for exactly as long as the agent is reading.
+ */
+const STEPS = ['source', 'scope'] as const;
 type Step = (typeof STEPS)[number];
 
 const STATES = ['none', 'draft', 'failing', 'approved', 'all'] as const;
 type StateFilter = (typeof STATES)[number];
 
-/** Hints stay to one line — this box is 30rem wide and every line costs height. */
-const DOORS: { key: Source; icon: IconName; label: string; hint: string }[] = [
+/**
+ * Hints stay to one line — this box is 30rem wide and every line costs height.
+ *
+ * `needsIndex` is the honest split. Two of these read what the CLI pushed up: a
+ * commit list to pick a range from, an endpoint list to tick. The third reads
+ * nothing, because the agent goes and looks while it drafts — so it works on a
+ * project the CLI has never indexed, which is every project on its first day.
+ */
+const DOORS: {
+  key: Source;
+  icon: IconName;
+  label: string;
+  hint: string;
+  needsIndex: boolean;
+}[] = [
   {
     key: 'changes',
     icon: 'branch',
     label: 'From what changed',
     hint: 'A commit, and everything since it.',
+    needsIndex: true,
   },
   {
     key: 'endpoints',
     icon: 'endpoint',
     label: 'Pick endpoints',
     hint: 'Choose from the gaps yourself.',
+    needsIndex: true,
   },
   {
     key: 'blank',
     icon: 'plan',
     label: 'Describe a journey',
     hint: 'Say what it should prove, in plain words.',
+    needsIndex: false,
   },
 ];
 
+/** `blank` is here to keep the record exhaustive; that step renders its own modal. */
 const SCOPE_TITLE: Record<Source, string> = {
   changes: 'What moved',
   endpoints: 'Choose what to cover',
   blank: 'Describe the journey',
 };
 
-const STEP_NUMBER: Record<Step, number> = { source: 1, scope: 2, drafting: 3 };
+const STEP_NUMBER: Record<Step, number> = { source: 1, scope: 2 };
 
 function isSource(value: string | undefined): value is Source {
   return SOURCES.some((s) => s === value);
@@ -91,24 +115,6 @@ function pickerFiles(coverage: CoverageFile[], filter: StateFilter, only?: strin
         .map((e) => ({ key: endpointKey(e), method: e.method, path: e.path, state: e.state })),
     }))
     .filter((file) => file.endpoints.length > 0);
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium text-ink">{label}</span>
-      {children}
-      {hint && <span className="text-[11.5px] leading-snug text-ink-subtle">{hint}</span>}
-    </label>
-  );
 }
 
 function Section({
@@ -158,13 +164,15 @@ export async function GenerateModal({
   pathname: string;
   closeHref: string;
 }) {
-  const [commits, coverage, coverageTotals, currentProject, lastDraftedFrom] = await Promise.all([
-    getCommits(),
-    getCoverage(),
-    getCoverageTotals(),
-    getCurrentProject(),
-    getLastDraftedFrom(),
-  ]);
+  const [commits, coverage, coverageTotals, currentProject, lastDraftedFrom, baseUrl] =
+    await Promise.all([
+      getCommits(),
+      getCoverage(),
+      getCoverageTotals(),
+      getCurrentProject(),
+      getLastDraftedFrom(),
+      getLastBaseUrl(),
+    ]);
 
   const askedSource = typeof params.from === 'string' ? params.from : undefined;
   const askedStep = typeof params.g === 'string' ? params.g : undefined;
@@ -173,8 +181,17 @@ export async function GenerateModal({
   const query = typeof params.q === 'string' ? params.q : undefined;
   const askedOnly = typeof params.only === 'string' ? params.only : undefined;
 
+  /**
+   * The index gates two of the three doors, not the wizard.
+   *
+   * It used to gate all of it, which was correct when a draft was assembled from a
+   * payload the CLI had already pushed. It is not correct now: the agent researches
+   * live through the CLI's tools, so a described journey needs nothing to have been
+   * read in advance -- and blocking it meant the one door that works before the
+   * first index was the one behind a screen saying nothing could be drafted yet.
+   */
   const indexed = currentProject.lastIndexedLabel !== null;
-  const source: Source = isSource(askedSource) ? askedSource : 'changes';
+  const source: Source = isSource(askedSource) ? askedSource : indexed ? 'changes' : 'blank';
   const step: Step = isStep(askedStep) ? askedStep : askedSource ? 'scope' : 'source';
 
   /* Arriving from one endpoint: show its file, with that endpoint already ticked. */
@@ -184,35 +201,19 @@ export async function GenerateModal({
   const href = (patch: Record<string, string | undefined>) =>
     withOverlayParams(pathname, params, patch);
 
-  if (!indexed) {
+  /* The one door that needs nothing read first, and the only surface that drafts.
+     It owns its own Modal because the submit button and the progress panel sit on
+     opposite sides of the footer and both have to know the draft is in flight. */
+  if (step === 'scope' && source === 'blank') {
     return (
-      <Modal
-        id="generate-modal"
+      <DraftForm
         closeHref={closeHref}
-        label="draft plans"
-        eyebrow="Draft plans"
-        title="Nothing to read yet"
-        footer={
-          <Link
-            href="/dashboard/setup"
-            className={buttonVariants({ variant: 'primary', size: 'sm' })}
-          >
-            <Icon name="terminal" size={14} />
-            Set up the CLI
-          </Link>
-        }
-      >
-        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-rule bg-app text-ink-subtle">
-            <Icon name="terminal" size={18} />
-          </span>
-          <p className="text-[13.5px] leading-relaxed text-ink-muted">
-            Plans are written from your own routes, so the project has to be read once before
-            anything can be drafted. Point the CLI at your repository — it reads the shape and sends
-            that up, never the code.
-          </p>
-        </div>
-      </Modal>
+        backHref={href({ g: 'source' })}
+        gapsHref={href({ from: 'endpoints', g: 'scope' })}
+        gapCount={coverageTotals.none}
+        defaultBaseUrl={baseUrl}
+        canPickGaps={indexed && coverageTotals.none > 0}
+      />
     );
   }
 
@@ -227,20 +228,14 @@ export async function GenerateModal({
       closeHref={closeHref}
       label="draft plans"
       eyebrow={`Draft plans · Step ${STEP_NUMBER[step]} of 3`}
-      title={
-        step === 'source'
-          ? 'Where should the drafts come from?'
-          : step === 'scope'
-            ? SCOPE_TITLE[source]
-            : 'Writing the drafts'
-      }
+      title={step === 'source' ? 'Where should the drafts come from?' : SCOPE_TITLE[source]}
       progress={{ current: STEP_NUMBER[step], total: 3 }}
       footer={
         step === 'source' ? (
           <p className="text-[11.5px] leading-snug text-ink-subtle">
             Every draft lands in the review queue. Nothing runs until you say so.
           </p>
-        ) : step === 'scope' ? (
+        ) : (
           <div className="flex items-center gap-2">
             <Link
               href={href({ g: 'source' })}
@@ -249,29 +244,15 @@ export async function GenerateModal({
               <Icon name="arrowRight" size={14} className="rotate-180" />
               Back
             </Link>
+            {/* Drafting from a diff or from a set of ticked endpoints still has to
+                compose the brief for you, and it does not yet. So this goes where
+                drafting actually happens rather than to a bar that fills up. */}
             <Link
-              href={href({ g: 'drafting' })}
+              href={href({ from: 'blank', g: 'scope' })}
               className={buttonVariants({ variant: 'primary', size: 'sm', className: 'ml-auto' })}
             >
               <Icon name="sparkle" size={14} />
-              {source === 'blank' ? 'Draft it' : 'Draft the plans'}
-            </Link>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/dashboard/queue"
-              className={buttonVariants({ variant: 'primary', size: 'sm' })}
-            >
-              <Icon name="plan" size={14} />
-              Go to the review queue
-            </Link>
-            <Link
-              href={closeHref}
-              scroll={false}
-              className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'ml-auto' })}
-            >
-              Keep reading
+              Describe it instead
             </Link>
           </div>
         )
@@ -279,37 +260,68 @@ export async function GenerateModal({
     >
       {step === 'source' && (
         <ul className="divide-y divide-rule-soft">
-          {DOORS.map((door) => (
-            <li key={door.key}>
-              <Link
-                href={href({ from: door.key, g: 'scope', state: undefined, q: undefined })}
-                className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-app-hover"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-rule bg-app text-ink-muted">
+          {DOORS.map((door) => {
+            /* A door that reads an index nobody has written yet stays visible and stops
+               being a link. Hiding it would leave the wizard looking like it only ever
+               had one way in; a link to an empty picker would be a dead end wearing a
+               chevron. The hint says which thing is missing instead. */
+            const shut = door.needsIndex && !indexed;
+            const body = (
+              <>
+                <span
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-app',
+                    shut ? 'border-rule-soft text-rule-strong' : 'border-rule text-ink-muted',
+                  )}
+                >
                   <Icon name={door.icon} size={14} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
-                    <span className="text-[13.5px] font-medium text-ink">{door.label}</span>
-                    {door.key === 'changes' && diff && (
+                    <span
+                      className={cn(
+                        'text-[13.5px] font-medium',
+                        shut ? 'text-ink-subtle' : 'text-ink',
+                      )}
+                    >
+                      {door.label}
+                    </span>
+                    {!shut && door.key === 'changes' && diff && (
                       <Badge variant="count" size="sm" className="nums">
                         {diff.files.length} files
                       </Badge>
                     )}
-                    {door.key === 'endpoints' && (
+                    {!shut && door.key === 'endpoints' && (
                       <Badge variant="count" size="sm" className="nums">
                         {coverageTotals.none} gaps
                       </Badge>
                     )}
                   </span>
                   <span className="mt-0.5 block truncate text-[12px] text-ink-subtle">
-                    {door.hint}
+                    {shut ? 'Needs the CLI to read your code first.' : door.hint}
                   </span>
                 </span>
-                <Icon name="chevronRight" size={14} className="shrink-0 text-rule-strong" />
-              </Link>
-            </li>
-          ))}
+                {!shut && (
+                  <Icon name="chevronRight" size={14} className="shrink-0 text-rule-strong" />
+                )}
+              </>
+            );
+
+            return (
+              <li key={door.key}>
+                {shut ? (
+                  <span className="flex items-center gap-3 px-4 py-3">{body}</span>
+                ) : (
+                  <Link
+                    href={href({ from: door.key, g: 'scope', state: undefined, q: undefined })}
+                    className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-app-hover"
+                  >
+                    {body}
+                  </Link>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -451,76 +463,6 @@ export async function GenerateModal({
             <EndpointPicker files={pickable} preselected={focus ? [focus.key] : undefined} />
           )}
         </>
-      )}
-
-      {step === 'scope' && source === 'blank' && (
-        <div className="flex flex-col gap-3.5 p-4">
-          <Field label="What should this plan be called?">
-            <Input dense placeholder="Refunds never exceed the original charge" />
-          </Field>
-
-          <Field
-            label="What should it prove?"
-            hint="Plain words. This is the whole brief the draft is written from."
-          >
-            <textarea
-              rows={3}
-              placeholder="Charge a card, refund part of it, then try to refund more than what is left. The last one should be refused and the balance should not move."
-              className="w-full resize-y rounded-md border border-rule-strong bg-surface px-3.5 py-2.5 text-[13px] leading-relaxed text-ink transition-colors duration-150 placeholder:text-ink-subtle hover:border-ink-subtle"
-            />
-          </Field>
-
-          <Field
-            label="Where should it run?"
-            hint="The address your machine will call. It never leaves your machine."
-          >
-            <Input dense defaultValue="http://localhost:8080" className="font-mono" />
-          </Field>
-
-          {/* The escape hatch stays a line, not a section. */}
-          <p className="text-[12px] text-ink-subtle">
-            Or{' '}
-            <Link
-              href={href({ from: 'endpoints', g: 'scope' })}
-              className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
-            >
-              pick from the {coverageTotals.none} gaps
-            </Link>{' '}
-            instead — usually faster than describing one.
-          </p>
-        </div>
-      )}
-
-      {step === 'drafting' && (
-        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-rule bg-app text-ink-muted">
-            <Icon name="sparkle" size={18} />
-          </span>
-
-          <h3 className="mt-3.5 text-[15px] leading-tight font-semibold text-ink">
-            Writing the drafts
-          </h3>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-muted">
-            {source === 'changes' && diff
-              ? diff.commitCount === 1
-                ? `Reading one commit and the ${diff.files.length} files it touched.`
-                : `Reading ${diff.commitCount} commits and the ${diff.files.length} files they touched.`
-              : source === 'endpoints'
-                ? 'Working through the endpoints you picked, one plan at a time.'
-                : 'Turning your brief into requests, in the order they need to happen.'}
-          </p>
-
-          <span
-            aria-hidden="true"
-            className="mt-5 h-[3px] w-[min(14rem,80%)] overflow-hidden rounded-full bg-rule"
-          >
-            <span className="animate-handoff block h-full w-full rounded-full bg-ink" />
-          </span>
-
-          <p className="mt-5 text-[12px] leading-relaxed text-ink-subtle">
-            You get steps to read, not a finished test. Every draft waits for your approval.
-          </p>
-        </div>
       )}
     </Modal>
   );

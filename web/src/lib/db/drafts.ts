@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { planRevisions, testPlans } from '@/lib/db/schema';
-import type { RevisionDraft } from '@/lib/agent/plan-schema';
+import type { PlanDraft, RevisionDraft } from '@/lib/agent/plan-schema';
 
 /**
  * Landing a new version of a plan.
@@ -111,5 +111,71 @@ export async function writeRevision(input: {
     });
 
     return { planId: current.id, version: next, status: 'draft' as const };
+  });
+}
+
+export type WrittenPlan = { planId: number; publicId: string; name: string };
+
+/**
+ * A plan that did not exist a moment ago, and its first revision row.
+ *
+ * One transaction for the same reason `writeRevision` is one: the plan and the
+ * account of where it came from are a single fact. A plan with no v1 revision would
+ * be a plan nobody can find out the origin of, which is precisely what the table
+ * was added to prevent -- and here the origin is the developer's own sentence, so
+ * losing it loses the only record of what they asked for.
+ *
+ * `author` follows the same rule as a refinement: who *asked*, not who wrote. A
+ * developer who typed a brief is a `human` turn with their words on it, which is
+ * what makes the thread on the detail page open with the request instead of a
+ * reconstruction of it. An unattended draft is `agent` with no instruction, which
+ * the table's CHECK allows and the thread renders as GritQA speaking first.
+ */
+export async function writeNewPlan(input: {
+  projectId: number;
+  userId: number;
+  baseUrl: string;
+  /** The developer's own words. Null when nobody typed anything. */
+  instruction: string | null;
+  /** The diff the draft was written from, when it came from one. */
+  diffContext?: unknown;
+  draft: PlanDraft;
+}): Promise<WrittenPlan> {
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(testPlans)
+      .values({
+        projectId: input.projectId,
+        name: input.draft.name,
+        description: input.draft.description,
+        baseUrl: input.baseUrl,
+        planJson: {
+          variables: input.draft.variables,
+          covers: input.draft.covers,
+          steps: input.draft.steps,
+        },
+        /* Draft, and there is no other option. Nothing arrives approved -- the whole
+           product is the gate between a plan existing and a plan running. */
+        status: 'draft',
+        version: 1,
+        /* `manual` because a person asked for this one. `git_push` is for the drafts
+           that appear on their own once the CLI is watching a branch. */
+        triggerSource: 'manual',
+        diffContext: input.diffContext ?? null,
+      })
+      .returning({ id: testPlans.id, publicId: testPlans.publicId, name: testPlans.name });
+
+    await tx.insert(planRevisions).values({
+      testPlanId: created.id,
+      version: 1,
+      author: input.instruction ? 'human' : 'agent',
+      instruction: input.instruction,
+      summary: input.draft.summary,
+      /* Empty on purpose: a first version has nothing to have changed from. */
+      changes: [],
+      createdBy: input.userId,
+    });
+
+    return { planId: created.id, publicId: created.publicId, name: created.name };
   });
 }

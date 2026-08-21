@@ -1,7 +1,14 @@
 import { generateObject, generateText, isStepCount } from 'ai';
 import { resolveModel } from './model';
 import { openResearch } from './research';
-import { revisionSchema, type RevisionDraft } from './plan-schema';
+import {
+  draftFromWire,
+  revisionFromWire,
+  wireDraftSchema,
+  wireRevisionSchema,
+  type PlanDraft,
+  type RevisionDraft,
+} from './plan-schema';
 import type { TestPlanDetail, TestingRule } from '@/lib/model';
 
 /**
@@ -60,6 +67,16 @@ to nothing.
 Never write a credential into a plan. Reference it: {{$ENV.STRIPE_KEY}}. The plan
 is stored, shown on screen and copied into a job payload, and a literal secret
 would travel through all three.
+
+Every {{name}} is either a variable the plan declares or a value an earlier step
+extracted, and {{$ENV.NAME}} is the only exception. There are no functions: no
+date arithmetic, no now(), no random. A date is a literal -- 2026-09-01 --
+declared once as a variable so the request that sends it and the assertion that
+checks it read the same one. A {{name}} nothing supplies is a step that sends
+those characters to the API verbatim.
+
+The other direction is a tell too: a value a step extracts and no later step
+reads is a value you meant to send and did not.
 `.trim();
 
 /** Rules the developer set, grouped the way they were written. */
@@ -180,7 +197,7 @@ export async function refinePlan(input: {
        committing to an answer. */
     const shaped = await generateObject({
       model,
-      schema: revisionSchema,
+      schema: wireRevisionSchema,
       system: context,
       prompt: [
         `The developer asked: "${input.instruction}"`,
@@ -198,11 +215,102 @@ export async function refinePlan(input: {
       ].join('\n'),
     });
 
-    return { ...shaped.object, findings: investigation.text, modelLabel: label };
+    return { ...revisionFromWire(shaped.object), findings: investigation.text, modelLabel: label };
   } finally {
     /* Always. An open session holds the project's SQLite handle and possibly a
        sandbox on the developer's machine, and a thrown error is exactly when
        nothing else is going to clean either of them up. */
+    await research.close().catch(() => {});
+  }
+}
+
+export type Draft = PlanDraft & {
+  /** The agent's own account of what it read. Kept for the transcript, not shown as prose. */
+  findings: string;
+  /** Which model wrote it, for the record. Never a key. */
+  modelLabel: string;
+};
+
+/**
+ * A plan from nothing but a sentence about what it should prove.
+ *
+ * The same two passes as a refinement, and for a stronger reason: there is no
+ * existing plan here to fall back on, so everything the draft says about the API has
+ * to have come from reading the API. A model asked to research and emit JSON in one
+ * call does noticeably less of the reading, because it is working towards a shape.
+ *
+ * The brief is the developer's own words and it is deliberately not parsed. Turning
+ * "refund part of a charge, then try to refund more than what is left" into steps is
+ * the whole job; a form that made them pick endpoints and methods first would be
+ * asking them to do it by hand and then also describe it.
+ */
+export async function draftPlan(input: {
+  /** What the plan should prove, in the developer's words. */
+  brief: string;
+  /** Where the plan will run. Recorded on the plan, not called during drafting. */
+  baseUrl: string;
+  /** A name the developer supplied, if they bothered. The agent writes one otherwise. */
+  name?: string;
+  rules: TestingRule[];
+}): Promise<Draft> {
+  const { model, label } = await resolveModel();
+  const research = await openResearch();
+
+  const context = [HOUSE_RULES, rulesPrompt(input.rules)].join('\n');
+
+  try {
+    const investigation = await generateText({
+      model,
+      system: context,
+      prompt: [
+        `The developer wants a test plan that proves this: "${input.brief}"`,
+        '',
+        'Go and find out how the code actually does it. The routes involved and their',
+        'real paths, the exact field names each one reads off the request and returns in',
+        'its response, which of them need a signed-in caller and how the code expects that',
+        'credential to arrive -- a header, a cookie, a parameter -- and what has to exist',
+        'before a step can run. Find out which values a run is already given, so the plan',
+        'refers to those rather than inventing an account that does not exist.',
+        'Report what you read and what you could not establish. Do not write the plan yet.',
+      ].join('\n'),
+      tools: research.tools,
+      stopWhen: isStepCount(RESEARCH_STEPS),
+    });
+
+    const shaped = await generateObject({
+      model,
+      schema: wireDraftSchema,
+      system: context,
+      prompt: [
+        `The developer asked for: "${input.brief}"`,
+        '',
+        'What you found when you looked:',
+        investigation.text,
+        '',
+        `The plan will run against ${input.baseUrl}, so every step's url is relative to that.`,
+        input.name
+          ? `The developer named it "${input.name}". Keep that name.`
+          : 'Name it yourself, after what it proves.',
+        '',
+        'Now write the plan: the requests in the order they have to happen, each one',
+        'depending on the steps whose output it needs, with the values a later step reads',
+        "declared in the earlier step's `extract`. Assert what the brief is actually about,",
+        'and abort rather than continue where a failure makes everything after it noise.',
+        '',
+        'Write out what each request actually sends. A step whose body, headers or query',
+        'you leave empty is a step that will be called empty: a sign-up with no fields, an',
+        'authenticated route with no credential on it. Put the values a run is given in',
+        '`variables` and refer to them as {{name}} instead of writing a literal, and where',
+        'you are checking a value the plan itself supplied, assert against that {{name}} or',
+        'against what an earlier step extracted rather than against a copy of it.',
+        '',
+        'Only steps you can justify from what you read. A plan of four real requests is',
+        'worth more than one of nine where five were guessed at.',
+      ].join('\n'),
+    });
+
+    return { ...draftFromWire(shaped.object), findings: investigation.text, modelLabel: label };
+  } finally {
     await research.close().catch(() => {});
   }
 }
