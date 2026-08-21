@@ -51,12 +51,33 @@ type StepResult struct {
 	// Moved is what this step changed in the world, when a State was watching.
 	// Empty is a finding in its own right for a step that claimed to write.
 	Moved []Moved
+	// SQL-only.
+	RowsAffected int64
+	// Shell-only.
+	Stdout   string
+	ExitCode int
 }
 
-// step runs one step: interpolate once, then send until it passes or the retry
-// budget runs out. Assertions are evaluated before extraction, so a 401 reports
-// the status it got rather than a missing field nobody asked about.
+// step runs one step, dispatching by kind.
 func (e *Engine) step(ctx context.Context, s plan.Step, vars map[string]string) StepResult {
+	kind := s.Kind
+	if kind == "" {
+		kind = plan.HTTPStep
+	}
+	switch kind {
+	case plan.SQLStep:
+		return e.sqlStep(ctx, s, vars)
+	case plan.ShellStep:
+		return e.shellStep(ctx, s, vars)
+	default:
+		return e.httpStep(ctx, s, vars)
+	}
+}
+
+// httpStep runs one HTTP step: interpolate once, then send until it passes or
+// the retry budget runs out. Assertions are evaluated before extraction, so a
+// 401 reports the status it got rather than a missing field nobody asked about.
+func (e *Engine) httpStep(ctx context.Context, s plan.Step, vars map[string]string) StepResult {
 	out := StepResult{ID: s.ID, Name: s.Label(), Method: s.Request.Method, URL: s.Request.URL}
 
 	req, err := e.build(s, vars)

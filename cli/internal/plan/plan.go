@@ -20,12 +20,22 @@ type Plan struct {
 	Steps       []Step            `json:"steps"`
 }
 
+type StepKind string
+
+const (
+	HTTPStep  StepKind = "http"
+	SQLStep   StepKind = "sql"
+	ShellStep StepKind = "shell"
+)
+
 type Step struct {
 	ID          string       `json:"id"`
+	Kind        StepKind     `json:"kind,omitempty"`
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	DependsOn   []string     `json:"dependsOn"`
 	Request     Request      `json:"request"`
+	Action      *Action      `json:"action,omitempty"`
 	Extract     []Extraction `json:"extract"`
 	Assertions  []Assertion  `json:"assertions"`
 	OnFailure   OnFailure    `json:"onFailure"`
@@ -38,6 +48,14 @@ type Request struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    map[string]any    `json:"body,omitempty"`
 	Query   map[string]string `json:"query,omitempty"`
+}
+
+// Action carries the payload for non-HTTP steps. SQL steps use Statement and
+// Target; shell steps use Command. HTTP steps leave this nil.
+type Action struct {
+	Statement string `json:"statement,omitempty"`
+	Target    string `json:"target,omitempty"`
+	Command   string `json:"command,omitempty"`
 }
 
 type Extraction struct {
@@ -73,15 +91,21 @@ type Source string
 const (
 	FromBody   Source = "body"
 	FromHeader Source = "header"
+	FromResult Source = "result"
+	FromStdout Source = "stdout"
 )
 
 type AssertionType string
 
 const (
-	Status       AssertionType = "status"
-	BodyField    AssertionType = "bodyField"
-	HeaderField  AssertionType = "header"
-	ResponseTime AssertionType = "responseTime"
+	Status          AssertionType = "status"
+	BodyField       AssertionType = "bodyField"
+	HeaderField     AssertionType = "header"
+	ResponseTime    AssertionType = "responseTime"
+	RowCount        AssertionType = "rowCount"
+	ValueEquals     AssertionType = "valueEquals"
+	ExitCode        AssertionType = "exitCode"
+	StdoutContains  AssertionType = "stdoutContains"
 )
 
 type Operator string
@@ -109,6 +133,20 @@ func (s Step) Label() string {
 	if s.Name != "" {
 		return s.Name
 	}
+	if s.Kind == SQLStep && s.Action != nil {
+		stmt := s.Action.Statement
+		if len(stmt) > 40 {
+			stmt = stmt[:40] + "..."
+		}
+		return "SQL " + stmt
+	}
+	if s.Kind == ShellStep && s.Action != nil {
+		cmd := s.Action.Command
+		if len(cmd) > 40 {
+			cmd = cmd[:40] + "..."
+		}
+		return "shell " + cmd
+	}
 	return s.Request.Method + " " + s.Request.URL
 }
 
@@ -126,6 +164,9 @@ func (p *Plan) Endpoints() []string {
 	seen := make(map[string]bool, len(p.Steps))
 	var out []string
 	for _, s := range p.Steps {
+		if s.Kind != HTTPStep && s.Kind != "" {
+			continue
+		}
 		path := variable.ReplaceAllString(strings.Split(s.Request.URL, "?")[0], ":id")
 		sig := s.Request.Method + " " + path
 		if !seen[sig] {

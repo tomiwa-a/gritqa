@@ -99,7 +99,7 @@ func TestValidateRejects(t *testing.T) {
 			"an extraction from somewhere else",
 			wrap(`{"id":"a","request":{"method":"GET","url":"/x"},
 				"extract":[{"name":"t","path":"$.t","source":"cookie"}]}`),
-			"neither body nor header",
+			"not a recognised source",
 		},
 		{
 			"an onFailure it does not know",
@@ -115,6 +115,52 @@ func TestValidateRejects(t *testing.T) {
 			"a field nobody wrote",
 			wrap(`{"id":"a","request":{"method":"GET","url":"/x"},"timeout":30}`),
 			"not a plan I recognise",
+		},
+		// SQL step validation.
+		{
+			"sql step with no action",
+			wrap(`{"id":"a","kind":"sql"}`),
+			"sql step with no action",
+		},
+		{
+			"sql step with no statement",
+			wrap(`{"id":"a","kind":"sql","action":{"target":"setup"}}`),
+			"has no statement",
+		},
+		{
+			"sql step with bad target",
+			wrap(`{"id":"a","kind":"sql","action":{"statement":"SELECT 1","target":"write"}}`),
+			"neither setup nor verify",
+		},
+		// Shell step validation.
+		{
+			"shell step with no action",
+			wrap(`{"id":"a","kind":"shell"}`),
+			"shell step with no action",
+		},
+		{
+			"shell step with no command",
+			wrap(`{"id":"a","kind":"shell","action":{}}`),
+			"has no command",
+		},
+		{
+			"unknown step kind",
+			wrap(`{"id":"a","kind":"grpc","request":{"method":"GET","url":"/x"}}`),
+			"not one of http, sql, shell",
+		},
+		// New assertion types.
+		{
+			"rowCount with no target",
+			wrap(`{"id":"a","request":{"method":"GET","url":"/x"},
+				"assertions":[{"type":"rowCount","operator":"equals","target":"","expected":1}]}`),
+			"no target",
+		},
+		// New extraction sources.
+		{
+			"extraction from result without path",
+			wrap(`{"id":"a","request":{"method":"GET","url":"/x"},
+				"extract":[{"name":"t","path":"","source":"result"}]}`),
+			"from no path",
 		},
 	}
 
@@ -205,5 +251,93 @@ func TestValidateKeepsARealReference(t *testing.T) {
 		"assertions":[{"type":"bodyField","operator":"equals","target":"a","expected":"{{taxTotal}}"}]}]}`
 	if _, err := Parse([]byte(body)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// M7d: SQL and shell step parsing.
+
+func TestParseSQLStep(t *testing.T) {
+	raw := []byte(`{"name":"db setup","version":1,"description":"","baseUrl":"",
+		"variables":{},"steps":[{"id":"s1","kind":"sql","name":"seed users",
+		"action":{"statement":"INSERT INTO users (name) VALUES ('qa')","target":"setup"},
+		"dependsOn":[],"extract":[],"assertions":[],"onFailure":"abort"}]}`)
+	p, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := p.Steps[0]
+	if s.Kind != SQLStep {
+		t.Errorf("kind = %q, want sql", s.Kind)
+	}
+	if s.Action == nil || s.Action.Statement != "INSERT INTO users (name) VALUES ('qa')" {
+		t.Errorf("statement = %v", s.Action)
+	}
+	if s.Action.Target != "setup" {
+		t.Errorf("target = %q, want setup", s.Action.Target)
+	}
+}
+
+func TestParseShellStep(t *testing.T) {
+	raw := []byte(`{"name":"migration","version":1,"description":"","baseUrl":"",
+		"variables":{},"steps":[{"id":"s1","kind":"shell","name":"run migrations",
+		"action":{"command":"npm run migrate"},
+		"dependsOn":[],"extract":[],"assertions":[],"onFailure":"abort"}]}`)
+	p, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := p.Steps[0]
+	if s.Kind != ShellStep {
+		t.Errorf("kind = %q, want shell", s.Kind)
+	}
+	if s.Action == nil || s.Action.Command != "npm run migrate" {
+		t.Errorf("command = %v", s.Action)
+	}
+}
+
+func TestSQLStepLabel(t *testing.T) {
+	s := Step{Kind: SQLStep, Action: &Action{Statement: "SELECT count(*) FROM users"}}
+	if got := s.Label(); got != "SQL SELECT count(*) FROM users" {
+		t.Errorf("Label() = %q", got)
+	}
+}
+
+func TestShellStepLabel(t *testing.T) {
+	s := Step{Kind: ShellStep, Action: &Action{Command: "npm test"}}
+	if got := s.Label(); got != "shell npm test" {
+		t.Errorf("Label() = %q", got)
+	}
+}
+
+func TestEndpointsSkipsNonHTTPSteps(t *testing.T) {
+	raw := []byte(`{"name":"p","version":1,"description":"","baseUrl":"http://x",
+		"variables":{},"steps":[
+		{"id":"s1","kind":"sql","action":{"statement":"SELECT 1"},"dependsOn":[],
+			"extract":[],"assertions":[],"onFailure":"abort"},
+		{"id":"s2","kind":"shell","action":{"command":"echo hi"},"dependsOn":[],
+			"extract":[],"assertions":[],"onFailure":"abort"},
+		{"id":"s3","request":{"method":"GET","url":"/api/users"},"dependsOn":[],
+			"extract":[],"assertions":[],"onFailure":"abort"}
+		]}`)
+	p, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := p.Endpoints()
+	if len(eps) != 1 || eps[0] != "GET /api/users" {
+		t.Errorf("Endpoints() = %v, want [GET /api/users]", eps)
+	}
+}
+
+func TestBackwardCompatMissingKindDefaultsToHTTP(t *testing.T) {
+	raw := []byte(`{"name":"p","version":1,"description":"","baseUrl":"",
+		"variables":{},"steps":[{"id":"s1","request":{"method":"GET","url":"/x"},
+		"dependsOn":[],"extract":[],"assertions":[],"onFailure":"abort"}]}`)
+	p, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Steps[0].Kind != "" {
+		t.Errorf("Kind = %q, want empty (defaults at execution time)", p.Steps[0].Kind)
 	}
 }

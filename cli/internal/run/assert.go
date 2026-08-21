@@ -74,6 +74,11 @@ func actualOf(a plan.Assertion, res *Response) (any, bool) {
 	case plan.HeaderField:
 		v := res.Headers.Get(a.Target)
 		return v, v != ""
+	case plan.RowCount, plan.ValueEquals:
+		// These resolve against the synthetic JSON in the response.
+		return Value(res.JSON, a.Target)
+	case plan.ExitCode, plan.StdoutContains:
+		return Value(res.JSON, a.Target)
 	default:
 		return Value(res.JSON, a.Target)
 	}

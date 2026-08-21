@@ -39,6 +39,7 @@ var (
 	}
 	assertionTypes = map[AssertionType]bool{
 		Status: true, BodyField: true, HeaderField: true, ResponseTime: true,
+		RowCount: true, ValueEquals: true, ExitCode: true, StdoutContains: true,
 	}
 	operators = map[Operator]bool{
 		Equals: true, NotEquals: true, Contains: true, NotContains: true,
@@ -117,6 +118,19 @@ func validateStep(s *Step, where string) error {
 		return fmt.Errorf("%s has no id", where)
 	}
 
+	switch s.Kind {
+	case HTTPStep, "": // empty defaults to HTTP at execution time
+		return validateHTTPStep(s, where)
+	case SQLStep:
+		return validateSQLStep(s, where)
+	case ShellStep:
+		return validateShellStep(s, where)
+	default:
+		return fmt.Errorf("%s has kind %q, which is not one of http, sql, shell", where, s.Kind)
+	}
+}
+
+func validateHTTPStep(s *Step, where string) error {
 	s.Request.Method = strings.ToUpper(strings.TrimSpace(s.Request.Method))
 	if !methods[s.Request.Method] {
 		return fmt.Errorf("%s uses the method %q, which I cannot send", where, s.Request.Method)
@@ -124,7 +138,34 @@ func validateStep(s *Step, where string) error {
 	if strings.TrimSpace(s.Request.URL) == "" {
 		return fmt.Errorf("%s has no url", where)
 	}
+	return validateCommon(s, where)
+}
 
+func validateSQLStep(s *Step, where string) error {
+	if s.Action == nil {
+		return fmt.Errorf("%s is a sql step with no action", where)
+	}
+	if strings.TrimSpace(s.Action.Statement) == "" {
+		return fmt.Errorf("%s has no statement", where)
+	}
+	if s.Action.Target != "" && s.Action.Target != "setup" && s.Action.Target != "verify" {
+		return fmt.Errorf("%s has target %q, which is neither setup nor verify", where, s.Action.Target)
+	}
+	return validateCommon(s, where)
+}
+
+func validateShellStep(s *Step, where string) error {
+	if s.Action == nil {
+		return fmt.Errorf("%s is a shell step with no action", where)
+	}
+	if strings.TrimSpace(s.Action.Command) == "" {
+		return fmt.Errorf("%s has no command", where)
+	}
+	return validateCommon(s, where)
+}
+
+// validateCommon checks fields shared by all step kinds.
+func validateCommon(s *Step, where string) error {
 	switch s.OnFailure {
 	case "":
 		s.OnFailure = Abort
@@ -178,8 +219,11 @@ func clip(s string) string {
 
 // braces checks every place a variable may be read.
 func braces(s *Step, where string) error {
-	if err := literal(s.Request.URL, where+" url"); err != nil {
-		return err
+	// HTTP steps — check request fields.
+	if s.Request.URL != "" {
+		if err := literal(s.Request.URL, where+" url"); err != nil {
+			return err
+		}
 	}
 	for _, m := range []map[string]string{s.Request.Headers, s.Request.Query} {
 		for k, v := range m {
@@ -190,6 +234,18 @@ func braces(s *Step, where string) error {
 	}
 	if err := deepBraces(s.Request.Body, where+" body"); err != nil {
 		return err
+	}
+	// SQL steps — check statement.
+	if s.Action != nil && s.Action.Statement != "" {
+		if err := literal(s.Action.Statement, where+" statement"); err != nil {
+			return err
+		}
+	}
+	// Shell steps — check command.
+	if s.Action != nil && s.Action.Command != "" {
+		if err := literal(s.Action.Command, where+" command"); err != nil {
+			return err
+		}
 	}
 	for i, a := range s.Assertions {
 		if err := deepBraces(a.Expected, fmt.Sprintf("%s check %d", where, i+1)); err != nil {
@@ -227,8 +283,10 @@ func validateExtractions(es []Extraction, where string) error {
 		if strings.TrimSpace(e.Path) == "" {
 			return fmt.Errorf("%s extracts %q from no path", where, e.Name)
 		}
-		if e.Source != FromBody && e.Source != FromHeader {
-			return fmt.Errorf("%s extracts %q from %q, which is neither body nor header",
+		switch e.Source {
+		case FromBody, FromHeader, FromResult, FromStdout:
+		default:
+			return fmt.Errorf("%s extracts %q from %q, which is not a recognised source",
 				where, e.Name, e.Source)
 		}
 	}
@@ -243,7 +301,8 @@ func validateAssertions(as []Assertion, where string) error {
 		if !operators[a.Operator] {
 			return fmt.Errorf("%s uses the operator %q", where, a.Operator)
 		}
-		if (a.Type == BodyField || a.Type == HeaderField) && strings.TrimSpace(a.Target) == "" {
+		if (a.Type == BodyField || a.Type == HeaderField || a.Type == ValueEquals ||
+			a.Type == StdoutContains || a.Type == RowCount) && strings.TrimSpace(a.Target) == "" {
 			return fmt.Errorf("%s asserts on a %s with no target", where, a.Type)
 		}
 		if a.Operator != Exists && a.Expected == nil {

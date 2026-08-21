@@ -344,6 +344,25 @@ func (s *Sandbox) Port() int     { return s.port }
 func (s *Sandbox) Name() string  { return s.name }
 func (s *Sandbox) Image() string { return s.img.Ref }
 
+// DockerExec runs a command inside the sandbox container and returns stdout+stderr
+// and the exit code. It is used by shell steps that need to run arbitrary commands
+// in the same environment as the database.
+func (s *Sandbox) DockerExec(ctx context.Context, command string) (stdout string, exitCode int, err error) {
+	cmd := exec.CommandContext(ctx, "docker", "exec", s.name, "sh", "-c", command)
+	out, err := cmd.CombinedOutput()
+	text := s.creds.scrub(strings.TrimSpace(string(out)))
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return text, exitErr.ExitCode(), nil
+		}
+		if ctx.Err() != nil {
+			return "", 0, ctx.Err()
+		}
+		return text, 1, fmt.Errorf("docker exec: %w", err)
+	}
+	return text, 0, nil
+}
+
 // DSN is the connection string. It carries the generated password, so it is for
 // handing to a driver and never for printing.
 func (s *Sandbox) DSN() string { return s.img.DSN(s.host, s.port, s.creds) }

@@ -326,6 +326,97 @@ func TestEngineVariablesWinOverThePlans(t *testing.T) {
 	}
 }
 
+// M7d: SQL and shell step execution.
+
+func TestShellStepPassesWhenCommandSucceeds(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"echo hello"},
+		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
+
+	e := &Engine{
+		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
+			if cmd != "echo hello" {
+				t.Errorf("command = %q, want 'echo hello'", cmd)
+			}
+			return "hello", 0, nil
+		},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps)
+	}
+	if res.Steps[0].Stdout != "hello" {
+		t.Errorf("stdout = %q", res.Steps[0].Stdout)
+	}
+	if res.Steps[0].ExitCode != 0 {
+		t.Errorf("exitCode = %d", res.Steps[0].ExitCode)
+	}
+}
+
+func TestShellStepFailsWhenAssertionFails(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"ls"},
+		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
+
+	e := &Engine{
+		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
+			return "", 1, nil
+		},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunFailed {
+		t.Fatalf("status = %s, want failed", res.Status)
+	}
+}
+
+func TestShellStepStdoutContainsAssertion(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"cat /etc/hosts"},
+		"assertions":[{"type":"stdoutContains","operator":"contains","target":"stdout","expected":"localhost"}]}`)
+
+	e := &Engine{
+		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
+			return "127.0.0.1 localhost", 0, nil
+		},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps)
+	}
+}
+
+func TestShellStepNoExecIsAnError(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"echo hi"},
+		"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}`)
+
+	res, err := (&Engine{}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Steps[0].Status != StepError || !strings.Contains(res.Steps[0].Err, "no shell exec") {
+		t.Fatalf("got %s %q", res.Steps[0].Status, res.Steps[0].Err)
+	}
+}
+
+func TestSQLStepNoDBIsAnError(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"sql","action":{"statement":"SELECT 1"},
+		"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}`)
+
+	res, err := (&Engine{}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Steps[0].Status != StepError || !strings.Contains(res.Steps[0].Err, "no sandbox database") {
+		t.Fatalf("got %s %q", res.Steps[0].Status, res.Steps[0].Err)
+	}
+}
+
 // A name the config does not supply is still unbound, so a plan that reads one
 // errors rather than sending an empty credential.
 func TestEngineVariablesDoNotBindEverything(t *testing.T) {

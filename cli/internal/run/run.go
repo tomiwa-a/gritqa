@@ -4,6 +4,7 @@ package run
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -52,6 +53,15 @@ type Engine struct {
 	// State is optional, exactly as Repairer is. With none, a run takes no
 	// readings and reports what it reported before M4.
 	State State
+
+	// SandboxDB is the *sql.DB for the throwaway database. SQL steps use it
+	// directly; with nil, a SQL step is an error.
+	SandboxDB *sql.DB
+	// SandboxName is the container name, for shell steps that run docker exec.
+	SandboxName string
+	// ShellExec runs a command in the sandbox container and returns stdout and
+	// the exit code. With nil, a shell step is an error.
+	ShellExec func(ctx context.Context, command string) (stdout string, exitCode int, err error)
 
 	plan     string
 	spent    int
@@ -162,9 +172,13 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 	return out, nil
 }
 
-// writes is true for a method that can change something. A read-only plan takes
-// no readings at all, which keeps a green GET run at the cost of its HTTP.
+// writes is true for a method that can change something. SQL and shell steps
+// always write. A read-only plan takes no readings at all, which keeps a green
+// GET run at the cost of its HTTP.
 func writes(s plan.Step) bool {
+	if s.Kind == plan.SQLStep || s.Kind == plan.ShellStep {
+		return true
+	}
 	switch strings.ToUpper(s.Request.Method) {
 	case "", "GET", "HEAD", "OPTIONS":
 		return false
