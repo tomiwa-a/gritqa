@@ -20,6 +20,8 @@ type Identity struct {
 	InstanceID string `json:"instanceId"`
 	Hostname   string `json:"hostname,omitempty"`
 	Version    string `json:"version,omitempty"`
+	MCPUrl     string `json:"mcpUrl,omitempty"`
+	MCPToken   string `json:"mcpToken,omitempty"`
 }
 
 type Job struct {

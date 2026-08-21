@@ -68,6 +68,8 @@ type Server struct {
 	// stdio is the scope a spawned server serves, since a subprocess carries no
 	// bearer: spawning it is the authorization.
 	stdio Scope
+	// addr is the actual bound address after Serve() starts, set by serveHTTP.
+	addr string
 }
 
 const version = "1"
@@ -131,3 +133,6 @@ func scopeNote(scope Scope) string {
 
 // Tokens are what a client presents over HTTP, by scope. Empty for stdio.
 func (s *Server) Tokens() map[Scope]string { return s.keys.tokens }
+
+// Addr is the actual bound address after Serve() starts. Empty for stdio.
+func (s *Server) Addr() string { return s.addr }

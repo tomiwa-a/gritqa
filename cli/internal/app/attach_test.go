@@ -131,7 +131,7 @@ func TestAttachRunsAClaimedPlan(t *testing.T) {
 
 	w, out := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}); err != nil {
+	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,7 +174,7 @@ func TestAttachGivesBackWhatItCannotDo(t *testing.T) {
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}); err != nil {
+	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +204,7 @@ func TestAttachSettlesAnUnreadablePayload(t *testing.T) {
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}); err != nil {
+	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
 		t.Fatal(err)
 	}
 

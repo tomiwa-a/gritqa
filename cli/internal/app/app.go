@@ -69,7 +69,7 @@ func Run(ctx context.Context, opts Options) error {
 	// Before the banner: in stdio mode stdout carries JSON-RPC, and one line of
 	// ours on it is a protocol error at the client.
 	if opts.Serve != "" {
-		return runServer(ctx, opts)
+		return runAndServe(ctx, w, opts)
 	}
 
 	w.Write(term.Line{Kind: term.Cmd, Text: "gritqa"})
@@ -111,7 +111,7 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	return attach(ctx, w, cfg, opts, got.snap)
+	return attach(ctx, w, cfg, opts, got.snap, "", "")
 }
 
 // resolveConfig finds the project root and loads its config, writing one on

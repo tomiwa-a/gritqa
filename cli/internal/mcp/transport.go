@@ -86,7 +86,8 @@ func (s *Server) serveHTTP(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
-	s.log("serving MCP on http://" + ln.Addr().String())
+	s.addr = ln.Addr().String()
+	s.log("serving MCP on http://" + s.addr)
 	for scope, token := range s.keys.tokens {
 		s.log(fmt.Sprintf("  %-7s %d tools   Authorization: Bearer %s", scope, s.count(scope), token))
 	}

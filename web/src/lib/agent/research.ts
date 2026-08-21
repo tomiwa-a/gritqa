@@ -2,6 +2,10 @@ import { createMCPClient } from '@ai-sdk/mcp';
 import type { MCPClient } from '@ai-sdk/mcp';
 import { jsonSchema } from 'ai';
 import type { JSONSchema7 } from '@ai-sdk/provider';
+import { db } from '@/lib/db';
+import { cliInstances } from '@/lib/db/schema';
+import { sql } from 'drizzle-orm';
+import { CONNECTED_WITHIN } from '@/lib/db/cli';
 
 /**
  * The agent's read access to the codebase, over the CLI's MCP server.
@@ -49,22 +53,42 @@ export class CliUnavailableError extends Error {
  * Where the CLI is, and the bearer for it -- resolved here and nowhere else, so
  * that changing how it is discovered is a change to this function.
  *
- * From the environment, deliberately, and not from a column on `cli_instances`
- * beside `last_seen_at`. The CLI mints these tokens per process and never writes
- * them to disk, so that a restart invalidates them; storing one in Postgres would
- * undo that and leave a credential at rest for a surface that only loopback can
- * reach anyway. The cost is that `next dev` has to be restarted when the CLI is,
- * which is the same shape of inconvenience the CLI already accepted.
+ * Resolution order:
+ *   1. Environment variables (manual override, always wins)
+ *   2. Database (auto-registered by the CLI's poll heartbeat)
+ *
+ * The env vars exist for remote setups where the CLI and web app are on different
+ * machines. In the common case (same machine), the CLI auto-registers its MCP
+ * address on every poll and the database is the source of truth.
  */
-function endpoint(): { url: string; token: string } | null {
+async function endpoint(): Promise<{ url: string; token: string } | null> {
+  // 1. Env vars — manual override.
   const url = process.env[URL_VAR]?.trim();
   const token = process.env[TOKEN_VAR]?.trim();
-  return url && token ? { url, token } : null;
+  if (url && token) return { url, token };
+
+  // 2. Database — auto-registered by the CLI's poll heartbeat.
+  try {
+    const [row] = await db
+      .select({ mcpUrl: cliInstances.mcpUrl, mcpToken: cliInstances.mcpToken })
+      .from(cliInstances)
+      .where(sql`last_seen_at > now() - interval ${CONNECTED_WITHIN}`)
+      .orderBy(sql`last_seen_at DESC`)
+      .limit(1);
+
+    if (row?.mcpUrl && row?.mcpToken) {
+      return { url: row.mcpUrl, token: row.mcpToken };
+    }
+  } catch {
+    // Database unavailable — fall through to null.
+  }
+
+  return null;
 }
 
 /** Whether drafting can even be attempted, without opening a connection to find out. */
-export function researchConfigured(): boolean {
-  return endpoint() !== null;
+export async function researchConfigured(): Promise<boolean> {
+  return (await endpoint()) !== null;
 }
 
 export type Research = {
@@ -90,10 +114,10 @@ export type Research = {
  * prompt holding.
  */
 export async function openResearch(): Promise<Research> {
-  const target = endpoint();
+  const target = await endpoint();
   if (!target) {
     throw new CliUnavailableError(
-      `${URL_VAR} and ${TOKEN_VAR} are not set. Start the CLI with \`gritqa serve\` and copy the URL and read bearer it prints.`,
+      `No MCP server found. Set ${URL_VAR} and ${TOKEN_VAR} in .env.local, or start the CLI with \`gritqa --serve\` — it registers automatically on every poll.`,
     );
   }
 

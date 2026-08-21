@@ -23,7 +23,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
   }
 
-  let body: { instanceId?: unknown; hostname?: unknown; version?: unknown } = {};
+  let body: {
+    instanceId?: unknown;
+    hostname?: unknown;
+    version?: unknown;
+    mcpUrl?: unknown;
+    mcpToken?: unknown;
+  } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -42,6 +48,8 @@ export async function POST(request: Request) {
     instanceId,
     hostname: str(body.hostname, 255),
     version: str(body.version, 64),
+    mcpUrl: str(body.mcpUrl, 512),
+    mcpToken: str(body.mcpToken, 255),
   });
 
   // Before handing out new work, take back work nobody is doing. A machine that

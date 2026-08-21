@@ -82,6 +82,8 @@ export type InstanceIdentity = {
   instanceId: string;
   hostname?: string | null;
   version?: string | null;
+  mcpUrl?: string | null;
+  mcpToken?: string | null;
 };
 
 /**
@@ -103,6 +105,8 @@ export async function touchInstance(projectId: number, identity: InstanceIdentit
       instanceId: identity.instanceId,
       hostname: identity.hostname ?? null,
       version: identity.version ?? null,
+      mcpUrl: identity.mcpUrl ?? null,
+      mcpToken: identity.mcpToken ?? null,
     })
     .onConflictDoUpdate({
       target: [cliInstances.projectId, cliInstances.instanceId],
@@ -110,6 +114,8 @@ export async function touchInstance(projectId: number, identity: InstanceIdentit
         lastSeenAt: sql`now()`,
         hostname: identity.hostname ?? null,
         version: identity.version ?? null,
+        mcpUrl: identity.mcpUrl ?? null,
+        mcpToken: identity.mcpToken ?? null,
       },
     });
 }

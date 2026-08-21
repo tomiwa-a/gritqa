@@ -37,7 +37,7 @@ type attached struct {
 	id cloud.Identity
 }
 
-func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options, snap *index.Snapshot) error {
+func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options, snap *index.Snapshot, mcpURL, mcpToken string) error {
 	c, err := connect(ctx, w, cfg, opts)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Option
 	a := &attached{
 		session: newSession(cfg, opts, w),
 		c:       c,
-		id:      cloud.Identity{InstanceID: machine, Hostname: host, Version: opts.Version},
+		id: cloud.Identity{InstanceID: machine, Hostname: host, Version: opts.Version, MCPUrl: mcpURL, MCPToken: mcpToken},
 	}
 	a.snap = snap
 	defer a.close(context.WithoutCancel(ctx))

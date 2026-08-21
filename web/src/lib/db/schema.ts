@@ -191,6 +191,10 @@ export const cliInstances = pgTable(
     instanceId: varchar('instance_id', { length: 255 }).notNull(),
     hostname: varchar('hostname', { length: 255 }),
     version: varchar('version', { length: 64 }),
+    /** The CLI's MCP server address, auto-registered on every poll. */
+    mcpUrl: varchar('mcp_url', { length: 512 }),
+    /** The CLI's MCP bearer token, auto-registered on every poll. */
+    mcpToken: varchar('mcp_token', { length: 255 }),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
