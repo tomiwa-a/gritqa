@@ -111,6 +111,8 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	}
 	if st != nil {
 		engine.State = st.box
+		engine.SandboxDB = st.box.DB()
+		engine.ShellExec = st.box.DockerExec
 	}
 	if judge != nil {
 		o := cfg.Run.RepairOpts()
