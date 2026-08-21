@@ -6,8 +6,8 @@
  * render as a state -- `NO_MODEL_KEY` and `CLI_UNAVAILABLE` -- because a draft
  * built on a guess is worse than no draft.
  */
-export { resolveModel, modelConfigured, NoModelKeyError } from './model';
-export type { ResolvedModel } from './model';
+export { resolveModel, drafting, NoModelKeyError } from './model';
+export type { ResolvedModel, Drafting } from './model';
 export { openResearch, researchConfigured, CliUnavailableError } from './research';
 export type { Research } from './research';
 export { refinePlan } from './draft';
