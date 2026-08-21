@@ -10,9 +10,10 @@ import (
 // are columns beside it, so a plan arriving from the queue is assembled out of
 // both halves rather than parsed from one.
 type Stored struct {
-	Variables map[string]string `json:"variables"`
-	Covers    []Covered         `json:"covers"`
-	Steps     []Step            `json:"steps"`
+	Variables   map[string]string `json:"variables"`
+	Assumptions []string          `json:"assumptions"`
+	Covers      []Covered         `json:"covers"`
+	Steps       []Step            `json:"steps"`
 }
 
 // Covered is an endpoint the plan claims to exercise: bookkeeping the runner has
