@@ -48,6 +48,13 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	var st *staged
 	var base string
 	if cfg.Run.Sandboxed() {
+		// A configured base_url is ignored here, and saying nothing about it is how
+		// someone concludes their own server was tested.
+		if cfg.Run.BaseURL != "" {
+			w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf(
+				"run.base_url is %s, and a sandboxed run does not use it — this runs against "+
+					"GritQA's own copy on a loopback port", strings.TrimRight(cfg.Run.BaseURL, "/"))})
+		}
 		if st, err = stage(ctx, w, cfg, store, snap); err != nil {
 			return err
 		}

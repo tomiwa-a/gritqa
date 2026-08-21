@@ -30,7 +30,8 @@ const PROMISES = [
   },
   {
     label: 'Your code stays yours',
-    body: 'Everything runs on your machine. Your source never gets uploaded anywhere.',
+    body:
+      'Runs happen on your machine. The agent reads only the source it needs — never your env files, your database, or your run traffic.',
   },
 ];
 
