@@ -50,6 +50,9 @@ func (o Options) server() string {
 	if s := os.Getenv("GRITQA_SERVER"); s != "" {
 		return s
 	}
+	if o.Version == "dev" {
+		return "http://localhost:3000"
+	}
 	return defaultServer
 }
 
