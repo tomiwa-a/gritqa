@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/creds"
 	"github.com/gritqa/cli/internal/gitinfo"
+	"github.com/gritqa/cli/internal/mcp"
 	"github.com/gritqa/cli/internal/term"
 )
 
@@ -111,7 +113,46 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	return attach(ctx, w, cfg, opts, got.snap, "", "")
+	// Start the MCP server in the background so the web app can discover it
+	// automatically. The poll loop passes the address on every heartbeat.
+	mcpURL, mcpToken := startMCP(ctx, w, cfg, opts, got)
+	return attach(ctx, w, cfg, opts, got.snap, mcpURL, mcpToken)
+}
+
+// startMCP launches the MCP server in a goroutine and returns its address and
+// read bearer token. Empty strings mean the server did not start (e.g. stdio
+// mode or a flag that suppressed it).
+func startMCP(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options, got *reading) (url, token string) {
+	b := &serve{session: newSession(cfg, opts, w)}
+
+	srv, err := mcp.New(mcp.Options{
+		Project: cfg.Project,
+		Root:    cfg.Root(),
+		Backend: b,
+		Execute: opts.Execute,
+		Log:     func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
+	})
+	if err != nil {
+		w.Write(term.Line{Kind: term.Info, Text: "MCP server not started: " + err.Error()})
+		return "", ""
+	}
+
+	mcpCtx, _ := context.WithCancel(ctx)
+	go func() {
+		if err := srv.Serve(mcpCtx, "127.0.0.1:0"); err != nil && !errors.Is(err, context.Canceled) {
+			w.Write(term.Line{Kind: term.Info, Text: "MCP server stopped: " + err.Error()})
+		}
+	}()
+
+	// Wait briefly for the server to bind.
+	time.Sleep(200 * time.Millisecond)
+
+	addr := srv.Addr()
+	if addr == "" {
+		return "", ""
+	}
+	tokens := srv.Tokens()
+	return "http://" + addr, tokens[mcp.Read]
 }
 
 // resolveConfig finds the project root and loads its config, writing one on
