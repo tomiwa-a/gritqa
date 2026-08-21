@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
@@ -19,19 +18,7 @@ import (
 
 // serve exposes what the CLI can already do as an MCP surface. It is the
 // mcp.Backend, which is the whole of app that mcp knows about.
-type serve struct {
-	cfg  *config.Config
-	opts Options
-	w    *term.Writer
-
-	// mu serialises the expensive, once-only things: two concurrent get_index
-	// calls would contend on one SQLite file, and two start_sandbox calls would
-	// each try to bring a sandbox up.
-	mu    sync.Mutex
-	store *index.Store
-	snap  *index.Snapshot
-	st    *staged
-}
+type serve struct{ *session }
 
 // runServer holds the session open. Stdout is the protocol in stdio mode, so
 // every human line goes to stderr — including the transcript an index pass
@@ -43,7 +30,7 @@ func runServer(ctx context.Context, opts Options) error {
 	}
 
 	w := term.New(os.Stderr).Plain()
-	b := &serve{cfg: cfg, opts: opts, w: w}
+	b := &serve{session: newSession(cfg, opts, w)}
 	defer b.close(context.WithoutCancel(ctx))
 
 	srv, err := mcp.New(mcp.Options{
@@ -176,62 +163,4 @@ func (b *serve) Teardown(ctx context.Context) error {
 	b.st.close(ctx)
 	b.st = nil
 	return nil
-}
-
-// staged brings the sandbox up for the tools that asked for one — start_sandbox,
-// or a run — so --serve costs nothing for a host that only reads. Callers hold mu.
-func (b *serve) staged(ctx context.Context) (*staged, error) {
-	if b.st != nil {
-		return b.st, nil
-	}
-	if !b.cfg.Run.Sandboxed() {
-		return nil, errors.New("this project has no run.sandbox, so there is no database to " +
-			"reach and nowhere safe to run a plan — set run.sandbox.image in " + config.Name)
-	}
-	store, snap, err := b.cached(ctx)
-	if err != nil {
-		return nil, err
-	}
-	st, err := stage(ctx, b.w, b.cfg, store, snap)
-	if err != nil {
-		return nil, err
-	}
-	b.st = st
-	return st, nil
-}
-
-// cached opens the index cache once and reads whatever the last pass left. It does
-// not index: a tool that needs a recipe or a sandbox should not pay for a walk,
-// and get_index is how a client asks for a fresh one. Callers hold mu.
-func (b *serve) cached(ctx context.Context) (*index.Store, *index.Snapshot, error) {
-	if b.store == nil {
-		store, err := index.Open(b.cfg.CachePath())
-		if err != nil {
-			return nil, nil, fmt.Errorf("could not open the index cache: %w", err)
-		}
-		b.store = store
-	}
-	if b.snap == nil {
-		if snap, err := b.store.Load(b.cfg.Root()); err == nil {
-			b.snap = snap
-		}
-	}
-	if b.snap == nil {
-		got, err := read(ctx, b.w, b.cfg, b.opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		b.snap = got.snap
-	}
-	return b.store, b.snap, nil
-}
-
-func (b *serve) close(ctx context.Context) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.st.close(ctx)
-	if b.store != nil {
-		b.store.Close()
-	}
 }

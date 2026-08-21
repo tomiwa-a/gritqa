@@ -229,6 +229,16 @@ func (a *App) await(ctx context.Context, ready string, limit time.Duration) erro
 	}
 }
 
+// Container is the container this app is running in, empty for the host path. It
+// goes on the run report: "which machine" is answered by the instance id, and
+// "which copy of the app" by this.
+func (a *App) Container() string {
+	if a == nil {
+		return ""
+	}
+	return a.container
+}
+
 func (a *App) dead(ctx context.Context) (bool, string) {
 	if a.container != "" {
 		running, why := a.box.aliveNamed(ctx, a.container)

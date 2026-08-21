@@ -32,6 +32,9 @@ type Options struct {
 	Logout     bool
 	ConfigPath string
 	Server     string
+	// Version is what this binary reports to the dashboard, so a run can be traced
+	// to the release that produced it.
+	Version string
 
 	// Serve is "stdio", or a loopback address for Streamable HTTP.
 	Serve string
@@ -105,8 +108,7 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	return errors.New("attaching to " + opts.server() +
-		" is not wired up yet: for now use --once. The attach loop lands in M4")
+	return attach(ctx, w, cfg, opts, got.snap)
 }
 
 // resolveConfig finds the project root and loads its config, writing one on

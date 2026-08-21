@@ -68,6 +68,7 @@ func main() {
 	f.StringVar(&opts.Server, "server", "", "dashboard base URL (default https://app.gritqa.dev)")
 	f.StringVar(&opts.Serve, "serve", "", "serve this project's tools over MCP; bare for stdio, or --serve=127.0.0.1:7391")
 	f.Lookup("serve").NoOptDefVal = "stdio"
+	opts.Version = version
 	f.BoolVar(&opts.Execute, "execute", false, "also serve the tools that run plans and tear the sandbox down")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
