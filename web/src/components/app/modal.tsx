@@ -43,7 +43,7 @@ export function Modal({
         aria-label={label}
         tabIndex={-1}
         className={cn(
-          'animate-sheet relative flex h-[min(30rem,88dvh)] w-full max-w-[30rem] flex-col',
+          'animate-sheet modal-box relative flex w-full max-w-[30rem] flex-col',
           'overflow-hidden rounded-t-xl border border-rule bg-app-panel shadow-menu outline-none',
           'sm:animate-modal sm:rounded-xl',
         )}

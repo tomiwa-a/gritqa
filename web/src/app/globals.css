@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme inline {
   --color-space-indigo: #2b2d42;
@@ -94,18 +94,29 @@ html {
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
-  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
-  font-feature-settings: "cv11", "ss01";
-  overflow-x: clip;
+  font-family:
+    var(--font-body),
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-heading), system-ui, sans-serif;
   text-wrap: balance;
 }
 
-pre, code, kbd, samp {
-  font-family: var(--font-mono), ui-monospace, "Cascadia Code", "Fira Code", monospace;
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-mono), ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
   font-variant-ligatures: none;
 }
 
@@ -121,8 +132,12 @@ pre, code, kbd, samp {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -145,12 +160,18 @@ pre, code, kbd, samp {
 
 @utility nums {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+  font-feature-settings: 'tnum';
 }
 
 @keyframes line-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @utility animate-line {
@@ -158,8 +179,14 @@ pre, code, kbd, samp {
 }
 
 @keyframes caret-blink {
-  0%, 45% { opacity: 1; }
-  55%, 100% { opacity: 0; }
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
 }
 
 @utility animate-caret {
@@ -167,8 +194,12 @@ pre, code, kbd, samp {
 }
 
 @keyframes handoff {
-  from { transform: scaleX(0.04); }
-  to { transform: scaleX(1); }
+  from {
+    transform: scaleX(0.04);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 @utility animate-handoff {
@@ -177,8 +208,12 @@ pre, code, kbd, samp {
 }
 
 @keyframes overlay-veil {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @utility animate-veil {
@@ -186,8 +221,12 @@ pre, code, kbd, samp {
 }
 
 @keyframes drawer-in {
-  from { transform: translateX(100%); }
-  to { transform: none; }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
 }
 
 @utility animate-drawer {
@@ -195,8 +234,14 @@ pre, code, kbd, samp {
 }
 
 @keyframes modal-in {
-  from { opacity: 0; transform: scale(0.98) translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @utility animate-modal {
@@ -205,10 +250,23 @@ pre, code, kbd, samp {
 
 /* Under sm the modal is a bottom sheet, so it rises instead of scaling. */
 @keyframes sheet-in {
-  from { transform: translateY(100%); }
-  to { transform: none; }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
 }
 
 @utility animate-sheet {
   animation: sheet-in 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* The modal's square: 480px, giving way on a short viewport. Height and cap are
+   two declarations rather than one min(30rem, 88dvh), so a browser that cannot
+   read dvh loses only the cap -- with min() it would drop the whole height and
+   size to its content, which is precisely how a square becomes a tall slab. */
+@utility modal-box {
+  height: 30rem;
+  max-height: 88dvh;
 }
