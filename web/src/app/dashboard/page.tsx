@@ -208,6 +208,27 @@ function shift(
 }
 
 /**
+ * The one cell that can have no number at all. Every other metric here counts things
+ * and zero is a real count; a pass rate divides by steps, and with none there is
+ * nothing to report -- `0.0%` beside a `−0.0` delta is two absences compared to
+ * each other, dressed as a measurement that fell.
+ */
+function passRateCell(period: Overview['period']): MetricCell {
+  const base = { icon: 'check' as const, label: 'Pass rate', href: '/dashboard/runs' };
+  if (period.passRate === null) {
+    return { ...base, value: '\u2014', comparison: 'No steps have run' };
+  }
+  const previous = period.passRatePrevious;
+  return {
+    ...base,
+    value: `${period.passRate}%`,
+    /* Nothing to compare against either, the first time a project runs anything. */
+    ...(previous === null ? {} : shift(Number(period.passRate), Number(previous), { decimals: 1 })),
+    comparison: previous === null ? 'First runs on record' : `from ${previous}%`,
+  };
+}
+
+/**
  * Four numbers about the window, and each one's own previous.
  *
  * Three of them are measurements of a period and can be compared to the period before
@@ -216,14 +237,7 @@ function shift(
  * statuses. So it shows what is left to do instead of a delta it would have to invent.
  */
 const metricCells = ({ coverageTotals, period }: Overview, generateHref: string): MetricCell[] => [
-  {
-    icon: 'check',
-    label: 'Pass rate',
-    value: `${period.passRate}%`,
-    ...shift(Number(period.passRate), Number(period.passRatePrevious), { decimals: 1 }),
-    comparison: `from ${period.passRatePrevious}%`,
-    href: '/dashboard/runs',
-  },
+  passRateCell(period),
   {
     icon: 'runs',
     label: 'Runs',
@@ -473,9 +487,11 @@ export default async function OverviewPage({
             title="Last 30 runs"
             subtitle="Every step, newest on the right"
             meta={
-              <Badge variant="pass" size="sm" className="nums">
-                {runStripStats.passRate}% pass
-              </Badge>
+              runStripStats.passRate === null ? undefined : (
+                <Badge variant="pass" size="sm" className="nums">
+                  {runStripStats.passRate}% pass
+                </Badge>
+              )
             }
             link={{ href: '/dashboard/runs', label: 'All runs' }}
           >

@@ -17,8 +17,8 @@ export type Period = {
   /** Steps in the window. One step is one request that went out. */
   steps: number;
   /** Steps, not runs: a run that fails on step 4 of 6 passed five-sixths of its work. */
-  passRate: string;
-  passRatePrevious: string;
+  passRate: string | null;
+  passRatePrevious: string | null;
   medianRun: string;
   medianRunPrevious: string;
   medianRunSeconds: number | null;
@@ -30,8 +30,9 @@ function secondsLabel(ms: number | null): string {
   return ms === null ? '—' : `${(ms / 1000).toFixed(1)}s`;
 }
 
-function passRateOf(window: WindowStats): string {
-  return window.steps ? ((window.passed / window.steps) * 100).toFixed(1) : '0.0';
+/** Null for the same reason `medianRun` is an em dash: no step ran to have a rate. */
+function passRateOf(window: WindowStats): string | null {
+  return window.steps ? ((window.passed / window.steps) * 100).toFixed(1) : null;
 }
 
 const EMPTY: Period = {
@@ -39,8 +40,8 @@ const EMPTY: Period = {
   runs: 0,
   runsPrevious: 0,
   steps: 0,
-  passRate: '0.0',
-  passRatePrevious: '0.0',
+  passRate: null,
+  passRatePrevious: null,
   medianRun: '—',
   medianRunPrevious: '—',
   medianRunSeconds: null,

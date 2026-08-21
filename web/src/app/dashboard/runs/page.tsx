@@ -172,9 +172,17 @@ export default async function RunsPage({ searchParams }: { searchParams: Promise
           title={plan ? `Runs of ${plan.name.toLowerCase()}` : 'Every run, newest first'}
           description="A run is one approved plan executed against your API on your machine. The step that stopped it is named here instead of buried in a log."
           action={
-            <Badge variant="pass" size="sm" className="nums">
-              {runStripStats.passRate}% of steps passed
-            </Badge>
+            /* A pass rate is about steps that ran. With none, the badge says so in a
+               neutral tone rather than colouring an absence green and calling it 0%. */
+            runStripStats.passRate === null ? (
+              <Badge variant="count" size="sm">
+                Nothing has run yet
+              </Badge>
+            ) : (
+              <Badge variant="pass" size="sm" className="nums">
+                {runStripStats.passRate}% of steps passed
+              </Badge>
+            )
           }
         />
 

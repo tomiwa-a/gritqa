@@ -217,7 +217,13 @@ export type RunStripStats = {
   passed: number;
   failed: number;
   skipped: number;
-  passRate: string;
+  /**
+   * Null when nothing has run, which is not the fact that nothing passed. `'0.0'`
+   * here rendered "0.0% of steps passed" in a pass-coloured badge on a project whose
+   * first plan had not been approved yet -- a project with nothing wrong with it,
+   * reported as total failure.
+   */
+  passRate: string | null;
 };
 
 /**
@@ -236,6 +242,6 @@ export function stripStatsOf(history: RunHistoryEntry[]): RunStripStats {
     passed,
     failed,
     skipped,
-    passRate: total ? ((passed / total) * 100).toFixed(1) : '0.0',
+    passRate: total ? ((passed / total) * 100).toFixed(1) : null,
   };
 }
