@@ -1,8 +1,17 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
-import { cliInstances, jobs, projects, testExecutions, testResults, users } from '@/lib/db/schema';
+import {
+  cliInstances,
+  executionState,
+  jobs,
+  projects,
+  testExecutions,
+  testResults,
+  users,
+} from '@/lib/db/schema';
 import { verifyCliToken } from '@/lib/session';
 import type { TestResultRow } from '@/lib/db/schema';
+import type { MovedUnit } from '@/lib/model';
 
 /**
  * The machine's side of the seam.
@@ -333,6 +342,11 @@ export type StepReport = {
   responseTimeMs: number | null;
   assertions: unknown;
   errorMessage: string | null;
+  /**
+   * What this step moved, when a sandbox was watching. Reported rather than derived
+   * for the same reason `routePattern` is: only the runner held both readings.
+   */
+  moved?: MovedUnit[];
 };
 
 /**
@@ -349,6 +363,17 @@ export type RunReport = {
   containerId: string | null;
   errorMessage: string | null;
   steps: StepReport[];
+  /**
+   * The run's own reading, after the last step against before the first. Kept apart
+   * from the steps' margins because it is not their sum: margins are only taken after
+   * steps that could write, so this is the reading that catches a GET that does.
+   */
+  moved?: MovedUnit[];
+  /**
+   * Why the ledger is incomplete, when it is. It never touches `outcome` -- the HTTP
+   * result stands on its own and the delta is annotation.
+   */
+  stateNote?: string | null;
 };
 
 export type Completion = {
@@ -441,24 +466,62 @@ export async function completeJob(
        and has no column saying which attempt a row belongs to. Nothing writes steps
        before a completion today, so in practice this deletes nothing; it is here
        because the day something reports incrementally is the day that appears. */
+    /* The run's own ledger rows go too, and they need saying separately: they hang off
+       the execution rather than off a step, so deleting the steps does not cascade to
+       them. Before the steps, so the cascade has nothing left to do. */
+    await tx.delete(executionState).where(eq(executionState.executionId, execution.id));
     await tx.delete(testResults).where(eq(testResults.executionId, execution.id));
 
+    const resultIds = new Map<string, number>();
     if (report.steps.length) {
-      await tx.insert(testResults).values(
-        report.steps.map((step) => ({
+      const written = await tx
+        .insert(testResults)
+        .values(
+          report.steps.map((step) => ({
+            executionId: execution.id,
+            stepId: step.stepId,
+            stepName: step.stepName,
+            status: step.status,
+            requestMethod: step.method,
+            routePattern: step.routePattern,
+            requestUrl: step.requestUrl,
+            requestBody: step.requestBody ?? null,
+            responseStatus: step.responseStatus,
+            responseBody: step.responseBody ?? null,
+            responseTimeMs: step.responseTimeMs,
+            assertionResults: step.assertions ?? null,
+            errorMessage: step.errorMessage,
+          })),
+        )
+        .returning({ id: testResults.id, stepId: testResults.stepId });
+      for (const row of written) resultIds.set(row.stepId, row.id);
+    }
+
+    /* What moved: each step's margin, then the run's own reading with no step against
+       it. `seq` is the order the readings were taken, which is the order a ledger is
+       worth reading in.
+
+       Matched to their steps by step id rather than by position in the RETURNING,
+       because the ledger is the only record of a fact nothing else can recover, and
+       "the rows come back in the order they went in" is not a promise worth resting
+       that on. */
+    const ledger = [
+      ...report.steps.flatMap((step) =>
+        (step.moved ?? []).map((unit) => ({ unit, resultId: resultIds.get(step.stepId) ?? null })),
+      ),
+      ...(report.moved ?? []).map((unit) => ({ unit, resultId: null })),
+    ];
+
+    if (ledger.length) {
+      await tx.insert(executionState).values(
+        ledger.map(({ unit, resultId }, seq) => ({
           executionId: execution.id,
-          stepId: step.stepId,
-          stepName: step.stepName,
-          status: step.status,
-          requestMethod: step.method,
-          routePattern: step.routePattern,
-          requestUrl: step.requestUrl,
-          requestBody: step.requestBody ?? null,
-          responseStatus: step.responseStatus,
-          responseBody: step.responseBody ?? null,
-          responseTimeMs: step.responseTimeMs,
-          assertionResults: step.assertions ?? null,
-          errorMessage: step.errorMessage,
+          testResultId: resultId,
+          seq,
+          unit: unit.unit,
+          rowsMoved: unit.rows,
+          fromValue: unit.from ?? null,
+          toValue: unit.to ?? null,
         })),
       );
     }
@@ -475,6 +538,7 @@ export async function completeJob(
         durationMs: report.durationMs,
         dockerContainerId: report.containerId,
         errorMessage: report.errorMessage,
+        stateNote: report.stateNote ?? null,
       })
       .where(
         and(

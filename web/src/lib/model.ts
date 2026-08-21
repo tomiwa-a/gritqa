@@ -205,6 +205,20 @@ export type TestPlanDetail = TestPlan & {
   revisions: PlanRevision[];
 };
 
+/**
+ * One unit that changed, as the runner measured it.
+ *
+ * `rows` is signed, because a delete moving a count down is as much a finding as an
+ * insert moving it up. `from`/`to` are the high-water mark either side and are null
+ * for a unit that can only be counted -- a UUID primary key has no MAX.
+ */
+export type MovedUnit = {
+  unit: string;
+  rows: number;
+  from: string | null;
+  to: string | null;
+};
+
 export type StepResult = {
   stepName: string;
   status: StepStatus;
@@ -220,6 +234,12 @@ export type StepResult = {
    * without describing.
    */
   errorMessage: string | null;
+  /**
+   * What this step changed. Empty is a finding in its own right for a step that
+   * claimed to write, and it is only measured after steps that could -- a GET's
+   * margin is not taken, which is why the run's own ledger is not the sum of these.
+   */
+  moved: MovedUnit[];
 };
 
 export type TestExecution = {
@@ -238,6 +258,17 @@ export type TestExecution = {
    */
   startedAt: string | null;
   steps: StepResult[];
+  /**
+   * The run's own reading: what the world looks like after, against before the first
+   * step. Not the sum of the steps' margins -- this is the reading that catches a GET
+   * that writes.
+   */
+  moved: MovedUnit[];
+  /**
+   * Why the ledger is incomplete, when it is. An empty `moved` with no note means the
+   * run changed nothing; with one it means nobody could tell.
+   */
+  stateNote: string | null;
 };
 
 /**

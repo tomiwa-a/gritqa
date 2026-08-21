@@ -347,6 +347,14 @@ export const testExecutions = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     durationMs: integer('duration_ms'),
     errorMessage: text('error_message'),
+    /**
+     * Why the state ledger is incomplete, when it is.
+     *
+     * Never decides the status: the HTTP result stands on its own and the delta is
+     * annotation. It exists because an empty ledger otherwise means either "this run
+     * changed nothing" or "we could not tell", and those are opposite findings.
+     */
+    stateNote: text('state_note'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -420,6 +428,52 @@ export const testResults = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('test_results_execution_idx').on(t.executionId, t.id)],
+);
+
+/**
+ * What a run moved, which is the fact `test_results` cannot hold: a 201 says the
+ * request was accepted, not that a row appeared.
+ *
+ * One table at two scopes. A row with a `testResultId` is that step's margin,
+ * measured after it ran; a row without one is the run's own reading, after the last
+ * step against before the first. The second is deliberately not the sum of the
+ * first -- margins are only taken after steps that could write, so the run reading
+ * is what catches a GET that writes. The hotel API's `guest_wallets +1` on a read
+ * was found exactly this way.
+ *
+ * Rows rather than jsonb on `test_results`, because the question this is kept for is
+ * an aggregate: "when anything hits POST /rooms, what moves?" -- a GROUP BY over
+ * `unit` joined to `route_pattern` across every run.
+ *
+ * No `public_id`, following `auditLogs`: nothing addresses a ledger row from
+ * outside, and this is the table designed to grow without bound.
+ */
+export const executionState = pgTable(
+  'execution_state',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    executionId: bigint('execution_id', { mode: 'number' })
+      .notNull()
+      .references(() => testExecutions.id, { onDelete: 'cascade' }),
+    /** The step whose margin this is. Null is the run's own reading. */
+    testResultId: bigint('test_result_id', { mode: 'number' }).references(
+      () => testResults.id,
+      { onDelete: 'cascade' },
+    ),
+    seq: integer('seq').notNull(),
+    /** A table name, or a watched path for the filesystem units. */
+    unit: text('unit').notNull(),
+    /** Signed: a delete moving a count down is as much a finding as an insert. */
+    rowsMoved: bigint('rows_moved', { mode: 'number' }).notNull(),
+    /**
+     * The high-water mark either side. Null for a unit that can only be counted --
+     * a UUID key has no MAX, so the runner reports the count and leaves these.
+     */
+    fromValue: text('from_value'),
+    toValue: text('to_value'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('execution_state_execution_idx').on(t.executionId, t.seq)],
 );
 
 /**
@@ -572,6 +626,7 @@ export type TestPlanRow = typeof testPlans.$inferSelect;
 export type PlanRevisionRow = typeof planRevisions.$inferSelect;
 export type TestExecutionRow = typeof testExecutions.$inferSelect;
 export type TestResultRow = typeof testResults.$inferSelect;
+export type ExecutionStateRow = typeof executionState.$inferSelect;
 export type CommitRow = typeof commits.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
 export type MockEndpointRow = typeof mockEndpoints.$inferSelect;

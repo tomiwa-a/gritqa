@@ -1,10 +1,10 @@
 import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
-import { testExecutions, testPlans, testResults } from '@/lib/db/schema';
+import { executionState, testExecutions, testPlans, testResults } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
 import { asDate } from '@/lib/db/when';
 import type { Method } from '@/components/ui/method-badge';
-import type { RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
+import type { MovedUnit, RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
 
 /**
  * Executions, at the two levels of detail the screens ask for.
@@ -119,6 +119,7 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       // columns, so the builder types them as Dates, and a raw expression here
       // would come back as an unknown needing `asDate`.
       createdAt: testExecutions.createdAt,
+      stateNote: testExecutions.stateNote,
       planPublicId: testPlans.publicId,
       planName: testPlans.name,
     })
@@ -129,9 +130,11 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
     .limit(limit);
 
   if (!rows.length) return [];
+  const ids = rows.map((row) => row.id);
 
   const steps = await db
     .select({
+      id: testResults.id,
       executionId: testResults.executionId,
       stepName: testResults.stepName,
       status: testResults.status,
@@ -142,13 +145,32 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       errorMessage: testResults.errorMessage,
     })
     .from(testResults)
-    .where(
-      inArray(
-        testResults.executionId,
-        rows.map((row) => row.id),
-      ),
-    )
+    .where(inArray(testResults.executionId, ids))
     .orderBy(asc(testResults.executionId), asc(testResults.id));
+
+  const ledger = await db
+    .select({
+      executionId: executionState.executionId,
+      testResultId: executionState.testResultId,
+      unit: executionState.unit,
+      rows: executionState.rowsMoved,
+      from: executionState.fromValue,
+      to: executionState.toValue,
+    })
+    .from(executionState)
+    .where(inArray(executionState.executionId, ids))
+    .orderBy(asc(executionState.executionId), asc(executionState.seq));
+
+  /* One query, split two ways on arrival: a row with a step is that step's margin, a
+     row without one is the run's own reading. They are read in different places and
+     the second is not the sum of the first. */
+  const stepMoved = new Map<number, MovedUnit[]>();
+  const runMoved = new Map<string, MovedUnit[]>();
+  for (const row of ledger) {
+    const moved: MovedUnit = { unit: row.unit, rows: row.rows, from: row.from, to: row.to };
+    if (row.testResultId === null) group(runMoved, String(row.executionId), moved);
+    else group(stepMoved, row.testResultId, moved);
+  }
 
   const byExecution = new Map<string, StepResult[]>();
   for (const step of steps) {
@@ -164,10 +186,9 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       responseStatus: step.responseStatus,
       responseTimeMs: step.responseTimeMs,
       errorMessage: step.errorMessage,
+      moved: stepMoved.get(step.id) ?? [],
     };
-    const list = byExecution.get(key);
-    if (list) list.push(entry);
-    else byExecution.set(key, [entry]);
+    group(byExecution, key, entry);
   }
 
   return rows.map((row) => ({
@@ -179,7 +200,15 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
     startedLabel: agoLabel(row.startedAt ?? row.createdAt),
     startedAt: row.startedAt?.toISOString() ?? null,
     steps: byExecution.get(String(row.id)) ?? [],
+    moved: runMoved.get(String(row.id)) ?? [],
+    stateNote: row.stateNote,
   }));
+}
+
+function group<K, V>(map: Map<K, V[]>, key: K, value: V) {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
 }
 
 export type RunStripStats = {
