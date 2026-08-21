@@ -4,7 +4,17 @@ import { Icon } from '@/components/ui/icon';
  * An illustration, not a reading: a plausible last draft, so the boundary has
  * something concrete to point at. The paths follow the indexed project's layout,
  * because a made-up directory here would quietly claim the index has files it does
- * not. When drafting is real this reads the transcript's file list instead.
+ * not.
+ *
+ * Still an illustration now that drafting is real, because the agent's account of
+ * what it read is returned and not yet stored -- `refinePlan` hands back `findings`
+ * and the action drops them. Storing that transcript is what turns this panel into
+ * a reading, and it is the next thing owed to it.
+ *
+ * What did change is the shape of the claim. The old copy said "only the files that
+ * changed", which was true of a payload assembled by the CLI and is not true of an
+ * agent that decides what to open -- it reads what it needs to answer, which is the
+ * point of it.
  */
 const SENT = [
   { path: 'internal/http/checkout.go', lines: 148 },
@@ -12,10 +22,23 @@ const SENT = [
   { path: 'internal/store/orders.go', lines: 61 },
 ];
 
+/**
+ * The three that are still true, and one of them narrowed on purpose.
+ *
+ * "Anything in your database" became "rows from your own", because the agent can
+ * query a database -- the sandbox GritQA built from the project's own migrations.
+ * Its *shape* therefore leaves, which the paragraph below now says, and its rows are
+ * fixtures rather than anybody's data.
+ *
+ * The runs line narrowed too. A refinement is told which assertion a failing run
+ * disagreed on, expected against actual, because that is the most useful sentence
+ * available when rewriting a plan that broke. One assertion is not the body it came
+ * from, and the difference is worth stating rather than rounding off.
+ */
 const HELD = [
   'Environment files, secrets, and tokens',
-  'Anything in your database',
-  'The requests and responses from your runs',
+  'Rows from your own database',
+  'Whole requests and responses from your runs',
 ];
 
 export function DataBoundary() {
@@ -52,7 +75,7 @@ export function DataBoundary() {
           </ul>
 
           <p className="nums mt-2.5 font-mono text-[10.5px] text-term-dim">
-            {SENT.length} changed files · {lines} lines
+            {SENT.length} files read · {lines} lines
           </p>
         </div>
 
@@ -71,7 +94,8 @@ export function DataBoundary() {
           </ul>
 
           <p className="mt-3 border-t border-rule-dark pt-3 text-[11px] leading-snug text-term-dim">
-            Only the files that changed, only to the provider holding the key above. Turn drafting
+            Whatever it opens to answer you, your schema&rsquo;s shape, and the one assertion a
+            failing run disagreed on. Only ever to the provider holding the key above. Turn drafting
             off and nothing goes anywhere.
           </p>
         </div>

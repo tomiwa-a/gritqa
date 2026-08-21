@@ -10,3 +10,7 @@ export { resolveModel, modelConfigured, NoModelKeyError } from './model';
 export type { ResolvedModel } from './model';
 export { openResearch, researchConfigured, CliUnavailableError } from './research';
 export type { Research } from './research';
+export { refinePlan } from './draft';
+export type { Refinement } from './draft';
+export { revisionSchema } from './plan-schema';
+export type { RevisionDraft } from './plan-schema';

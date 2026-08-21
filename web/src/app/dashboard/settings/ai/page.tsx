@@ -37,8 +37,8 @@ export default async function AiSettingsPage() {
         <p className="flex items-start gap-2 text-[12.5px] leading-snug text-ink-muted">
           <Icon name="shield" size={14} className="mt-px shrink-0 text-ink-subtle" />
           {user.aiKeyMasked
-            ? 'The source files you change are sent to the model above when you ask for a draft. Removing the key is what revokes that, and it is the only thing that does.'
-            : 'Nothing is sent anywhere. Adding a key is what lets the files you change reach a model, and removing it is what stops them.'}
+            ? 'When you ask for a draft, GritQA reads whatever parts of your code it needs to answer and sends them to the model above. Removing the key is what revokes that, and it is the only thing that does.'
+            : 'Nothing is sent anywhere. Adding a key is what lets GritQA read your code and send it to a model, and removing it is what stops them.'}
         </p>
       </Panel>
 

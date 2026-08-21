@@ -94,7 +94,11 @@ export async function PlanConversation({ id, closeHref }: { id: string; closeHre
       title={plan.name}
       footer={
         canAsk ? (
-          <RefineComposer nextVersion={plan.version + 1} />
+          <RefineComposer
+            publicId={plan.publicId}
+            nextVersion={plan.version + 1}
+            wasApproved={plan.status === 'approved'}
+          />
         ) : (
           <p className="text-[12px] leading-relaxed text-ink-subtle">
             This plan is archived. It is kept for the record and never redrafted — copy it into a
