@@ -1,5 +1,7 @@
 import { createMCPClient } from '@ai-sdk/mcp';
 import type { MCPClient } from '@ai-sdk/mcp';
+import { jsonSchema } from 'ai';
+import type { JSONSchema7 } from '@ai-sdk/provider';
 
 /**
  * The agent's read access to the codebase, over the CLI's MCP server.
@@ -122,7 +124,7 @@ export async function openResearch(): Promise<Research> {
 
   try {
     return {
-      tools: await client.tools(),
+      tools: portable(await client.tools()),
       serverName: client.serverInfo?.name ?? 'gritqa',
       close: () => client.close(),
     };
@@ -132,6 +134,81 @@ export async function openResearch(): Promise<Research> {
     await client.close().catch(() => {});
     throw new CliUnavailableError(describe(error, target.url));
   }
+}
+
+/**
+ * The CLI's tool schemas, in the dialect every provider can actually read.
+ *
+ * A model provider's function-calling schema is a *subset* of JSON Schema, and the
+ * subsets disagree. The CLI writes valid JSON Schema -- `derive_environment.recipe`
+ * is `type: ["null", "object"]`, an optional object -- and the Google provider turns
+ * a nullable type array into `anyOf` while leaving `properties`, `required` and
+ * `description` beside it. Vertex rejects the request outright: when `anyOf` is
+ * present it must be the only field set. The 400 names the CLI's tool, which sends
+ * you looking in the wrong repository.
+ *
+ * So the seam between the two halves is where this gets absorbed. The CLI is not
+ * going to grow a list of which model vendors mangle which keyword, and it should
+ * not have to -- it describes its tools once, correctly, and the brain adapts them
+ * to whatever it is thinking with today.
+ *
+ * `["null", T]` becomes `T`, which for an argument that is not in `required` says
+ * the same thing: leave it out. `derive_environment`'s own description already
+ * words it that way -- "omit to read the current one" -- so nothing is lost that
+ * the model was using. Applied for every provider rather than only for Vertex,
+ * because one code path that is always exercised beats a second one that is right
+ * only until nobody looks at it.
+ */
+type ToolSet = Awaited<ReturnType<MCPClient['tools']>>;
+
+function portable(tools: ToolSet): ToolSet {
+  const out: Record<string, unknown> = {};
+
+  for (const [name, tool] of Object.entries(tools)) {
+    const schema = tool.inputSchema as {
+      jsonSchema?: JSONSchema7;
+      validate?: Parameters<typeof jsonSchema>[1] extends { validate?: infer V } ? V : never;
+    };
+
+    /* A Zod-backed tool would have no `jsonSchema` to rewrite. MCP always gives us
+       the JSON Schema one, and passing anything else through unchanged is the right
+       answer rather than something to guard against. */
+    out[name] =
+      schema && typeof schema === 'object' && schema.jsonSchema
+        ? {
+            ...tool,
+            inputSchema: jsonSchema(collapseNullables(schema.jsonSchema) as JSONSchema7, {
+              validate: schema.validate,
+            }),
+          }
+        : tool;
+  }
+
+  return out as ToolSet;
+}
+
+/**
+ * Depth-first, because the union can be on any property at any level -- `recipe` is
+ * nullable and so are three of its own fields.
+ *
+ * A type array with more than one non-null member is a genuine union and is left
+ * alone: narrowing it would change what the tool accepts, and the honest failure is
+ * the provider saying it cannot represent it. Nothing the CLI advertises is one.
+ */
+function collapseNullables(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(collapseNullables);
+  if (node === null || typeof node !== 'object') return node;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'type' && Array.isArray(value)) {
+      const real = value.filter((t) => t !== 'null');
+      out.type = real.length === 1 ? real[0] : real.length === 0 ? 'null' : real;
+      continue;
+    }
+    out[key] = collapseNullables(value);
+  }
+  return out;
 }
 
 function describe(error: unknown, url: string): string {
