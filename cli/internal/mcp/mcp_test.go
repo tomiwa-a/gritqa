@@ -40,8 +40,10 @@ func (s *stub) Index(context.Context) (*index.Snapshot, index.Delta, error) {
 	}, index.Delta{Changed: []string{"api/user.php"}}, nil
 }
 
-func (s *stub) Sandbox(context.Context) (*sandbox.Sandbox, error) {
-	return nil, errNoDocker
+func (s *stub) Sandbox() *sandbox.Sandbox { return nil }
+
+func (s *stub) StartSandbox(context.Context) (Boot, error) {
+	return Boot{}, errNoDocker
 }
 
 func (s *stub) Recipe(context.Context) (sandbox.Recipe, error) {
@@ -124,12 +126,13 @@ func TestAnExecuteToolIsNotAdvertisedToAReadClient(t *testing.T) {
 	read, _ := connect(t, Read)
 	got := names(t, read)
 
-	for _, want := range []string{"get_index", "read_file", "search", "db", "describe_schema", "derive_environment"} {
+	for _, want := range []string{"get_index", "read_file", "search", "db", "start_sandbox",
+		"teardown", "derive_environment"} {
 		if !has(got, want) {
 			t.Errorf("a read client cannot reach %s: %v", want, got)
 		}
 	}
-	for _, gone := range []string{"run_plan", "snapshot", "restore", "teardown"} {
+	for _, gone := range []string{"run_plan", "snapshot", "restore"} {
 		if has(got, gone) {
 			t.Errorf("%s is advertised at read scope", gone)
 		}
@@ -415,8 +418,12 @@ func TestExecuteToolsReachTheBackend(t *testing.T) {
 // a protocol error that drops the session.
 func TestASandboxFailureIsAToolError(t *testing.T) {
 	cs, _ := connect(t, Read)
-	if msg := fails(t, cs, "describe_schema", nil); !strings.Contains(msg, "docker") {
+	if msg := fails(t, cs, "start_sandbox", nil); !strings.Contains(msg, "docker") {
 		t.Errorf("the failure said %q", msg)
+	}
+	// And a query does not bring one up on its own — it says what would.
+	if msg := fails(t, cs, "db", map[string]any{"sql": "SELECT 1"}); !strings.Contains(msg, "start_sandbox") {
+		t.Errorf("db without a sandbox said %q", msg)
 	}
 	if names(t, cs) == nil {
 		t.Error("the session did not survive a failed tool call")

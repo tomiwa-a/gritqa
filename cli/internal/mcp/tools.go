@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,16 +44,18 @@ var surface = []struct {
 				"source files, returning matching lines with their paths."}, s.search)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
-		sdk.AddTool(m, &sdk.Tool{Name: "describe_schema",
-			Description: "Columns, types and keys of the sandbox database, which GritQA created " +
-				"and migrated with the project's own tooling. No rows. First call brings the " +
-				"sandbox up and can take a minute."}, s.describeSchema)
+		sdk.AddTool(m, &sdk.Tool{Name: "start_sandbox",
+			Description: "Bring up GritQA's own copy of this project: a database it created and " +
+				"migrated with the project's own tooling, and the app running against it. " +
+				"Nothing of the developer's is touched. Slow the first time, and it is the only " +
+				"thing that starts Docker — reach for it when reading source is not enough and " +
+				"you need to query real data."}, s.startSandbox)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "db",
-			Description: "Run one read-only query against the sandbox database. SELECT, SHOW, " +
-				"EXPLAIN or DESCRIBE only, one statement. This is GritQA's own database, not " +
-				"the developer's."}, s.db)
+			Description: "Run one read-only query against the sandbox database, which has to be " +
+				"running already. One statement, and nothing that writes. This is GritQA's own " +
+				"database, not the developer's, so information_schema describes what it created."}, s.db)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "derive_environment",
@@ -77,10 +80,10 @@ var surface = []struct {
 			Description: "Return the sandbox database to its baseline, dropping everything " +
 				"written since."}, s.restore)
 	}},
-	{Execute, func(m *sdk.Server, s *Server) {
+	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "teardown",
 			Description: "Remove the sandbox — database, app container, network and volumes. " +
-				"The next tool that needs one brings a fresh one up."}, s.teardown)
+				"Leaves nothing of GritQA's running on the machine."}, s.teardown)
 	}},
 }
 
@@ -339,30 +342,38 @@ func clipped(s string) string {
 	return s[:clip] + "…"
 }
 
-// describe_schema
+// start_sandbox
 
-type schemaIn struct {
-	Table string `json:"table,omitempty" jsonschema:"one table, or empty for all of them"`
+type startOut struct {
+	Database string   `json:"database"`
+	BaseURL  string   `json:"base_url"`
+	Tables   []string `json:"tables"`
+	Already  bool     `json:"already_running,omitempty"`
+	Took     string   `json:"took"`
 }
 
-type schemaOut struct {
-	Database string          `json:"database"`
-	Tables   []sandbox.Table `json:"tables"`
+func (s *Server) startSandbox(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, startOut, error) {
+	began := time.Now()
+	boot, err := s.back.StartSandbox(ctx)
+	if err != nil {
+		return nil, startOut{}, err
+	}
+	return nil, startOut{
+		Database: boot.Database, BaseURL: boot.BaseURL, Tables: boot.Tables, Already: boot.Already,
+		Took: time.Since(began).Round(time.Millisecond).String(),
+	}, nil
 }
 
-func (s *Server) describeSchema(ctx context.Context, _ *sdk.CallToolRequest, in schemaIn) (*sdk.CallToolResult, schemaOut, error) {
-	box, err := s.back.Sandbox(ctx)
-	if err != nil {
-		return nil, schemaOut{}, err
+// live is the sandbox as it stands. Nothing boots one on the way to answering a
+// question: start_sandbox is how Docker starts, so a research turn never pays for
+// a container it did not ask for.
+func (s *Server) live() (*sandbox.Sandbox, error) {
+	box := s.back.Sandbox()
+	if box == nil {
+		return nil, errors.New("no sandbox is running — start_sandbox brings GritQA's own " +
+			"database and a copy of the app up, and takes about a minute the first time")
 	}
-	tables, err := box.Schema(ctx, in.Table)
-	if err != nil {
-		return nil, schemaOut{}, err
-	}
-	if in.Table != "" && len(tables) == 0 {
-		return nil, schemaOut{}, fmt.Errorf("no table called %s — call describe_schema with no argument to list them", in.Table)
-	}
-	return nil, schemaOut{Database: box.Env()["DB_NAME"], Tables: tables}, nil
+	return box, nil
 }
 
 // db
@@ -388,7 +399,7 @@ func (s *Server) db(ctx context.Context, _ *sdk.CallToolRequest, in dbIn) (*sdk.
 		limit = maxRows
 	}
 
-	box, err := s.back.Sandbox(ctx)
+	box, err := s.live()
 	if err != nil {
 		return nil, dbOut{}, err
 	}
@@ -712,7 +723,7 @@ type baselineOut struct {
 }
 
 func (s *Server) snapshot(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, baselineOut, error) {
-	box, err := s.back.Sandbox(ctx)
+	box, err := s.live()
 	if err != nil {
 		return nil, baselineOut{}, err
 	}
@@ -723,7 +734,7 @@ func (s *Server) snapshot(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn
 }
 
 func (s *Server) restore(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, baselineOut, error) {
-	box, err := s.back.Sandbox(ctx)
+	box, err := s.live()
 	if err != nil {
 		return nil, baselineOut{}, err
 	}

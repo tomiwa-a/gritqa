@@ -22,9 +22,12 @@ import (
 type Backend interface {
 	// Index reads the project, and reports what changed since the last pass.
 	Index(ctx context.Context) (*index.Snapshot, index.Delta, error)
-	// Sandbox brings the run's own database and app up, once, on first use. A
-	// project with no sandbox configured returns an error saying so.
-	Sandbox(ctx context.Context) (*sandbox.Sandbox, error)
+	// Sandbox is the sandbox as it stands, or nil when none is up. It never starts
+	// one, so a query cannot boot Docker as a side effect of being asked.
+	Sandbox() *sandbox.Sandbox
+	// StartSandbox brings the run's own database, app and baseline up, and reports
+	// what came up. Slow the first time, a no-op after that.
+	StartSandbox(ctx context.Context) (Boot, error)
 	// Recipe is how GritQA currently thinks this project boots.
 	Recipe(ctx context.Context) (sandbox.Recipe, error)
 	// Propose records a recipe the agent worked out. It is pending until a human
@@ -34,6 +37,15 @@ type Backend interface {
 	// exactly as --plan wires them.
 	RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error)
 	Teardown(ctx context.Context) error
+}
+
+// Boot is what came up, reported back so an agent knows what it is querying and
+// what the first call cost.
+type Boot struct {
+	Database string
+	BaseURL  string
+	Tables   []string
+	Already  bool
 }
 
 type Options struct {

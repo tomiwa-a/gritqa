@@ -25,7 +25,7 @@ type serve struct {
 	w    *term.Writer
 
 	// mu serialises the expensive, once-only things: two concurrent get_index
-	// calls would contend on one SQLite file, and two describe_schema calls would
+	// calls would contend on one SQLite file, and two start_sandbox calls would
 	// each try to bring a sandbox up.
 	mu    sync.Mutex
 	store *index.Store
@@ -104,15 +104,31 @@ func (b *serve) Propose(_ context.Context, r sandbox.Recipe) error {
 	return nil
 }
 
-func (b *serve) Sandbox(ctx context.Context) (*sandbox.Sandbox, error) {
+// Sandbox answers with what is up and starts nothing. A tool that reads should
+// not leave a container behind on a machine whose owner never asked for one.
+func (b *serve) Sandbox() *sandbox.Sandbox {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if b.st == nil {
+		return nil
+	}
+	return b.st.box
+}
+
+func (b *serve) StartSandbox(ctx context.Context) (mcp.Boot, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	already := b.st != nil
 	st, err := b.staged(ctx)
 	if err != nil {
-		return nil, err
+		return mcp.Boot{}, err
 	}
-	return st.box, nil
+	return mcp.Boot{
+		Database: st.box.Env()["DB_NAME"], BaseURL: st.base,
+		Tables: st.box.Tables(), Already: already,
+	}, nil
 }
 
 // RunPlan executes against a restore of the post-seed baseline, so nothing
@@ -162,8 +178,8 @@ func (b *serve) Teardown(ctx context.Context) error {
 	return nil
 }
 
-// staged brings the sandbox up on the first tool that needs one, so --serve costs
-// nothing for a host that only ever searches. Callers hold mu.
+// staged brings the sandbox up for the tools that asked for one — start_sandbox,
+// or a run — so --serve costs nothing for a host that only reads. Callers hold mu.
 func (b *serve) staged(ctx context.Context) (*staged, error) {
 	if b.st != nil {
 		return b.st, nil
