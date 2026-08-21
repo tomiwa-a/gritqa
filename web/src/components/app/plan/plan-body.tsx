@@ -3,6 +3,7 @@ import { Panel } from '@/components/app/panel';
 import { StepSpine } from './step-spine';
 import { VariableChain } from './variable-chain';
 import { Provenance } from './provenance';
+import { Assumptions } from './assumptions';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
 import type { TestPlan, TestPlanDetail } from '@/lib/model';
@@ -77,6 +78,19 @@ export function PlanBody({
           bodyClassName="p-0"
         >
           <Provenance diff={detail.diffContext} />
+        </Panel>
+      )}
+
+      {/* Before the rules and before the steps: this is the part that decides whether
+          the rest is worth reading closely. */}
+      {detail.assumptions.length > 0 && (
+        <Panel
+          title="What it guessed at"
+          subtitle="Not findings — send the plan back if one of these is wrong"
+          bodyClassName="p-0"
+          className="border-warn/30"
+        >
+          <Assumptions assumptions={detail.assumptions} />
         </Panel>
       )}
 

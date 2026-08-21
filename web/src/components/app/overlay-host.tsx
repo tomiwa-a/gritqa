@@ -1,3 +1,4 @@
+import { AskPanel } from './ask/ask-panel';
 import { GenerateModal } from './generate/generate-modal';
 import { PlanConversation } from './plan/plan-conversation';
 import { PlanPreview } from './plan/plan-preview';
@@ -30,8 +31,14 @@ export async function OverlayHost({ params, pathname }: { params: PageParams; pa
     return <GenerateModal params={params} pathname={pathname} closeHref={closeHref} />;
   }
 
-  if (token.kind === 'ask') {
+  if (token.kind === 'refine') {
     return <PlanConversation id={token.id} closeHref={closeHref} />;
+  }
+
+  if (token.kind === 'ask') {
+    /* One token, two jobs, the same way `rule:` reads and writes: a conversation named
+       is the thread, and `ask:new` is the box with your earlier ones under it. */
+    return <AskPanel id={token.id} closeHref={closeHref} hrefFor={swapTo} />;
   }
 
   if (token.kind === 'rule') {
@@ -63,7 +70,7 @@ export async function OverlayHost({ params, pathname }: { params: PageParams; pa
       id={token.id}
       closeHref={closeHref}
       runDrawerHref={swapTo}
-      askDrawerHref={swapTo}
+      refineDrawerHref={swapTo}
     />
   );
 }

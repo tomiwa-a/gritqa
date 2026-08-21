@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Icon, type IconName } from '@/components/ui/icon';
+import { AskButton } from './ask/ask-button';
 import { NavItem } from './nav-item';
 import { ProjectSwitcher } from './project-switcher';
 import { SearchField } from './search-field';
@@ -100,8 +101,11 @@ export function Sidebar({
         )}
       </div>
 
-      <div className={cn('px-2 pt-2', collapsed && 'flex justify-center')}>
+      <div className={cn('flex flex-col gap-1.5 px-2 pt-2', collapsed && 'items-center')}>
         <SearchField collapsed={collapsed} />
+        {/* Above the nav rather than in it: this opens a panel over the page you are
+            on, which is not a destination and has no place in a list of them. */}
+        <AskButton collapsed={collapsed} onNavigate={onNavigate} />
       </div>
 
       <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-2">

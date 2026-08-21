@@ -12,5 +12,7 @@ export { openResearch, researchConfigured, CliUnavailableError } from './researc
 export type { Research } from './research';
 export { refinePlan, draftPlan } from './draft';
 export type { Refinement, Draft } from './draft';
+export { askAgent, priorFindingsOf, proposeBrief } from './ask';
+export type { AskTurn, PriorTurn } from './ask';
 export { revisionSchema, draftSchema } from './plan-schema';
 export type { RevisionDraft, PlanDraft } from './plan-schema';

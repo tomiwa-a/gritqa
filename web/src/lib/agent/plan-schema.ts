@@ -118,6 +118,23 @@ export const revisionSchema = z.object({
     .string()
     .min(1)
     .describe('What changed and why, in prose, addressed to the developer who asked'),
+  /**
+   * The guesses, said out loud.
+   *
+   * `summary` already asks the model to admit what it could not establish, and it
+   * lands in a paragraph nobody reads to the end. A list is read: it goes above the
+   * steps on the plan, where an assumption somebody disagrees with is one they can
+   * reject before it runs. This is the one-shot wizard's substitute for a clarifying
+   * question -- it cannot ask, so it has to show its work.
+   *
+   * A plain array of strings, which the wire dialect handles as-is: the `entries()`
+   * treatment below is only needed for maps.
+   */
+  assumptions: z
+    .array(z.string())
+    .describe(
+      "Anything this plan takes on faith: a value you invented because you could not find a real one, a route you inferred, an auth shape you guessed at. One short line each, in the developer's terms. Empty when you established everything from the code.",
+    ),
   changes: z.array(changeSchema),
 });
 

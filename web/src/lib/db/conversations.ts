@@ -1,0 +1,256 @@
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { conversationMessages, conversations, testPlans } from '@/lib/db/schema';
+import { agoLabel } from '@/lib/when';
+import type { AgentStep, Conversation, ConversationDetail, ConversationTurn } from '@/lib/model';
+
+/**
+ * Conversations, read and written.
+ *
+ * Scoped by project on every path, the same way `plans.ts` and `rules.ts` are: a
+ * conversation belonging to another project reads as absent rather than as
+ * forbidden, which is the answer that does not confirm the id exists.
+ */
+
+/**
+ * A title nobody typed.
+ *
+ * Asking a model for one would be a third call per conversation to produce six
+ * words, so it comes off the question itself -- first sentence, trimmed. The cost
+ * is that a rambling first message makes a mediocre title; the alternative was an
+ * untitled row, and an untitled row in a history list can never be found again.
+ */
+export function titleFrom(question: string): string {
+  const line = question.trim().split(/\n/)[0] ?? '';
+  const sentence = line.split(/(?<=[.?!])\s/)[0] ?? line;
+  const clean = sentence.replace(/\s+/g, ' ').trim();
+  if (clean.length <= 72) return clean || 'Untitled';
+  return `${clean.slice(0, 71).trimEnd()}…`;
+}
+
+/** `revision_author` on the way out, in the read model's two-sided naming. */
+function authorOf(stored: 'agent' | 'human'): ConversationTurn['author'] {
+  return stored === 'agent' ? 'ai' : 'you';
+}
+
+export async function listConversations(projectId: number): Promise<Conversation[]> {
+  const rows = await db
+    .select({
+      publicId: conversations.publicId,
+      title: conversations.title,
+      updatedAt: conversations.updatedAt,
+      /* Two counts as subqueries rather than two joins with a GROUP BY: the list is
+         short, both are indexed, and a join against messages would multiply the
+         conversation row before anything could be counted. */
+      turnCount: sql<number>`(
+        SELECT count(*) FROM ${conversationMessages}
+        WHERE ${conversationMessages.conversationId} = ${conversations.id}
+      )::int`,
+      planCount: sql<number>`(
+        SELECT count(*) FROM ${testPlans}
+        WHERE ${testPlans.conversationId} = ${conversations.id}
+      )::int`,
+    })
+    .from(conversations)
+    .where(eq(conversations.projectId, projectId))
+    .orderBy(desc(conversations.updatedAt));
+
+  return rows.map((row) => ({
+    publicId: row.publicId,
+    title: row.title,
+    whenLabel: agoLabel(row.updatedAt),
+    updatedAt: row.updatedAt.toISOString(),
+    turnCount: row.turnCount,
+    planCount: row.planCount,
+  }));
+}
+
+export async function conversationDetail(
+  projectId: number,
+  publicId: string,
+): Promise<ConversationDetail | null> {
+  const [row] = await db
+    .select({
+      id: conversations.id,
+      publicId: conversations.publicId,
+      title: conversations.title,
+      updatedAt: conversations.updatedAt,
+    })
+    .from(conversations)
+    .where(and(eq(conversations.projectId, projectId), eq(conversations.publicId, publicId)))
+    .limit(1);
+
+  if (!row) return null;
+
+  const [turns, plans] = await Promise.all([
+    db
+      .select({
+        publicId: conversationMessages.publicId,
+        seq: conversationMessages.seq,
+        author: conversationMessages.author,
+        body: conversationMessages.body,
+        steps: conversationMessages.steps,
+        createdAt: conversationMessages.createdAt,
+      })
+      .from(conversationMessages)
+      .where(eq(conversationMessages.conversationId, row.id))
+      .orderBy(asc(conversationMessages.seq)),
+    db
+      .select({
+        publicId: testPlans.publicId,
+        name: testPlans.name,
+        status: testPlans.status,
+        version: testPlans.version,
+      })
+      .from(testPlans)
+      .where(eq(testPlans.conversationId, row.id))
+      .orderBy(desc(testPlans.createdAt)),
+  ]);
+
+  return {
+    publicId: row.publicId,
+    title: row.title,
+    whenLabel: agoLabel(row.updatedAt),
+    updatedAt: row.updatedAt.toISOString(),
+    turnCount: turns.length,
+    planCount: plans.length,
+    turns: turns.map((turn) => ({
+      publicId: turn.publicId,
+      seq: turn.seq,
+      author: authorOf(turn.author),
+      body: turn.body,
+      whenLabel: agoLabel(turn.createdAt),
+      createdAt: turn.createdAt.toISOString(),
+      steps: turn.steps ?? [],
+    })),
+    plans,
+  };
+}
+
+/**
+ * The prose of a conversation, oldest first, for handing back to the model.
+ *
+ * Turns only -- the tool digests are for a developer reading the panel, not for the
+ * model, which already knows what it called. Kept here rather than derived from
+ * `conversationDetail` so that the agent path does not depend on the read model's
+ * labels: `whenLabel` is presentation, and a prompt built from it would go stale in
+ * a way nothing would notice.
+ */
+export async function conversationHistory(
+  conversationId: number,
+): Promise<{ author: 'agent' | 'human'; body: string }[]> {
+  return db
+    .select({ author: conversationMessages.author, body: conversationMessages.body })
+    .from(conversationMessages)
+    .where(eq(conversationMessages.conversationId, conversationId))
+    .orderBy(asc(conversationMessages.seq));
+}
+
+/**
+ * Enough of a conversation to write to it, and to talk about it.
+ *
+ * `title` is here because the brief proposal needs it and reading it costs one
+ * column: the panel has it on screen, but a title arriving back from the browser is
+ * a prompt somebody else could have written.
+ */
+export type ConversationRef = { id: number; publicId: string; title: string };
+
+/** The conversation by id, if it is in this project. Resolved before anything is written. */
+export async function findConversation(
+  projectId: number,
+  publicId: string,
+): Promise<ConversationRef | null> {
+  const [row] = await db
+    .select({
+      id: conversations.id,
+      publicId: conversations.publicId,
+      title: conversations.title,
+    })
+    .from(conversations)
+    .where(and(eq(conversations.projectId, projectId), eq(conversations.publicId, publicId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * One exchange -- a question and the answer to it -- and a conversation to hold it
+ * when there is not one yet.
+ *
+ * A question and its answer are written together, and that is the decision worth
+ * explaining. Storing the question first would make a closed panel less destructive
+ * for the sixty seconds the model is thinking, and it would pay for that with a
+ * thread that can contain a question nothing ever answered: a row that is not a
+ * record of anything, sitting above a composer, with no way to tell whether the
+ * answer is coming or the request died. So nothing is written until there is
+ * something to say. An ask that fails leaves no trace and the question is still in
+ * the box.
+ *
+ * `seq` is computed once and used twice, so the pair cannot straddle somebody else's
+ * turn. The unique index is what makes that a guarantee rather than an intention: two
+ * exchanges landing together means one transaction fails and is told to ask again,
+ * which is the right outcome for a panel one person is typing into.
+ */
+export async function writeExchange(input: {
+  projectId: number;
+  userId: number;
+  /** The thread this belongs to, or null to start one from the question. */
+  conversation: ConversationRef | null;
+  question: string;
+  answer: { body: string; steps: AgentStep[]; modelLabel: string };
+}): Promise<ConversationRef> {
+  return db.transaction(async (tx) => {
+    let thread = input.conversation;
+    if (!thread) {
+      const [created] = await tx
+        .insert(conversations)
+        .values({
+          projectId: input.projectId,
+          title: titleFrom(input.question),
+          createdBy: input.userId,
+        })
+        .returning({
+          id: conversations.id,
+          publicId: conversations.publicId,
+          title: conversations.title,
+        });
+      thread = created;
+    }
+
+    const [{ next }] = await tx
+      .select({
+        next: sql<number>`coalesce(max(${conversationMessages.seq}), 0) + 1`.mapWith(Number),
+      })
+      .from(conversationMessages)
+      .where(eq(conversationMessages.conversationId, thread.id));
+
+    await tx.insert(conversationMessages).values([
+      {
+        conversationId: thread.id,
+        seq: next,
+        author: 'human',
+        /* Null on both, which the table's CHECK requires: somebody typing called no
+           tools and used no model. */
+        body: input.question,
+      },
+      {
+        conversationId: thread.id,
+        seq: next + 1,
+        author: 'agent',
+        body: input.answer.body,
+        steps: input.answer.steps,
+        modelLabel: input.answer.modelLabel,
+      },
+    ]);
+
+    /* The value set here is discarded -- `set_updated_at()` overwrites it with the
+       server's own now() on every UPDATE. What the statement is for is causing the
+       update, so the trigger fires and the history list re-sorts by what was last
+       spoken in. */
+    await tx
+      .update(conversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(conversations.id, thread.id));
+
+    return thread;
+  });
+}

@@ -243,6 +243,15 @@ export type Draft = PlanDraft & {
  * "refund part of a charge, then try to refund more than what is left" into steps is
  * the whole job; a form that made them pick endpoints and methods first would be
  * asking them to do it by hand and then also describe it.
+ *
+ * A draft that came out of a conversation is handed what that conversation found, and
+ * still researches. Skipping pass one on the strength of it would be drafting with no
+ * connection to the machine at all -- and a conversation held ten minutes ago is a
+ * cache, which is the one thing research is not allowed to be: a plan built on a
+ * previous state of the tree is confidently wrong about code that has since changed.
+ * It would also make the unreachable-CLI failure impossible to hit on this path,
+ * quietly making an unverified plan cheaper to produce than a verified one. What the
+ * prior findings buy is the difference between confirming a route and finding it.
  */
 export async function draftPlan(input: {
   /** What the plan should prove, in the developer's words. */
@@ -252,6 +261,11 @@ export async function draftPlan(input: {
   /** A name the developer supplied, if they bothered. The agent writes one otherwise. */
   name?: string;
   rules: TestingRule[];
+  /**
+   * What a conversation already established about this code, when the draft came out
+   * of one. Context for pass one, not a substitute for it -- see below.
+   */
+  priorFindings?: string;
 }): Promise<Draft> {
   const { model, label } = await resolveModel();
   const research = await openResearch();
@@ -264,6 +278,18 @@ export async function draftPlan(input: {
       system: context,
       prompt: [
         `The developer wants a test plan that proves this: "${input.brief}"`,
+        ...(input.priorFindings
+          ? [
+              '',
+              'You already looked at this code, in a conversation that led here. What you',
+              'found then:',
+              input.priorFindings,
+              '',
+              'Confirm it and fill the gaps rather than starting over. Anything you already',
+              'established needs one check that it is still true, not a fresh investigation;',
+              'spend the reading on what a plan needs and a conversation did not cover.',
+            ]
+          : []),
         '',
         'Go and find out how the code actually does it. The routes involved and their',
         'real paths, the exact field names each one reads off the request and returns in',

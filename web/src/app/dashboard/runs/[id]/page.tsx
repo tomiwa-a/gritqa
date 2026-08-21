@@ -23,7 +23,7 @@ import {
 } from '@/lib/runs';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { GenerateMenu } from '@/components/app/generate-menu';
-import { askToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
+import { refineToken, planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 const BADGE = {
   passed: 'pass',
@@ -95,7 +95,7 @@ export default async function RunDetailPage({
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
   /* The conversation is about the plan, but it opens here — the evidence for
      what you want changed is on this page. */
-  const refineHref = withOverlay(path, query, askToken(run.planPublicId));
+  const refineHref = withOverlay(path, query, refineToken(run.planPublicId));
   const siblings = runsForPlan(rows, run.planPublicId).filter((r) => r.publicId !== run.publicId);
 
   /* Checking the plan or a sibling run should not cost you this report. */

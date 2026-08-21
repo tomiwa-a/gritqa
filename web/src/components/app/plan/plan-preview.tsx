@@ -9,7 +9,7 @@ import { approvePlanAction, runPlanAction, sendBackPlanAction } from '@/lib/acti
 import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
-import { askToken, runToken } from '@/lib/overlay';
+import { refineToken, runToken } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/model';
 
 const STATUS: Record<
@@ -29,13 +29,13 @@ export async function PlanPreview({
   id,
   closeHref,
   runDrawerHref,
-  askDrawerHref,
+  refineDrawerHref,
 }: {
   id: string;
   closeHref: string;
   runDrawerHref?: (token: string) => string;
   /** Swaps this panel for the conversation, so asking stays one click deep. */
-  askDrawerHref?: (token: string) => string;
+  refineDrawerHref?: (token: string) => string;
 }) {
   const [allPlans, cliConnected, history, recent] = await Promise.all([
     getAllPlans(),
@@ -52,7 +52,7 @@ export async function PlanPreview({
 
   /* The third outcome, and it reads like the other two rather than a trip.
      Without a panel to swap to, the plan's own page carries the same button. */
-  const askHref = askDrawerHref ? askDrawerHref(askToken(plan.publicId)) : base;
+  const refineHref = refineDrawerHref ? refineDrawerHref(refineToken(plan.publicId)) : base;
 
   const lastRun = runsForPlan(runRowsOf(history, recent), plan.publicId)[0];
   const lastRunHref = lastRun
@@ -105,7 +105,7 @@ export async function PlanPreview({
                 </Button>
               </form>
               <Link
-                href={askHref}
+                href={refineHref}
                 scroll={false}
                 title="Say what should change, and read the new version"
                 className={buttonVariants({
@@ -172,7 +172,7 @@ export async function PlanPreview({
               {/* Archived plans are kept for the record, never redrafted. */}
               {plan.status === 'approved' && (
                 <Link
-                  href={askHref}
+                  href={refineHref}
                   scroll={false}
                   title="Say what should change, and read the new version"
                   className={buttonVariants({

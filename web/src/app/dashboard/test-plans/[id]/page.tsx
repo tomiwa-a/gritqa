@@ -25,7 +25,7 @@ import {
 import { archivePlanAction, runPlanAction } from '@/lib/actions/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
-import { askToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
+import { refineToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { TestPlan } from '@/lib/model';
 
 const TABS = ['steps', 'diff', 'raw'] as const;
@@ -54,13 +54,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 function SettledBar({
   plan,
   cliConnected,
-  askHref,
+  refineHref,
   runHref,
 }: {
   plan: TestPlan;
   cliConnected: boolean;
   /** Opens the conversation panel over this page. */
-  askHref: string;
+  refineHref: string;
   /** Where the last-run readout goes — a preview over this page, when there is a run. */
   runHref?: string;
 }) {
@@ -122,7 +122,7 @@ function SettledBar({
         )}
 
         <Link
-          href={askHref}
+          href={refineHref}
           scroll={false}
           title="Say what should change, and read the new version"
           className={buttonVariants({ variant: 'secondary', size: 'sm' })}
@@ -200,7 +200,7 @@ export default async function PlanDetailPage({
 
   /* One drawer at a time: a preview opening here parks the step inspector. */
   const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
-  const askHref = withOverlay(base, query, askToken(plan.publicId));
+  const refineHref = withOverlay(base, query, refineToken(plan.publicId));
   const newestRun = runsForPlan(runRowsOf(history, recent), plan.publicId)[0];
   const runPreviewHref = newestRun
     ? withOverlay(base, query, runToken(newestRun.publicId))
@@ -291,13 +291,13 @@ export default async function PlanDetailPage({
               <DecisionBar
                 planId={plan.publicId}
                 cliConnected={cliConnected}
-                refineHref={askHref}
+                refineHref={refineHref}
               />
             ) : (
               <SettledBar
                 plan={plan}
                 cliConnected={cliConnected}
-                askHref={askHref}
+                refineHref={refineHref}
                 runHref={runPreviewHref}
               />
             )}

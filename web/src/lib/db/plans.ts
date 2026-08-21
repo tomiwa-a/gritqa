@@ -35,6 +35,8 @@ type PlanJson = {
   variables?: Record<string, string>;
   covers?: Endpoint[];
   steps?: PlanStepSpec[];
+  /** Absent on every plan drafted before the field existed, which reads as none. */
+  assumptions?: string[];
 };
 
 const planJsonOf = (row: TestPlanRow): PlanJson => (row.planJson ?? {}) as PlanJson;
@@ -208,6 +210,7 @@ function toDetail(
     baseUrl: row.baseUrl,
     variables: json.variables ?? {},
     steps: json.steps ?? [],
+    assumptions: json.assumptions ?? [],
     diffContext: (row.diffContext as PlanDiffContext | null) ?? null,
     previousFailure: failure ? toFailureSeed(failure) : null,
     // Oldest first. The detail page reads a version's predecessor as the entry

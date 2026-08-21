@@ -89,7 +89,12 @@ function labelFor(action: string, entityType: string, values: Values): string {
       const source = text(values, 'source');
       return source ? `${subject} added from the ${source}` : `${subject} added`;
     }
-    case 'test_plan.created': {
+    /* Two actions, one sentence. `created` came first and `drafted` is what the
+       generate action writes, and a log that rendered the second as a raw action name
+       beside the first would read as two unrelated things happening. */
+    case 'test_plan.created':
+    case 'test_plan.drafted': {
+      if (values.from === 'conversation') return `${subject} drafted from a conversation`;
       const from = values.triggerSource === 'git_push' ? ' from a push' : '';
       return `${subject} drafted${from}`;
     }

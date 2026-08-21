@@ -9,6 +9,7 @@
 export { getUser, getSessionUser } from './user';
 export { getProjects, getCurrentProject, getCurrentProjectOrNull } from './projects';
 export { getRules } from './rules';
+export { getConversation, getConversations } from './conversations';
 export {
   getAllPlans,
   getLastBaseUrl,

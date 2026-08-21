@@ -200,6 +200,11 @@ export type TestPlanDetail = TestPlan & {
   baseUrl: string;
   variables: Record<string, string>;
   steps: PlanStepSpec[];
+  /**
+   * What the plan takes on faith. Empty for a plan whose every value came off the
+   * code, which is the outcome to aim for and not the common one.
+   */
+  assumptions: string[];
   diffContext: PlanDiffContext | null;
   previousFailure: PlanFailureSeed | null;
   revisions: PlanRevision[];
@@ -331,4 +336,50 @@ export type AuditEntry = {
   whenLabel: string;
   createdAt: string;
   ip: string;
+};
+
+/**
+ * One thing the agent did on its way to an answer: the tool, what it was asked
+ * for, and a line about what came back.
+ *
+ * A digest and never the payload. `read_file` returns whole files, and a transcript
+ * that kept results would copy the project's source into the database once per turn.
+ * What makes an answer inspectable is knowing it read `api/routes.php` and searched
+ * for `reservation` -- not having the file again.
+ */
+export type AgentStep = {
+  tool: string;
+  /** What it asked for, flattened to one readable line. A path, a query, a table. */
+  subject?: string;
+  /** What came back, as a measurement: `412 lines`, `3 matches`, `no rows`. */
+  digest?: string;
+};
+
+/** A conversation in the history list. No turns -- the list draws a row, not a thread. */
+export type Conversation = {
+  publicId: string;
+  title: string;
+  whenLabel: string;
+  updatedAt: string;
+  turnCount: number;
+  /** How many plans came out of this conversation. Usually none, sometimes one. */
+  planCount: number;
+};
+
+export type ConversationTurn = {
+  publicId: string;
+  seq: number;
+  /** Same two-sided naming as `PlanRevision.author`, for the same reason. */
+  author: 'ai' | 'you';
+  body: string;
+  whenLabel: string;
+  createdAt: string;
+  /** Empty on your turns: you did not call anything. */
+  steps: AgentStep[];
+};
+
+export type ConversationDetail = Conversation & {
+  turns: ConversationTurn[];
+  /** Plans drafted out of this conversation, newest first. */
+  plans: { publicId: string; name: string; status: TestPlanStatus; version: number }[];
 };

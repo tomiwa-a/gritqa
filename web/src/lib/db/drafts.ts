@@ -86,6 +86,7 @@ export async function writeRevision(input: {
           variables: input.draft.variables,
           covers: input.draft.covers,
           steps: input.draft.steps,
+          assumptions: input.draft.assumptions,
         },
       })
       /* The version predicate again, this time as the lock. The SELECT above is for
@@ -139,6 +140,12 @@ export async function writeNewPlan(input: {
   instruction: string | null;
   /** The diff the draft was written from, when it came from one. */
   diffContext?: unknown;
+  /**
+   * The conversation this came out of, when it came out of one. `trigger_source`
+   * stays `manual` either way -- a person still asked for it -- and this carries the
+   * difference between typing a brief into the wizard and arriving at one by talking.
+   */
+  conversationId?: number;
   draft: PlanDraft;
 }): Promise<WrittenPlan> {
   return db.transaction(async (tx) => {
@@ -153,6 +160,7 @@ export async function writeNewPlan(input: {
           variables: input.draft.variables,
           covers: input.draft.covers,
           steps: input.draft.steps,
+          assumptions: input.draft.assumptions,
         },
         /* Draft, and there is no other option. Nothing arrives approved -- the whole
            product is the gate between a plan existing and a plan running. */
@@ -162,6 +170,7 @@ export async function writeNewPlan(input: {
            that appear on their own once the CLI is watching a branch. */
         triggerSource: 'manual',
         diffContext: input.diffContext ?? null,
+        conversationId: input.conversationId ?? null,
       })
       .returning({ id: testPlans.id, publicId: testPlans.publicId, name: testPlans.name });
 

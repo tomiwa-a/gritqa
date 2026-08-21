@@ -57,7 +57,11 @@ function readable(error: unknown): string {
     return 'No model key yet, so there is nothing to draft with. Add one in Settings → AI.';
   }
   if (error instanceof CliUnavailableError) {
-    return 'GritQA could not reach your machine, so it has no way to read the code. Start the CLI and ask again.';
+    /* Logged, unlike the other named failures, because `detail` carries the address
+       that did not answer and the reason -- and this is the one condition a developer
+       has to fix rather than read. */
+    console.error('agent: research unavailable', error.detail);
+    return 'GritQA could not reach the research server on your machine, so it has no way to read the code. That is a separate channel from the job poller, so a connected machine can still be missing it — start it and ask again.';
   }
   if (error instanceof PlanMovedError) {
     return 'This plan changed while you were reading it. Reload the page and ask again.';

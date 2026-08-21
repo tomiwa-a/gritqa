@@ -28,7 +28,7 @@ export function PlanReader({
   cliConnected,
   selectedStepId,
   stepHrefFor,
-  askHref,
+  refineHref,
   className,
 }: {
   plan: TestPlan;
@@ -37,7 +37,7 @@ export function PlanReader({
   selectedStepId?: string;
   stepHrefFor: (stepId: string) => string;
   /** Opens the conversation panel over this page. */
-  askHref: string;
+  refineHref: string;
   className?: string;
 }) {
   const fullHref = `/dashboard/test-plans/${plan.publicId}`;
@@ -92,7 +92,7 @@ export function PlanReader({
           <DecisionBar
             planId={plan.publicId}
             cliConnected={cliConnected}
-            refineHref={askHref}
+            refineHref={refineHref}
             showKeys
             className="shrink-0 lg:max-w-[22rem]"
           />

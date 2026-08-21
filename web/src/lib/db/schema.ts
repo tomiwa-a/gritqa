@@ -15,7 +15,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { CommitFile, PlanChange } from '@/lib/model';
+import type { AgentStep, CommitFile, PlanChange } from '@/lib/model';
 
 /**
  * Every table carries the dual-ID pattern from `plan/technical/entities.md`: a
@@ -280,6 +280,16 @@ export const testPlans = pgTable(
      * plan was drafted, and a branch that has since moved cannot reproduce it.
      */
     diffContext: jsonb('diff_context'),
+    /**
+     * Where this plan came from, when it came out of a conversation rather than
+     * out of the wizard. `triggerSource` stays `manual` either way -- a person
+     * asked -- and this carries the difference between asking by filling in a box
+     * and arriving at it by talking.
+     */
+    conversationId: bigint('conversation_id', { mode: 'number' }).references(
+      () => conversations.id,
+      { onDelete: 'set null' },
+    ),
     ...stamps,
   },
   (t) => [index('test_plans_project_status_idx').on(t.projectId, t.status, t.createdAt)],
@@ -317,6 +327,79 @@ export const planRevisions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex('plan_revisions_plan_version_idx').on(t.testPlanId, t.version)],
+);
+
+/**
+ * Asking about the codebase, which nothing could do until now.
+ *
+ * The agent has had read access to the developer's project since W4 -- `get_index`,
+ * `read_file`, `search`, `db` -- and exactly one thing to spend it on. Both draft
+ * paths end in a structured-output call whose only legal value is a complete plan,
+ * so there was no shape a question could take: an ambiguous brief had one legal
+ * answer and it was a confident guess.
+ *
+ * This is the other thing to spend it on, and the audience it is for is the one
+ * that cannot read the code and whose whole job is asking questions about how it
+ * behaves. A plan can come out of a conversation; nothing here runs anything.
+ */
+export const conversations = pgTable(
+  'conversations',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Written from the first exchange rather than typed. Nobody names a question
+     * before they have asked it, and an untitled row in a history list cannot be
+     * found again.
+     */
+    title: text('title').notNull(),
+    createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    ...stamps,
+  },
+  /* Ordered by `updatedAt`, because the history list is "most recently spoken in"
+     and not "most recently started": a thread returned to after a week belongs at
+     the top, and one opened and abandoned does not. */
+  (t) => [index('conversations_project_idx').on(t.projectId, t.updatedAt)],
+);
+
+/**
+ * One turn. A human turn is somebody typing; an agent turn is prose plus the
+ * account of how it was arrived at.
+ *
+ * `steps` is the account, and it stores **what was called, never what came back**.
+ * `read_file` returns whole files, so a transcript holding tool results would copy
+ * the developer's source into Postgres once per turn and keep it forever. The tool
+ * name, its arguments and a one-line digest are the whole of what makes an answer
+ * inspectable -- "read api/routes.php, searched for reservation" -- and that is
+ * what a developer asking "why did it say that" is actually asking about.
+ *
+ * `body` on an agent turn *is* the findings. `draft.ts` produces the same prose on
+ * every draft and stores it nowhere; a conversation gives it a column, and a plan
+ * drafted out of one is handed it as prior context.
+ */
+export const conversationMessages = pgTable(
+  'conversation_messages',
+  {
+    ...identity,
+    conversationId: bigint('conversation_id', { mode: 'number' })
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    /* Not `createdAt`: two turns can land in the same millisecond, and a
+       conversation replayed out of order is worse than one that failed to save. */
+    seq: integer('seq').notNull(),
+    author: revisionAuthorEnum('author').notNull(),
+    body: text('body').notNull(),
+    /** Null on a human turn, which a CHECK enforces along with `modelLabel`. */
+    steps: jsonb('steps').$type<AgentStep[]>(),
+    /** Which model answered, for the record. Never a key. */
+    modelLabel: text('model_label'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('conversation_messages_seq_idx').on(t.conversationId, t.seq)],
 );
 
 export const testExecutions = pgTable(
@@ -624,6 +707,8 @@ export type CodebaseFileRow = typeof codebaseIndex.$inferSelect;
 export type TestingRuleRow = typeof testingRules.$inferSelect;
 export type TestPlanRow = typeof testPlans.$inferSelect;
 export type PlanRevisionRow = typeof planRevisions.$inferSelect;
+export type ConversationRow = typeof conversations.$inferSelect;
+export type ConversationMessageRow = typeof conversationMessages.$inferSelect;
 export type TestExecutionRow = typeof testExecutions.$inferSelect;
 export type TestResultRow = typeof testResults.$inferSelect;
 export type ExecutionStateRow = typeof executionState.$inferSelect;

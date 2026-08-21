@@ -10,7 +10,7 @@ import { StepInspector } from '@/components/app/plan/step-inspector';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { isCliConnected, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
-import { askToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
+import { refineToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
 
@@ -65,10 +65,10 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const overlay = parseOverlay(typeof params.open === 'string' ? params.open : undefined);
 
   /* Pin the plan on the way in, so the reader behind the panel cannot drift. */
-  const askHref = withOverlay(
+  const refineHref = withOverlay(
     QUEUE,
     { ...params, plan: selected.publicId },
-    askToken(selected.publicId),
+    refineToken(selected.publicId),
   );
 
   const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
@@ -106,7 +106,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           cliConnected={cliConnected}
           selectedStepId={step?.id}
           stepHrefFor={stepHrefFor}
-          askHref={askHref}
+          refineHref={refineHref}
           className="min-w-0 flex-1"
         />
       </div>
