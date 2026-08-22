@@ -5,6 +5,7 @@ import type {
   ExecutionStatus,
   PlanAssertion,
   PlanStepSpec,
+  StepKind,
   TestPlan,
   TestPlanDetail,
   TestingRule,
@@ -28,10 +29,85 @@ export const RUN_WORD: Record<ExecutionStatus, string> = {
 
 const VARIABLE = /\{\{\s*([\w.]+)\s*\}\}/g;
 
+/**
+ * The `{{name}}` references one step reads, whatever kind of step it is.
+ *
+ * Stringifying the payload rather than the request specifically, because a `{{token}}`
+ * in a statement or a command is a real dependency and reading only `request` made it
+ * invisible -- and invisible in the worst possible way, since `variableChain` keeps
+ * only the links with consumers, so the panel titled "How the steps feed each other"
+ * would quietly drop the whole chain instead of drawing it wrong.
+ */
 export function variablesUsedBy(step: PlanStepSpec): string[] {
   const found = new Set<string>();
-  for (const [, name] of JSON.stringify(step.request).matchAll(VARIABLE)) found.add(name);
+  const payload = step.kind === 'sql' || step.kind === 'shell' ? step.action : step.request;
+  for (const [, name] of JSON.stringify(payload ?? {}).matchAll(VARIABLE)) found.add(name);
   return [...found];
+}
+
+/**
+ * The kind a step is, with the absent-means-http reading applied in one place.
+ *
+ * Plans written before the other two kinds existed have no `kind` at all, and the
+ * runner reads that the same way -- so this is the reading, not a fallback.
+ */
+export function stepKindOf(step: PlanStepSpec): StepKind {
+  return step.kind ?? 'http';
+}
+
+const KIND_ORDER = ['http', 'sql', 'shell'] as const;
+
+/**
+ * Which kinds a plan or a report is made of, in one fixed order.
+ *
+ * Fixed so the same plan reads the same way twice: derived from a `Set`, the order
+ * would follow whichever step happened to come first and the prose below would
+ * reshuffle between two plans that are made of the same things.
+ */
+export function kindsIn(steps: { kind?: StepKind }[]): StepKind[] {
+  const seen = new Set(steps.map((step) => step.kind ?? 'http'));
+  return KIND_ORDER.filter((kind) => seen.has(kind));
+}
+
+const KIND_NOUN: Record<StepKind, string> = {
+  http: 'a request',
+  sql: 'a query',
+  shell: 'a command',
+};
+
+/**
+ * What the steps are, as a phrase: `a request`, `a request or a query`, `a request, a
+ * query or a command`.
+ *
+ * Every sentence introducing a list of steps said "one request" each, which was true
+ * of every plan that could be written until now. Rather than hedge them all into
+ * something that is true of anything -- "each step below is one step" -- they say what
+ * this plan is actually made of.
+ */
+export function kindPhrase(kinds: StepKind[]): string {
+  const nouns = kinds.map((kind) => KIND_NOUN[kind]);
+  if (nouns.length <= 1) return nouns[0] ?? KIND_NOUN.http;
+  return `${nouns.slice(0, -1).join(', ')} or ${nouns[nouns.length - 1]}`;
+}
+
+/**
+ * The one line that identifies a step in a list: the URL it calls, or the statement or
+ * command it runs.
+ *
+ * Whitespace collapsed rather than cut at the first newline, because a statement is
+ * usually written across four lines and its first one is `SELECT` on its own. One line
+ * of the whole thing says more than all of a line that says nothing; the truncation is
+ * CSS's job from here.
+ */
+export function stepHeadline(step: PlanStepSpec): string {
+  const kind = stepKindOf(step);
+  const text =
+    kind === 'sql'
+      ? step.action?.statement
+      : kind === 'shell'
+        ? step.action?.command
+        : step.request?.url;
+  return (text ?? '').replace(/\s+/g, ' ').trim();
 }
 
 export type VariableOrigin =
@@ -107,9 +183,18 @@ export function endpointPathOf(url: string) {
   return withoutQuery.replace(VARIABLE, ':id');
 }
 
+/**
+ * The endpoints a plan's steps call.
+ *
+ * Only its requests: a query proving `POST …processBag` wrote a row is evidence about
+ * that endpoint, but it is not traffic to it, and this is what the coverage grid
+ * counts. Keeping the grid meaning exactly one thing costs something real, which is
+ * written down where the query that reads it lives.
+ */
 export function endpointsTouched(plan: TestPlanDetail): Endpoint[] {
   const seen = new Map<string, Endpoint>();
   for (const step of plan.steps) {
+    if (!step.request) continue;
     const path = endpointPathOf(step.request.url);
     const key = `${step.request.method} ${path}`;
     if (!seen.has(key)) seen.set(key, { method: step.request.method, path });

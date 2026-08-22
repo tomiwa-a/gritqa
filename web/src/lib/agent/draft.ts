@@ -77,6 +77,26 @@ those characters to the API verbatim.
 
 The other direction is a tell too: a value a step extracts and no later step
 reads is a value you meant to send and did not.
+
+Most steps are requests. Two other kinds exist, and both are for the things a
+request cannot do:
+
+A \`sql\` step with \`action.target: "verify"\` reads the database for evidence. Write
+one whenever an endpoint changes something and its own response does not prove it:
+a 201 with an id in it is the code's account of what it did, not a row. Assert on
+\`rowCount\`, or on \`valueEquals\` with a target into the result -- rows[0].total.
+Never string-match a result set; a query returns values, not text.
+
+A \`sql\` step with \`action.target: "setup"\` writes, and it is how a plan gets the
+data it needs to exist. Prefer it to spending three requests on a sign-up and a
+login before the feature under test: those steps fail for their own reasons, and
+when they do the report reads as a failure of the thing you were proving.
+
+A \`shell\` step runs a command inside GritQA's container, with the project mounted.
+It is the last resort, for the project's own tooling -- a migration, a cache to
+clear, a fixture script that already exists. Assert on \`exitCode\`, or
+\`stdoutContains\` where the command prints something worth reading. If a request or
+a statement can do the job, one of those is the step to write.
 `.trim();
 
 /** Rules the developer set, grouped the way they were written. */
@@ -318,7 +338,7 @@ export async function draftPlan(input: {
           ? `The developer named it "${input.name}". Keep that name.`
           : 'Name it yourself, after what it proves.',
         '',
-        'Now write the plan: the requests in the order they have to happen, each one',
+        'Now write the plan: the steps in the order they have to happen, each one',
         'depending on the steps whose output it needs, with the values a later step reads',
         "declared in the earlier step's `extract`. Assert what the brief is actually about,",
         'and abort rather than continue where a failure makes everything after it noise.',

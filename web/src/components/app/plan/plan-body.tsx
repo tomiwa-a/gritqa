@@ -6,8 +6,20 @@ import { Provenance } from './provenance';
 import { Assumptions } from './assumptions';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
+import { kindsIn } from '@/lib/plan';
 import type { TestPlan, TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
+
+/**
+ * "its request, headers and checks" is three of the four things a step can have, and
+ * none of the first three belong to a step that runs a statement instead.
+ */
+function stepsSubtitle(steps: TestPlanDetail['steps']): string {
+  const kinds = kindsIn(steps);
+  return kinds.length === 1 && kinds[0] === 'http'
+    ? 'Open any step for its request, headers and checks'
+    : 'Open any step for what it sends or runs, and its checks';
+}
 
 /** Detail exists for some plans only; the rest say so instead of faking steps. */
 export function PlanBody({
@@ -108,7 +120,7 @@ export function PlanBody({
 
       <Panel
         title="Steps"
-        subtitle="Open any step for its request, headers and checks"
+        subtitle={stepsSubtitle(detail.steps)}
         meta={
           <span className="nums shrink-0 font-mono text-[11.5px] text-ink-subtle">
             {detail.baseUrl}

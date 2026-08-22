@@ -10,7 +10,14 @@ import { StepInspector } from '@/components/app/plan/step-inspector';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { isCliConnected, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
-import { refineToken, parseOverlay, withOverlay, type PageParams } from '@/lib/overlay';
+import { stepIsHeavy } from '@/lib/model';
+import {
+  approveToken,
+  refineToken,
+  parseOverlay,
+  withOverlay,
+  type PageParams,
+} from '@/lib/overlay';
 
 export const metadata = { title: 'Review queue · GritQA' };
 
@@ -71,6 +78,12 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
     refineToken(selected.publicId),
   );
 
+  /* Pinned the same way, and for a sharper reason here: `a` approves the selected plan
+     without reading it, so the plan the confirm names has to be the one the rail has. */
+  const approveHref = detail?.steps.some(stepIsHeavy)
+    ? withOverlay(QUEUE, { ...params, plan: selected.publicId }, approveToken(selected.publicId))
+    : undefined;
+
   const prevStep = stepIndex > 0 ? detail?.steps[stepIndex - 1] : undefined;
   const nextStep = stepIndex >= 0 ? detail?.steps[stepIndex + 1] : undefined;
 
@@ -107,6 +120,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           selectedStepId={step?.id}
           stepHrefFor={stepHrefFor}
           refineHref={refineHref}
+          approveHref={approveHref}
           className="min-w-0 flex-1"
         />
       </div>

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { StatusDot } from '@/components/ui/badge';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { Meter } from './meter';
+import { stepLine, stepOutcome } from '@/lib/runs';
 import type { ExecutionStatus, TestExecution } from '@/lib/model';
 
 const TONE: Record<ExecutionStatus, 'pass' | 'fail' | 'running' | 'skip'> = {
@@ -39,9 +40,13 @@ export function RunList({
                 <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-subtle">
                   {broke ? (
                     <>
-                      <MethodBadge method={broke.method} className="h-[15px] w-[46px] text-[9px]" />
-                      <span className="truncate font-mono">{broke.path}</span>
-                      <span className="nums shrink-0 text-fail">{broke.responseStatus}</span>
+                      <StepBadge
+                        kind={broke.kind}
+                        method={broke.method}
+                        className="h-[15px] w-[46px] text-[9px]"
+                      />
+                      <span className="truncate font-mono">{stepLine(broke)}</span>
+                      <span className="nums shrink-0 text-fail">{stepOutcome(broke)}</span>
                     </>
                   ) : run.status === 'pending' ? (
                     /* No steps and no duration, because it has not started. The row

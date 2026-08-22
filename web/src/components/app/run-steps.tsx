@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { Icon } from '@/components/ui/icon';
+import { Fence } from '@/components/ui/prose';
 import { StatusDot } from '@/components/ui/badge';
 import { endpointHref } from '@/lib/plan';
-import { STEP_TONE, STEP_WORD } from '@/lib/runs';
+import { STEP_TONE, STEP_WORD, stepLine, stepOutcome } from '@/lib/runs';
 import type { StepResult } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -15,6 +16,36 @@ const NUMBER: Record<StepResult['status'], string> = {
   pending: 'border-rule bg-app-panel text-ink-subtle',
 };
 
+/**
+ * The row, linked to the endpoint panel only when there is an endpoint to link to.
+ *
+ * Every row was a link before, because every step was a request. A sql or shell step
+ * has no route pattern, and the href it built out of one -- `?endpoint=GET%20` -- opened
+ * a panel about nothing at all. So the two kinds that are not requests are rows rather
+ * than links, and they lose the hover and the chevron that promised somewhere to go.
+ */
+function Row({
+  href,
+  title,
+  children,
+}: {
+  href: string | null;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const shape = cn(
+    'group relative flex gap-3 px-4 py-3.5',
+    href && 'transition-colors duration-150 hover:bg-app-hover',
+  );
+
+  if (!href) return <div className={shape}>{children}</div>;
+  return (
+    <Link href={href} title={title} className={shape}>
+      {children}
+    </Link>
+  );
+}
+
 export function RunSteps({ steps, className }: { steps: StepResult[]; className?: string }) {
   const stopped = steps.findIndex((s) => s.status === 'failed' || s.status === 'error');
 
@@ -24,6 +55,10 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
         const last = i === steps.length - 1;
         const broke = i === stopped;
         const after = stopped >= 0 && i > stopped;
+        const to =
+          step.kind === 'http' && step.path
+            ? endpointHref({ method: step.method ?? 'GET', path: step.path })
+            : null;
 
         return (
           <li key={`${step.stepName}-${i}`} className="relative">
@@ -34,10 +69,9 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
               />
             )}
 
-            <Link
-              href={endpointHref({ method: step.method, path: step.path })}
-              title={`${step.method} ${step.path} — see what covers this endpoint`}
-              className="group relative flex gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-app-hover"
+            <Row
+              href={to}
+              title={to ? `${step.method} ${step.path} — see what covers this endpoint` : undefined}
             >
               <span
                 className={cn(
@@ -50,14 +84,14 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                  <MethodBadge method={step.method} />
+                  <StepBadge kind={step.kind} method={step.method} />
                   <span
                     className={cn(
                       'truncate font-mono text-[12.5px]',
                       after ? 'text-ink-subtle' : 'text-ink',
                     )}
                   >
-                    {step.path}
+                    {stepLine(step)}
                   </span>
                   {broke && (
                     <span className="flex items-center gap-1 text-[11px] font-medium text-fail">
@@ -86,6 +120,15 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
                     {step.errorMessage}
                   </p>
                 )}
+
+                {/* What it printed, on the step that did not work, for the same reason
+                    the line above is only there: a wall of output under a step that
+                    passed reads as a complaint about it. Untagged on purpose -- this is
+                    a command's output, not a command, and colouring it as one would be
+                    inventing syntax it does not have. */}
+                {step.output && (step.status === 'failed' || step.status === 'error') && (
+                  <Fence code={step.output} tag={undefined} />
+                )}
               </div>
 
               <span className="flex shrink-0 items-center gap-2.5 self-start pt-0.5">
@@ -103,20 +146,25 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
                   </span>
                 </span>
 
-                <span className="nums w-[74px] text-right font-mono text-[11.5px] text-ink-subtle">
-                  {step.responseStatus ?? '—'}
+                {/* Wider than it was, because a status code was the widest thing it
+                    ever held and now `3 rows` and `exit 0` share the column. Fixed so
+                    the numbers line up down the report. */}
+                <span className="nums w-[104px] text-right font-mono text-[11.5px] text-ink-subtle">
+                  {stepOutcome(step) ?? '—'}
                   {step.responseTimeMs !== null && (
                     <span className="text-ink-subtle/70"> · {step.responseTimeMs}ms</span>
                   )}
                 </span>
 
-                <Icon
-                  name="chevronRight"
-                  size={14}
-                  className="text-rule-strong transition-colors duration-150 group-hover:text-ink-subtle"
-                />
+                {to && (
+                  <Icon
+                    name="chevronRight"
+                    size={14}
+                    className="text-rule-strong transition-colors duration-150 group-hover:text-ink-subtle"
+                  />
+                )}
               </span>
-            </Link>
+            </Row>
           </li>
         );
       })}

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
+import { stepLine, stepOutcome } from '@/lib/runs';
 import type { StepResult } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -27,14 +28,23 @@ export function RunTriage({
       <div className="flex gap-3 px-4 py-3.5">
         <Icon name="alert" size={15} className="mt-px shrink-0 text-fail" />
         <div className="min-w-0 flex-1">
+          {/* "came back 3 rows" is as true of a query that found nothing as
+              "came back 500" is of a request, and it is the same sentence. */}
           <p className="text-[13px] leading-snug text-ink">
             Step <span className="nums font-medium">{stepIndex + 1}</span>,{' '}
             {step.stepName.toLowerCase()}, came back{' '}
-            <span className="nums font-mono font-medium text-fail">{step.responseStatus}</span>.
+            <span className="nums font-mono font-medium text-fail">{stepOutcome(step) ?? '—'}</span>
+            .
           </p>
           <p className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
-            <MethodBadge method={step.method} className="h-[15px] w-[46px] text-[9px]" />
-            <span className="truncate font-mono text-[11.5px] text-ink-muted">{step.path}</span>
+            <StepBadge
+              kind={step.kind}
+              method={step.method}
+              className="h-[15px] w-[46px] text-[9px]"
+            />
+            <span className="truncate font-mono text-[11.5px] text-ink-muted">
+              {stepLine(step)}
+            </span>
           </p>
         </div>
       </div>

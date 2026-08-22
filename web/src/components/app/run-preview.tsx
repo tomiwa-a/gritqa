@@ -4,10 +4,19 @@ import { RunCells } from './run-cells';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { getRecentRuns, getRunHistory } from '@/lib/data';
-import { brokeAt, runOutcome, runRowFor, runRowsOf, runsForPlan, STEP_WORD } from '@/lib/runs';
+import {
+  brokeAt,
+  runOutcome,
+  runRowFor,
+  runRowsOf,
+  runsForPlan,
+  stepLine,
+  stepOutcome,
+  STEP_WORD,
+} from '@/lib/runs';
 import { planToken } from '@/lib/overlay';
 
 const BADGE = {
@@ -39,6 +48,7 @@ export async function RunPreview({
   const detail = run.detail;
   const broke = brokeAt(run);
   const brokeIndex = detail && broke ? detail.steps.indexOf(broke) : -1;
+  const brokeOutcome = broke ? stepOutcome(broke) : null;
   const siblings = runsForPlan(rows, run.planPublicId).length;
 
   const runHref = `/dashboard/runs/${run.publicId}`;
@@ -104,13 +114,13 @@ export async function RunPreview({
         <DrawerBlock label="It broke here">
           <div className="rounded-md border border-fail/25 bg-fail/[0.04] p-2.5">
             <div className="flex items-center gap-2">
-              <MethodBadge method={broke.method} />
+              <StepBadge kind={broke.kind} method={broke.method} />
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">
-                {broke.path}
+                {stepLine(broke)}
               </span>
-              {broke.responseStatus !== null && (
+              {brokeOutcome !== null && (
                 <span className="nums shrink-0 font-mono text-[12px] font-medium text-fail">
-                  {broke.responseStatus}
+                  {brokeOutcome}
                 </span>
               )}
             </div>

@@ -70,7 +70,11 @@ export async function cliScope(request: Request): Promise<CliScope | null> {
   if (!session?.pid) return null;
 
   const [row] = await db
-    .select({ userId: users.id, projectId: projects.id, projectPublicId: projects.publicId })
+    .select({
+      userId: users.id,
+      projectId: projects.id,
+      projectPublicId: projects.publicId,
+    })
     .from(projects)
     .innerJoin(users, eq(users.id, projects.userId))
     .where(and(eq(users.publicId, session.uid), eq(projects.publicId, session.pid)))
@@ -121,6 +125,7 @@ export async function touchInstance(projectId: number, identity: InstanceIdentit
     });
 }
 
+/** One file as the CLI mirrors it. The three jsonb columns are NOT NULL, so none is optional. */
 export type MirroredFile = {
   filePath: string;
   fileHash: string;
@@ -425,13 +430,35 @@ export type StepReport = {
   stepId: string;
   stepName: string;
   status: TestResultRow['status'];
+  /**
+   * What this step was. A request, a statement against GritQA's own copy of the
+   * database, or a command inside its container -- and the field the three below
+   * are only meaningful under.
+   */
+  kind: TestResultRow['stepKind'];
   method: string | null;
   routePattern: string | null;
   requestUrl: string | null;
   requestBody: unknown;
   responseStatus: number | null;
   responseBody: unknown;
+  /**
+   * How long the step took, whatever kind it was. The column is still called
+   * `response_time_ms` because four read paths spell it that way and renaming it
+   * would rewrite all of them for a word.
+   */
   responseTimeMs: number | null;
+  /**
+   * Rows a sql step touched: rows returned by a `verify` query, rows affected by a
+   * `setup` one. Nullable and reported rather than defaulted, because `0` is the
+   * answer a verification step exists to catch -- "returned 201, wrote nothing" --
+   * and it must not be indistinguishable from a step with no rows to report.
+   */
+  rowCount: number | null;
+  /** What a shell step exited with. Nullable for the same reason: `0` is success. */
+  exitCode: number | null;
+  /** What a shell step printed on stdout, masked and bounded by the caller. */
+  output: string | null;
   assertions: unknown;
   errorMessage: string | null;
   /**
@@ -574,6 +601,7 @@ export async function completeJob(
             stepId: step.stepId,
             stepName: step.stepName,
             status: step.status,
+            stepKind: step.kind,
             requestMethod: step.method,
             routePattern: step.routePattern,
             requestUrl: step.requestUrl,
@@ -581,6 +609,9 @@ export async function completeJob(
             responseStatus: step.responseStatus,
             responseBody: step.responseBody ?? null,
             responseTimeMs: step.responseTimeMs,
+            rowCount: step.rowCount,
+            exitCode: step.exitCode,
+            output: step.output,
             assertionResults: step.assertions ?? null,
             errorMessage: step.errorMessage,
           })),
@@ -599,7 +630,10 @@ export async function completeJob(
        that on. */
     const ledger = [
       ...report.steps.flatMap((step) =>
-        (step.moved ?? []).map((unit) => ({ unit, resultId: resultIds.get(step.stepId) ?? null })),
+        (step.moved ?? []).map((unit) => ({
+          unit,
+          resultId: resultIds.get(step.stepId) ?? null,
+        })),
       ),
       ...(report.moved ?? []).map((unit) => ({ unit, resultId: null })),
     ];
@@ -719,6 +753,7 @@ export async function recordSteps(
           stepId: step.stepId,
           stepName: step.stepName,
           status: step.status,
+          stepKind: step.kind,
           requestMethod: step.method,
           routePattern: step.routePattern,
           requestUrl: step.requestUrl,
@@ -726,6 +761,9 @@ export async function recordSteps(
           responseStatus: step.responseStatus,
           responseBody: step.responseBody ?? null,
           responseTimeMs: step.responseTimeMs,
+          rowCount: step.rowCount,
+          exitCode: step.exitCode,
+          output: step.output,
           assertionResults: step.assertions ?? null,
           errorMessage: step.errorMessage,
         })),

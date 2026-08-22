@@ -11,7 +11,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { runPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
-import { RUN_TONE, RUN_WORD } from '@/lib/plan';
+import { kindPhrase, kindsIn, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import {
   brokeAt,
   isSettled,
@@ -81,15 +81,17 @@ export default async function RunDetailPage({
         : 'This run executed ';
 
   /* What follows the plan name depends on whether there is anything below to point
-     at -- "each step below" pointing at an empty panel is the same lie in prose. */
+     at -- "each step below" pointing at an empty panel is the same lie in prose.
+     And on what the steps are: a run whose evidence is a query and a fixture command
+     is not one request each, which is what this sentence used to promise. */
   const standfirstTail =
     run.steps > 0
-      ? 'Each step below is one request, in the order it went out.'
+      ? `Each step below is ${kindPhrase(kindsIn(detail?.steps ?? []))}, in the order it ran.`
       : run.status === 'pending'
-        ? 'Your machine picks it up on its next check, and the steps appear here as they go out.'
+        ? 'Your machine picks it up on its next check, and the steps appear here as they run.'
         : run.status === 'running'
-          ? 'Your machine has it now, and each step appears below as its request comes back.'
-          : 'It stopped before the first request went out.';
+          ? 'Your machine has it now, and each step appears below as it finishes.'
+          : 'It stopped before the first step ran.';
 
   const path = `/dashboard/runs/${run.publicId}`;
   const planHref = plan ? `/dashboard/test-plans/${plan.publicId}` : '/dashboard/test-plans';
@@ -209,15 +211,13 @@ export default async function RunDetailPage({
           <Panel
             className="mt-4"
             title="Step by step"
-            subtitle={
-              stepless ? 'Nothing went out' : 'Filled in as your machine works through the plan'
-            }
+            subtitle={stepless ? 'Nothing ran' : 'Filled in as your machine works through the plan'}
             bodyClassName="p-4"
           >
             {run.status === 'pending' ? (
               <>
                 <p className="text-[13px] leading-relaxed text-ink-muted">
-                  Nothing has gone out yet. The plan is approved and the run is written down; your
+                  Nothing has run yet. The plan is approved and the run is written down; your
                   machine claims it on its next check and reports each step back here.
                 </p>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
@@ -227,7 +227,7 @@ export default async function RunDetailPage({
             ) : run.status === 'running' ? (
               <p className="text-[13px] leading-relaxed text-ink-muted">
                 Your machine has this run and has not reported a step yet. The first one appears
-                here as soon as its request comes back.
+                here as soon as it finishes.
               </p>
             ) : (
               /* The one state with nothing to show and something to say. `errorMessage`
@@ -235,7 +235,7 @@ export default async function RunDetailPage({
                  until this panel existed there was nowhere for it to be read. */
               <>
                 <p className="text-[13px] leading-relaxed text-ink-muted">
-                  No request went out.{' '}
+                  Not one step ran.{' '}
                   {run.errorMessage ?? 'Nothing was recorded about why this run stopped.'}
                 </p>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-ink-subtle">
@@ -249,7 +249,7 @@ export default async function RunDetailPage({
           <Panel
             className="mt-4"
             title="Step by step"
-            subtitle="Open a step to see everything covering that endpoint"
+            subtitle="Open a request to see everything covering that endpoint"
             meta={
               <span className="nums shrink-0 font-mono text-[11.5px] text-ink-subtle">
                 {detail.steps.length}

@@ -23,11 +23,17 @@ import { cn } from '@/lib/cn';
  * `Ask for a change` stays a link inside the same form. It is the one outcome that
  * navigates instead of writing, and it belongs beside the other two whatever it is
  * made of.
+ *
+ * `confirmHref` turns both approve buttons into links to a box that holds the same two
+ * actions. Given only for a plan that writes, because a confirm in front of every
+ * approval is a confirm nobody reads by the third one -- and the caller is the half that
+ * can see the steps to decide.
  */
 export function DecisionBar({
   planId,
   cliConnected,
   refineHref,
+  confirmHref,
   showKeys = false,
   className,
 }: {
@@ -35,46 +41,89 @@ export function DecisionBar({
   cliConnected: boolean;
   /** Opens the conversation panel over this page — asking is not a trip elsewhere. */
   refineHref: string;
+  /** Set when this plan writes: both approve buttons go here instead of submitting. */
+  confirmHref?: string;
   showKeys?: boolean;
   className?: string;
 }) {
+  const approveLabel = (
+    <>
+      <Icon name="check" size={14} />
+      Approve
+      {showKeys && <Kbd className="ml-0.5 border-white/25 bg-white/10 text-ink-inverse">A</Kbd>}
+    </>
+  );
+
+  const runLabel = (
+    <>
+      <Icon name="runs" size={14} />
+      Approve and run
+    </>
+  );
+
+  const runTitle = cliConnected
+    ? 'Approve, then ask your machine to run it'
+    : 'Runs happen on your machine, and it is not connected right now';
+
   return (
     <div className={cn('flex flex-col gap-2 lg:items-end', className)}>
       <form className="flex flex-wrap items-center gap-2 lg:justify-end">
         <input type="hidden" name="publicId" value={planId} />
 
-        <Button
-          type="submit"
-          formAction={approvePlanAction}
-          variant="primary"
-          size="sm"
-          data-decision="approve"
-          data-plan={planId}
-        >
-          <Icon name="check" size={14} />
-          Approve
-          {showKeys && <Kbd className="ml-0.5 border-white/25 bg-white/10 text-ink-inverse">A</Kbd>}
-        </Button>
+        {/* A link keeps the queue's shortcut working without knowing about any of
+            this: `a` clicks this element, and clicking a link opens the confirm the
+            same way a click on a submit used to write. */}
+        {confirmHref ? (
+          <Link
+            href={confirmHref}
+            scroll={false}
+            title="This plan writes — read what it will run first"
+            data-decision="approve"
+            data-plan={planId}
+            className={buttonVariants({ variant: 'primary', size: 'sm' })}
+          >
+            {approveLabel}
+          </Link>
+        ) : (
+          <Button
+            type="submit"
+            formAction={approvePlanAction}
+            variant="primary"
+            size="sm"
+            data-decision="approve"
+            data-plan={planId}
+          >
+            {approveLabel}
+          </Button>
+        )}
 
         {/* Two writes behind one button, and the order matters: approve, then queue.
             Its own action rather than the form's default, because a submit that fell
             through to `approvePlanAction` would approve and queue nothing while
-            looking like it had done both. */}
-        <Button
-          type="submit"
-          formAction={approveAndRunPlanAction}
-          variant="secondary"
-          size="sm"
-          disabled={!cliConnected}
-          title={
-            cliConnected
-              ? 'Approve, then ask your machine to run it'
-              : 'Runs happen on your machine, and it is not connected right now'
-          }
-        >
-          <Icon name="runs" size={14} />
-          Approve and run
-        </Button>
+            looking like it had done both.
+            Disconnected, it stays a disabled button: there is nothing to confirm on the
+            way to something that cannot happen, and a link cannot be disabled. */}
+        {confirmHref && cliConnected ? (
+          <Link
+            href={confirmHref}
+            scroll={false}
+            title={runTitle}
+            className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+          >
+            {runLabel}
+          </Link>
+        ) : (
+          <Button
+            type="submit"
+            formAction={approveAndRunPlanAction}
+            variant="secondary"
+            size="sm"
+            disabled={!cliConnected}
+            title={runTitle}
+          >
+            {runLabel}
+          </Button>
+        )}
 
         {/* The third outcome, and it acts here like the other two. */}
         <Link

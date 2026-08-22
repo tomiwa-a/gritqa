@@ -172,7 +172,12 @@ function toTestPlan(row: TestPlanRow, lastRun: LastRunSeed | undefined): TestPla
     createdLabel: agoLabel(row.updatedAt),
     createdAt: row.updatedAt.toISOString(),
     stepCount: steps.length,
-    assertionCount: steps.reduce((n, step) => n + step.assertions.length, 0),
+    /* Guarded, unlike the cast above it: `plan_json` is a jsonb blob typed by
+       assertion, so one step without an `assertions` array -- hand-edited, or written
+       by an older shape -- would throw here, and here is the plans list, the review
+       queue and the overview. A miscount is a wrong number on a card; a throw is
+       three screens gone. */
+    assertionCount: steps.reduce((n, step) => n + (step.assertions?.length ?? 0), 0),
     covers: planJsonOf(row).covers ?? [],
     lastRun: lastRun
       ? {

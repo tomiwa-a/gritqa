@@ -39,6 +39,12 @@ async function failingEndpoints(projectId: number): Promise<Set<string>> {
     FROM test_results r
     JOIN test_executions e ON e.id = r.execution_id
     WHERE e.project_id = ${projectId}
+      -- Which is also what keeps the grid HTTP-only. Both columns are null for a sql
+      -- or shell step, so those rows are not here, and that is a limit worth naming:
+      -- a plan whose real verification is a query leaves this endpoint's square green
+      -- off the 201 it got, even on a run the query failed. The run report says so;
+      -- the grid does not. Linking a query to the endpoint it proves is a feature, and
+      -- it is not this one -- inventing a square for a SELECT would be worse.
       AND r.route_pattern IS NOT NULL
       AND r.request_method IS NOT NULL
       AND r.status IN ('passed', 'failed', 'error')

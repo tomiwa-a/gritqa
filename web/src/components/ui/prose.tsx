@@ -37,8 +37,16 @@ const SIZE = {
   lg: 'text-[13.5px]',
 } as const;
 
-/** A fenced block, coloured, with the language named when the model named one. */
-function Fence({ code, tag }: { code: string; tag: string | undefined }) {
+/**
+ * A fenced block, coloured, with the language named when the model named one.
+ *
+ * Exported because a plan's own text is not markdown and must not be treated as
+ * though it were: a statement or a command is a literal, and wrapping one in
+ * backticks to hand it to the parser above would let a `#` or an underscore inside
+ * it change how it reads. The step inspector shows exactly what will run, so it
+ * names the language itself and comes straight here.
+ */
+export function Fence({ code, tag }: { code: string; tag: string | undefined }) {
   const lang = langOf(tag);
 
   return (

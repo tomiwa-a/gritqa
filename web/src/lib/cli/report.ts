@@ -40,6 +40,17 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 const STEP_STATUSES = new Set(['pending', 'passed', 'failed', 'skipped', 'error']);
 
+/* Absent is `http`, not a rejection: a CLI older than the two other kinds omits the
+   field, and every step it ever ran was a request. */
+const STEP_KINDS = new Set(['http', 'sql', 'shell']);
+
+/**
+ * What a shell step printed, bounded the way `errorMessage` is. A build log is not a
+ * step result, and the runner has already cut this to its last few KB — the end being
+ * the half worth keeping, since a command that fails says why at the bottom.
+ */
+const MAX_OUTPUT = 16_000;
+
 /** How many ledger rows a report is asking to write, which is what MAX_MOVED bounds. */
 export function ledgerRows(steps: StepReport[], runMoved: MovedUnit[]): number {
   return runMoved.length + steps.reduce((n, s) => n + (s.moved?.length ?? 0), 0);
@@ -64,6 +75,9 @@ export function parseStep(entry: unknown): StepReport | null {
   const method = typeof step.method === 'string' ? step.method.trim().toUpperCase() : null;
   if (method !== null && (method.length === 0 || method.length > 10)) return null;
 
+  const kind = step.kind === undefined || step.kind === null ? 'http' : step.kind;
+  if (typeof kind !== 'string' || !STEP_KINDS.has(kind)) return null;
+
   const moved = parseMoved(step.moved);
   if (!moved) return null;
 
@@ -71,13 +85,29 @@ export function parseStep(entry: unknown): StepReport | null {
     stepId,
     stepName,
     status: step.status as TestResultRow['status'],
+    kind: kind as TestResultRow['stepKind'],
     method,
-    routePattern: str(step.routePattern, 2048),
+    /* Held to null for the other two kinds rather than trusted. `route_pattern` is
+       what the coverage grid counts, and a statement landing in it would draw a
+       square for an endpoint named SELECT. The runner already leaves it empty for a
+       sql or shell step; this is the half that does not depend on it being right. */
+    routePattern: kind === 'http' ? str(step.routePattern, 2048) : null,
+    /* The URL for a request, the statement or the command for the other two, with
+       the variables filled in and the secrets masked. One column because it answers
+       one question -- what this step actually did. */
     requestUrl: str(step.requestUrl, 4096),
     requestBody: bounded(step.requestBody),
     responseStatus: int(step.responseStatus),
     responseBody: bounded(step.responseBody),
     responseTimeMs: int(step.responseTimeMs),
+    /* `signed`, not `int`: a fixture that deletes moves a count down, and flooring
+       that at zero erases the finding. Absent stays absent rather than becoming 0,
+       because 0 rows is the answer a verification step exists to catch -- "returned
+       201, wrote nothing" -- and it must be tellable from a step with no rows at
+       all. Same for an exit code, where 0 is success. */
+    rowCount: step.rowCount === undefined ? null : signed(step.rowCount),
+    exitCode: step.exitCode === undefined ? null : signed(step.exitCode),
+    output: str(step.output, MAX_OUTPUT),
     assertions: bounded(step.assertions),
     errorMessage: str(step.errorMessage, 4000),
     moved,

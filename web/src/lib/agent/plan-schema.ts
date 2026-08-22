@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Endpoint, PlanAssertion, PlanExtraction, PlanStepSpec, StepKind } from '@/lib/model';
 
 /**
  * What the agent is allowed to produce, which is exactly what the dashboard
@@ -11,10 +12,10 @@ import { z } from 'zod';
  * rather than a new shape for the model's convenience. Anything the agent invents
  * outside it would reach a component that has no branch for it.
  *
- * Mirroring by hand is the cost. The compiler checks it in one direction --
- * `satisfies` in `draft.ts` will not accept a schema that stops producing a
- * `PlanStepSpec` -- and a widened union in `model.ts` shows up there rather than
- * silently passing through.
+ * Mirroring by hand is the cost, and `MIRRORS_MODEL` below is what keeps it from
+ * being paid twice: the compiler holds the four shapes identical in both directions,
+ * so a union widened on either side is an error here rather than a screen with no
+ * branch for a value the agent can now produce.
  */
 
 const method = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
@@ -28,21 +29,96 @@ export const endpointSchema = z.object({
   path: z.string().min(1).describe('Route pattern with named params, e.g. /customers/:id/orders'),
 });
 
+/**
+ * The eight things an assertion can be about, widened rather than forked.
+ *
+ * One schema for all three step kinds, because the operator, the target and the
+ * expected value mean the same thing in every case -- so `plan-diff.tsx`, the rules
+ * engine and `assertionCount` keep working with no branch. What the type list buys is
+ * the one thing worth buying: `stdoutContains` on a query is refused rather than
+ * quietly always-true, and a result set is asserted on by counting its rows or reading
+ * a value out of one, never by string-matching the rows as printed text.
+ *
+ * `ASSERTIONS_BY_KIND` below is what enforces that pairing; the enum on its own only
+ * says these eight exist.
+ */
 export const assertionSchema = z.object({
-  type: z.enum(['status', 'bodyField', 'header', 'responseTime']),
+  type: z.enum([
+    'status',
+    'bodyField',
+    'header',
+    'responseTime',
+    'rowCount',
+    'valueEquals',
+    'exitCode',
+    'stdoutContains',
+  ]),
   operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'exists', 'lt', 'gt']),
   target: z
     .string()
     .min(1)
-    .describe('What is being checked: a JSON path for bodyField, a header name, or "status"'),
+    .describe(
+      'What is being checked: a JSON path for bodyField, a header name, "status", or a path into the result set for valueEquals -- rows[0].total',
+    ),
   /* Optional because `exists` has nothing to compare against. */
   expected: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
+/**
+ * Which assertions belong to which kind. A step is checked against its own row on the
+ * way in from the model, so a mismatch is a rejected draft rather than a check that
+ * can never fail.
+ *
+ * `rowCount` and `exitCode` have no target to speak of -- there is one row count and
+ * one exit code -- so the schema's `min(1)` on `target` is satisfied by the name of
+ * the thing itself, the way `status` already is.
+ */
+const ASSERTIONS_BY_KIND = {
+  http: ['status', 'bodyField', 'header', 'responseTime'],
+  sql: ['rowCount', 'valueEquals'],
+  shell: ['exitCode', 'stdoutContains'],
+} as const satisfies Record<StepKind, readonly PlanAssertion['type'][]>;
+
 export const extractionSchema = z.object({
   name: z.string().min(1).describe('Variable name later steps refer to as {{name}}'),
   path: z.string().min(1),
-  source: z.enum(['body', 'header']),
+  /**
+   * `result` and `stdout` are what let a fixture feed the request after it: an insert
+   * hands over a real booking id instead of the draft inventing one.
+   */
+  source: z.enum(['body', 'header', 'result', 'stdout']),
+});
+
+/**
+ * What a sql or shell step does, where a request step has a request.
+ *
+ * Three optional strings on one flat object rather than a union of three shapes, and
+ * that is a decision about the dialect below rather than about taste -- `oneOf` is the
+ * same family of construct as the free-form map that cost this file its first draft.
+ * It is also, by luck, exactly the shape the runner already reads
+ * (`Action` in `cli/internal/plan/plan.go`), and that format is decoded with unknown
+ * fields disallowed, so it is the shape or nothing.
+ *
+ * `target` is load-bearing rather than descriptive: it decides whether the statement
+ * is executed or queried, and a step that writes is what the approval confirm is drawn
+ * from. See `stepFromWire` for what happens when a draft leaves it out.
+ */
+export const actionSchema = z.object({
+  statement: z.string().min(1).optional(),
+  target: z.enum(['setup', 'verify']).optional(),
+  command: z.string().min(1).optional(),
+});
+
+export const requestSchema = z.object({
+  method,
+  /**
+   * Relative to `baseUrl`, with `{{variable}}` for anything extracted earlier.
+   * The runner substitutes; the plan holds the template.
+   */
+  url: z.string().min(1),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.record(z.string(), z.unknown()).optional(),
+  query: z.record(z.string(), z.string()).optional(),
 });
 
 export const stepSchema = z.object({
@@ -52,17 +128,15 @@ export const stepSchema = z.object({
   dependsOn: z
     .array(z.string())
     .describe('Step ids that must pass first. Empty for the first step'),
-  request: z.object({
-    method,
-    /**
-     * Relative to `baseUrl`, with `{{variable}}` for anything extracted earlier.
-     * The runner substitutes; the plan holds the template.
-     */
-    url: z.string().min(1),
-    headers: z.record(z.string(), z.string()).optional(),
-    body: z.record(z.string(), z.unknown()).optional(),
-    query: z.record(z.string(), z.string()).optional(),
-  }),
+  /**
+   * Absent means `http`, which is what every plan written before the other two kinds
+   * existed is made of. Nothing to migrate: the runner reads an absent kind the same
+   * way, and `plan_json` is one jsonb blob either way.
+   */
+  kind: z.enum(['http', 'sql', 'shell']).optional(),
+  /** One of these two, decided by `kind`. Never both, and never neither. */
+  request: requestSchema.optional(),
+  action: actionSchema.optional(),
   extract: z.array(extractionSchema),
   assertions: z.array(assertionSchema),
   /**
@@ -74,6 +148,35 @@ export const stepSchema = z.object({
     .object({ maxAttempts: z.number().int().min(1), delayMs: z.number().int().min(0) })
     .optional(),
 });
+
+/* ---------------------------------------------------------------------------
+ * The mirror, held by the compiler
+ * ------------------------------------------------------------------------- */
+
+/** True only when each type is assignable to the other -- identical, not merely close. */
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+type Assert<T extends true> = T;
+
+/**
+ * The four shapes above, checked against the read model they claim to copy.
+ *
+ * Both directions, which is the point. One direction only catches the schema drifting
+ * past `model.ts` -- and the drift that actually costs something goes the other way: a
+ * ninth `AssertionType` or a fourth `StepKind` added to `model.ts` and not here is an
+ * agent that cannot produce a value every screen is already prepared to render, with
+ * nothing anywhere saying so. Now it does not compile.
+ *
+ * Types and nothing else: no value, no runtime cost, and no import for anyone. What it
+ * costs is that a deliberate divergence has to be written down rather than discovered,
+ * which is the trade this file was already making by hand.
+ */
+export type MIRRORS_MODEL = [
+  Assert<Exactly<z.infer<typeof endpointSchema>, Endpoint>>,
+  Assert<Exactly<z.infer<typeof assertionSchema>, PlanAssertion>>,
+  Assert<Exactly<z.infer<typeof extractionSchema>, PlanExtraction>>,
+  Assert<Exactly<z.infer<typeof stepSchema>, PlanStepSpec>>,
+];
 
 export const changeSchema = z.object({
   kind: z.enum([
@@ -217,7 +320,51 @@ const wireRequestSchema = z.object({
     ),
 });
 
-const wireStepSchema = stepSchema.omit({ request: true }).extend({ request: wireRequestSchema });
+/**
+ * The same flat action, asked for in the dialect.
+ *
+ * Nothing here is a map or a nested object, so there is nothing for the dialect to
+ * flatten into `{}` -- which is why this one crosses over unchanged where the request
+ * above had to be taken apart. Optional on both sides for the same reason it is
+ * optional in the stored shape: two of the three fields are meaningless for any given
+ * step, and `kind` is what makes an omission checkable rather than silent.
+ */
+const wireActionSchema = z.object({
+  statement: z
+    .string()
+    .optional()
+    .describe(
+      'For a sql step: the statement, with {{variable}} references inside it. One statement, no trailing semicolon.',
+    ),
+  target: z
+    .enum(['setup', 'verify'])
+    .optional()
+    .describe(
+      'For a sql step: `verify` to read evidence a request wrote what it claimed, `setup` to write a fixture the steps after it need. Decides whether the statement is queried or executed, so say which one you mean.',
+    ),
+  command: z
+    .string()
+    .optional()
+    .describe(
+      "For a shell step: the command, run by `sh -c` inside GritQA's own container with the project mounted at /app.",
+    ),
+});
+
+const wireStepSchema = stepSchema.omit({ kind: true, request: true, action: true }).extend({
+  kind: z
+    .enum(['http', 'sql', 'shell'])
+    .describe(
+      "What this step does: `http` sends a request, `sql` runs one statement against the run's own copy of the database, `shell` runs one command in the container. Say it for every step.",
+    ),
+  /* Optional, and the only pair in this schema that is. Everything else the dialect
+     mangles was made required-with-an-empty-value on purpose, because an optional
+     field is another thing a model can silently omit -- but a request step has no
+     action and an action step has no request, and there is no empty value for a URL.
+     `kind` is what pays for that: a step whose payload does not match what it says it
+     is fails loudly in `stepFromWire` rather than arriving as a blank request. */
+  request: wireRequestSchema.optional(),
+  action: wireActionSchema.optional(),
+});
 
 const wireVariables = entries(
   'Plan-level values the steps interpolate as {{name}} -- the credentials and fixtures a run is given. Secrets by $ENV reference, never the literal.',
@@ -265,17 +412,66 @@ function body(json: string, stepId: string): Record<string, unknown> | undefined
   return undefined;
 }
 
+/**
+ * A drafted step in the shape the dashboard stores and the runner reads.
+ *
+ * Loud rather than lenient about a payload that does not match what the step says it
+ * is. `body()` above warns and carries on because seven good steps beat a refusal and
+ * a missing body is visible on screen; a step with no payload at all is not the same
+ * thing -- it is unrunnable, the runner would refuse the whole plan on it
+ * (`load.go`: *"is a sql step with no action"*), and it would sit in the queue looking
+ * approvable. Better to fail the draft and say which step, since pass two is a
+ * reshape with the research already in hand and costs a fraction of a retry.
+ */
 function stepFromWire(step: z.infer<typeof wireStepSchema>): z.infer<typeof stepSchema> {
-  return {
-    ...step,
-    request: {
-      method: step.request.method,
-      url: step.request.url,
-      headers: optionalRecord(step.request.headers),
-      query: optionalRecord(step.request.query),
-      body: body(step.request.body, step.id),
-    },
-  };
+  const { kind, request, action, ...common } = step;
+
+  const wrong = (what: string) =>
+    new Error(`plan-schema: step ${step.id} says kind "${kind}" and ${what}`);
+
+  const allowed: readonly PlanAssertion['type'][] = ASSERTIONS_BY_KIND[kind];
+  for (const assertion of common.assertions) {
+    if (!allowed.includes(assertion.type)) {
+      throw wrong(
+        `asserts on ${assertion.type}, which is not something a ${kind} step has — ` +
+          `${allowed.join(', ')} are`,
+      );
+    }
+  }
+
+  if (kind === 'http') {
+    if (!request) throw wrong('sends no request');
+    return {
+      ...common,
+      kind,
+      request: {
+        method: request.method,
+        url: request.url,
+        headers: optionalRecord(request.headers),
+        query: optionalRecord(request.query),
+        body: body(request.body, step.id),
+      },
+    };
+  }
+
+  if (kind === 'sql') {
+    if (!action?.statement) throw wrong('has no statement to run');
+    /* `verify` when the draft did not say, because the two readings fail in different
+       directions and this is the one whose failure is visible. A write read as a
+       `verify` still executes -- the statement goes through `Query` instead of `Exec`
+       and only its row count goes unreported. A read left as `setup` goes through
+       `Exec`, which reports zero rows affected for a SELECT, and every count assertion
+       on it compares against 0. Neither is silent, and this one does not touch the
+       approval confirm's reading of what writes. */
+    return {
+      ...common,
+      kind,
+      action: { statement: action.statement, target: action.target ?? 'verify' },
+    };
+  }
+
+  if (!action?.command) throw wrong('has no command to run');
+  return { ...common, kind, action: { command: action.command } };
 }
 
 export function draftFromWire(draft: z.infer<typeof wireDraftSchema>): PlanDraft {

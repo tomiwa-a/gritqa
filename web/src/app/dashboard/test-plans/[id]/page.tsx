@@ -26,8 +26,15 @@ import {
 import { archivePlanAction, runPlanAction } from '@/lib/actions/plans';
 import { planJson, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import { isSettled, runRowsOf, runsForPlan } from '@/lib/runs';
-import { refineToken, parseOverlay, runToken, withOverlay, type PageParams } from '@/lib/overlay';
-import type { TestPlan } from '@/lib/model';
+import {
+  approveToken,
+  refineToken,
+  parseOverlay,
+  runToken,
+  withOverlay,
+  type PageParams,
+} from '@/lib/overlay';
+import { stepIsHeavy, type TestPlan } from '@/lib/model';
 
 const TABS = ['steps', 'diff', 'raw'] as const;
 type Tab = (typeof TABS)[number];
@@ -202,6 +209,11 @@ export default async function PlanDetailPage({
   /* One drawer at a time: a preview opening here parks the step inspector. */
   const overlay = parseOverlay(typeof query.open === 'string' ? query.open : undefined);
   const refineHref = withOverlay(base, query, refineToken(plan.publicId));
+  /* Undefined for a plan that only asks, and that is the whole gate: the bar submits
+     directly when there is nothing here worth reading first. */
+  const approveHref = detail?.steps.some(stepIsHeavy)
+    ? withOverlay(base, query, approveToken(plan.publicId))
+    : undefined;
   const newestRun = runsForPlan(runRowsOf(history, recent), plan.publicId)[0];
   const runPreviewHref = newestRun
     ? withOverlay(base, query, runToken(newestRun.publicId))
@@ -293,6 +305,7 @@ export default async function PlanDetailPage({
                 planId={plan.publicId}
                 cliConnected={cliConnected}
                 refineHref={refineHref}
+                confirmHref={approveHref}
               />
             ) : (
               <SettledBar

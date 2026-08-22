@@ -4,10 +4,11 @@
  * leaves the rest of the URL — and so the filter you were looking at — alone.
  */
 
-export type OverlayKind = 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'generate';
+export type OverlayKind = 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'generate' | 'approve';
 
 export type OverlayToken =
-  { kind: 'plan' | 'run' | 'refine' | 'ask' | 'rule'; id: string } | { kind: 'generate'; id: null };
+  | { kind: 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'approve'; id: string }
+  | { kind: 'generate'; id: null };
 
 /** Params an overlay owns. Everything else on the URL belongs to the page. */
 export const OVERLAY_PARAMS = ['open', 'g', 'from', 'state', 'since', 'q', 'only', 'edit'] as const;
@@ -24,7 +25,14 @@ export function parseOverlay(open: string | undefined): OverlayToken | null {
   const kind = open.slice(0, at);
   const id = open.slice(at + 1);
   if (!id) return null;
-  if (kind === 'plan' || kind === 'run' || kind === 'refine' || kind === 'ask' || kind === 'rule') {
+  if (
+    kind === 'plan' ||
+    kind === 'run' ||
+    kind === 'refine' ||
+    kind === 'ask' ||
+    kind === 'rule' ||
+    kind === 'approve'
+  ) {
     return { kind, id };
   }
   return null;
@@ -68,6 +76,19 @@ export const NEW_CONVERSATION = 'new';
  */
 export function ruleToken(publicId: string) {
   return `rule:${publicId}`;
+}
+
+/**
+ * The confirm in front of approving a plan that does more than ask.
+ *
+ * A URL rather than client state, like every other overlay here, and that is what
+ * makes it work with the thing it is guarding: the queue approves on a bare `a`
+ * keypress by clicking the button, and a button that is now a link to this token
+ * opens the confirm instead of writing. No dialog state to keep in sync, and the
+ * shortcut needed no change at all.
+ */
+export function approveToken(planPublicId: string) {
+  return `approve:${planPublicId}`;
 }
 
 function search(params: PageParams, drop: readonly string[]) {

@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { Icon } from '@/components/ui/icon';
 import { Leader } from '@/components/ui/rule';
-import { assertionLabel, variablesUsedBy } from '@/lib/plan';
+import { assertionLabel, stepHeadline, stepKindOf, variablesUsedBy } from '@/lib/plan';
 import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -74,9 +74,9 @@ export function StepSpine({
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                  <MethodBadge method={step.request.method} />
+                  <StepBadge kind={stepKindOf(step)} method={step.request?.method} />
                   <span className="truncate font-mono text-[12.5px] text-ink">
-                    {step.request.url}
+                    {stepHeadline(step)}
                   </span>
                   {broke && (
                     <span className="flex items-center gap-1 text-[11px] font-medium text-fail">

@@ -91,7 +91,29 @@ export type TestPlan = {
   lastRun: { status: ExecutionStatus; passed: number; total: number; label: string } | null;
 };
 
-export type AssertionType = 'status' | 'bodyField' | 'header' | 'responseTime';
+/**
+ * What an assertion is about. The four HTTP ones, then the two a query answers and
+ * the two a command does.
+ *
+ * Widened rather than forked into three types on purpose: the operators, the target
+ * and the expected value are the same in all eight cases, so the diff, the rules
+ * engine and `assertionCount` keep working with no branch. What the split buys is the
+ * one thing that matters -- `stdoutContains` on a result set is rejected rather than
+ * quietly always-true, and a query is asserted on with `rowCount` and `valueEquals`
+ * rather than by string-matching the rows it printed.
+ */
+export type AssertionType =
+  | 'status'
+  | 'bodyField'
+  | 'header'
+  | 'responseTime'
+  | 'rowCount'
+  | 'valueEquals'
+  | 'exitCode'
+  | 'stdoutContains';
+
+/** What a step is. Absent in a stored plan means `http`, which is what every plan written before these existed was made of. */
+export type StepKind = 'http' | 'sql' | 'shell';
 
 export type AssertionOperator =
   'equals' | 'notEquals' | 'contains' | 'notContains' | 'exists' | 'lt' | 'gt';
@@ -106,7 +128,31 @@ export type PlanAssertion = {
 export type PlanExtraction = {
   name: string;
   path: string;
-  source: 'body' | 'header';
+  /**
+   * Where the value comes from. `result` and `stdout` are what make a sql or shell
+   * step compose: a fixture insert hands a real booking id to the request after it,
+   * instead of the draft inventing one.
+   */
+  source: 'body' | 'header' | 'result' | 'stdout';
+};
+
+/**
+ * What a sql or shell step does, where an HTTP step has a request.
+ *
+ * One flat object of optional strings, mirroring `Action` in
+ * `cli/internal/plan/plan.go` field for field. Not a discriminated union: the wire
+ * dialect a draft comes back through has eaten a nested construct before, and the
+ * shape the runner already reads happens to be the safe one.
+ *
+ * `target` is load-bearing rather than decorative. `verify` queries, and its rows are
+ * what the assertions read -- that is the out-of-band evidence a `201` is not. `setup`
+ * executes, and its row count is rows affected; it is also what marks the step as
+ * writing, which is what the approval confirm is drawn from.
+ */
+export type PlanAction = {
+  statement?: string;
+  target?: 'setup' | 'verify';
+  command?: string;
 };
 
 export type PlanStepSpec = {
@@ -114,18 +160,33 @@ export type PlanStepSpec = {
   name: string;
   description: string;
   dependsOn: string[];
-  request: {
+  kind?: StepKind;
+  /** Present for an `http` step, absent for the other two. */
+  request?: {
     method: Method;
     url: string;
     headers?: Record<string, string>;
     body?: Record<string, unknown>;
     query?: Record<string, string>;
   };
+  /** Present for a `sql` or `shell` step, absent for a request. */
+  action?: PlanAction;
   extract: PlanExtraction[];
   assertions: PlanAssertion[];
   onFailure: 'abort' | 'continue';
   retry?: { maxAttempts: number; delayMs: number };
 };
+
+/**
+ * True for a step whose approval deserves a second look: a fixture that writes to
+ * GritQA's copy of the database, or any command in its container. A plan of requests
+ * and read-only queries approves in one click, which is what keeps the confirm a thing
+ * people read rather than dismiss.
+ */
+export function stepIsHeavy(step: PlanStepSpec): boolean {
+  if (step.kind === 'shell') return true;
+  return step.kind === 'sql' && step.action?.target !== 'verify';
+}
 
 export type PlanChangeKind =
   | 'step_added'
@@ -227,9 +288,25 @@ export type MovedUnit = {
 export type StepResult = {
   stepName: string;
   status: StepStatus;
-  method: Method;
-  path: string;
+  kind: StepKind;
+  /**
+   * The method and the endpoint, for a step that made a request. Null for the other
+   * two kinds, which have neither -- and null rather than defaulted, because a query
+   * labelled `GET` with an empty path is both wrong and indistinguishable in the run
+   * report from a request whose pattern went missing.
+   */
+  method: Method | null;
+  path: string | null;
+  /** What it called, ran or executed, with the variables filled in. */
+  detail: string | null;
   responseStatus: number | null;
+  /** Rows a query returned or a fixture moved. `0` is a finding, not an absence. */
+  rowCount: number | null;
+  /** What a command exited with. `0` is success, so this is null when there is none. */
+  exitCode: number | null;
+  /** What a command printed. */
+  output: string | null;
+  /** How long the step took, whatever kind it was. */
   responseTimeMs: number | null;
   /**
    * What went wrong with this step, in the runner's words -- `Expected status 200, got

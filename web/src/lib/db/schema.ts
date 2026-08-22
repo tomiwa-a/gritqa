@@ -220,6 +220,16 @@ export const executionStatusEnum = pgEnum('execution_status', [
   'failed',
   'error',
 ]);
+/**
+ * What a step was. `http` has a method, a route and a status; `sql` has rows;
+ * `shell` has an exit code and output.
+ *
+ * Absent from a plan's JSON means `http`, which is what the Go runner already
+ * resolves it to -- every step written before there was more than one kind was a
+ * request, so the default backfills truthfully rather than by convention.
+ */
+export const stepKindEnum = pgEnum('step_kind', ['http', 'sql', 'shell']);
+
 export const stepStatusEnum = pgEnum('step_status', [
   'pending',
   'passed',
@@ -474,8 +484,18 @@ export const testResults = pgTable(
     stepId: varchar('step_id', { length: 255 }).notNull(),
     stepName: varchar('step_name', { length: 255 }).notNull(),
     status: stepStatusEnum('status').notNull().default('pending'),
+    /**
+     * Which of the three columns below mean anything. A `sql` step has no method
+     * and no route; a `shell` step has neither and no status either.
+     */
+    stepKind: stepKindEnum('step_kind').notNull().default('http'),
     requestMethod: varchar('request_method', { length: 10 }),
-    /** The URL that went over the wire, variables substituted. Replayable. */
+    /**
+     * What went over the wire, variables substituted. Replayable.
+     *
+     * For a `sql` or `shell` step it is the interpolated statement or command --
+     * the same promise, since that is what actually ran.
+     */
     requestUrl: text('request_url'),
     /**
      * The same call as a route pattern -- `/checkout/:id/tax`, not
@@ -485,12 +505,35 @@ export const testResults = pgTable(
      * way, so without it a step joins to nothing it exercised. It is recorded
      * rather than derived because only the runner holds the template and the
      * values at the same moment; afterwards the plan has moved on.
+     *
+     * Null for every non-HTTP step, and strictly so: this is what the coverage
+     * grid counts, and a sql step proving a row was written is evidence about an
+     * endpoint but is not traffic to one.
      */
     routePattern: text('route_pattern'),
     requestBody: jsonb('request_body'),
     responseStatus: integer('response_status'),
     responseBody: jsonb('response_body'),
+    /** How long the step took. It times a query and a command too. */
     responseTimeMs: integer('response_time_ms'),
+
+    /**
+     * A `sql` step's evidence: rows a verification query returned, or rows a
+     * fixture moved.
+     *
+     * Null rather than 0 for the other kinds, because 0 is a real answer and the
+     * interesting one -- "the endpoint returned 201 and nothing was written" is
+     * the bug this step type exists to catch.
+     */
+    rowCount: bigint('row_count', { mode: 'number' }),
+    /**
+     * A `shell` step's exit status. Deliberately not folded into
+     * `responseStatus`: exit 0 is success, and HTTP 0 is nothing.
+     */
+    exitCode: integer('exit_code'),
+    /** Stdout from a `shell` step, masked by the runner before it was sent. */
+    output: text('output'),
+
     assertionResults: jsonb('assertion_results'),
     errorMessage: text('error_message'),
 
@@ -543,10 +586,9 @@ export const executionState = pgTable(
       .notNull()
       .references(() => testExecutions.id, { onDelete: 'cascade' }),
     /** The step whose margin this is. Null is the run's own reading. */
-    testResultId: bigint('test_result_id', { mode: 'number' }).references(
-      () => testResults.id,
-      { onDelete: 'cascade' },
-    ),
+    testResultId: bigint('test_result_id', { mode: 'number' }).references(() => testResults.id, {
+      onDelete: 'cascade',
+    }),
     seq: integer('seq').notNull(),
     /** A table name, or a watched path for the filesystem units. */
     unit: text('unit').notNull(),

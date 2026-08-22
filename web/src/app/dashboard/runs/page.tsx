@@ -12,10 +12,18 @@ import { OverlayHost } from '@/components/app/overlay-host';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { getAllPlans, getRecentRuns, getRunHistory, getRunStripStats } from '@/lib/data';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
-import { brokeAt, matchesStatus, runCountsOf, runRowsOf, type RunRow } from '@/lib/runs';
+import {
+  brokeAt,
+  matchesStatus,
+  runCountsOf,
+  runRowsOf,
+  stepLine,
+  stepOutcome,
+  type RunRow,
+} from '@/lib/runs';
 import { runToken, withOverlay, type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Runs · GritQA' };
@@ -84,10 +92,16 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
       if (broke) {
         return (
           <span className="flex min-w-0 items-center gap-2">
-            <MethodBadge method={broke.method} className="h-[15px] w-[46px] text-[9px]" />
-            <span className="truncate font-mono text-[11.5px] text-ink-muted">{broke.path}</span>
+            <StepBadge
+              kind={broke.kind}
+              method={broke.method}
+              className="h-[15px] w-[46px] text-[9px]"
+            />
+            <span className="truncate font-mono text-[11.5px] text-ink-muted">
+              {stepLine(broke)}
+            </span>
             <span className="nums shrink-0 text-[11.5px] font-medium text-fail">
-              {broke.responseStatus}
+              {stepOutcome(broke)}
             </span>
           </span>
         );

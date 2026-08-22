@@ -1,3 +1,4 @@
+import { ApproveConfirm } from './plan/approve-confirm';
 import { AskPanel } from './ask/ask-panel';
 import { GenerateModal } from './generate/generate-modal';
 import { PlanConversation } from './plan/plan-conversation';
@@ -29,6 +30,10 @@ export async function OverlayHost({ params, pathname }: { params: PageParams; pa
 
   if (token.kind === 'generate') {
     return <GenerateModal params={params} pathname={pathname} closeHref={closeHref} />;
+  }
+
+  if (token.kind === 'approve') {
+    return <ApproveConfirm id={token.id} closeHref={closeHref} />;
   }
 
   if (token.kind === 'refine') {

@@ -19,6 +19,37 @@ export const STEP_WORD: Record<StepResult['status'], string> = {
   pending: 'Waiting',
 };
 
+/**
+ * What a step was about, in one line.
+ *
+ * A request has a route pattern and the other two kinds do not, so `path` is null for
+ * them and the line comes from `detail` -- the statement or the command as it actually
+ * ran, variables filled in and secrets masked. Collapsed to one line here because
+ * every caller is a single-line cell; the drawer that shows a statement whole calls
+ * neither of these.
+ */
+export function stepLine(step: StepResult): string {
+  if (step.kind === 'http') return step.path ?? '';
+  return (step.detail ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The number a step came back with, which is a different number per kind.
+ *
+ * Null rather than a dash, so a caller can lay out the absence its own way. Zero is
+ * never absent in either of the new kinds: `0 rows` is the whole point of a
+ * verification query -- "returned 201, wrote nothing" -- and `exit 0` is success.
+ */
+export function stepOutcome(step: StepResult): string | null {
+  if (step.kind === 'sql') {
+    return step.rowCount === null ? null : `${step.rowCount} row${step.rowCount === 1 ? '' : 's'}`;
+  }
+  if (step.kind === 'shell') {
+    return step.exitCode === null ? null : `exit ${step.exitCode}`;
+  }
+  return step.responseStatus === null ? null : String(step.responseStatus);
+}
+
 export type RunRow = RunHistoryEntry & {
   /** Only the newest runs carry a step-by-step report in this build. */
   detail: TestExecution | undefined;

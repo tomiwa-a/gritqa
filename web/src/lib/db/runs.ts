@@ -138,9 +138,14 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       executionId: testResults.executionId,
       stepName: testResults.stepName,
       status: testResults.status,
+      kind: testResults.stepKind,
       method: testResults.requestMethod,
       routePattern: testResults.routePattern,
+      requestUrl: testResults.requestUrl,
       responseStatus: testResults.responseStatus,
+      rowCount: testResults.rowCount,
+      exitCode: testResults.exitCode,
+      output: testResults.output,
       responseTimeMs: testResults.responseTimeMs,
       errorMessage: testResults.errorMessage,
     })
@@ -178,12 +183,19 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
     const entry: StepResult = {
       stepName: step.stepName,
       status: step.status,
-      // Both columns are nullable and neither is ever written null: the method and
-      // the endpoint come off the plan, so the runner knows them before it makes the
-      // call. The defaults are for rows written before the column existed.
-      method: (step.method ?? 'GET') as Method,
-      path: step.routePattern ?? '',
+      kind: step.kind,
+      // Passed through as null rather than defaulted. Only an `http` step has a method
+      // and an endpoint; a statement or a command has neither, and the old defaults
+      // would have labelled every one of them `GET` with an empty path -- which the
+      // report would then have linked to a dead endpoint panel. A request whose
+      // pattern really is missing reads as missing too, which is the truth.
+      method: step.kind === 'http' ? ((step.method ?? 'GET') as Method) : null,
+      path: step.kind === 'http' ? (step.routePattern ?? '') : null,
+      detail: step.requestUrl,
       responseStatus: step.responseStatus,
+      rowCount: step.rowCount,
+      exitCode: step.exitCode,
+      output: step.output,
       responseTimeMs: step.responseTimeMs,
       errorMessage: step.errorMessage,
       moved: stepMoved.get(step.id) ?? [],

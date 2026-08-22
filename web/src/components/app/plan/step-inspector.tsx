@@ -1,11 +1,25 @@
 import Link from 'next/link';
-import { MethodBadge } from '@/components/ui/method-badge';
+import { StepBadge } from '@/components/ui/step-badge';
 import { Icon } from '@/components/ui/icon';
-import { Prose } from '@/components/ui/prose';
+import { Fence, Prose } from '@/components/ui/prose';
 import { Badge } from '@/components/ui/badge';
 import { Drawer, DrawerBlock } from '../drawer';
-import { assertionPredicate, assertionTarget, variablesUsedBy } from '@/lib/plan';
-import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
+import { assertionPredicate, assertionTarget, stepKindOf, variablesUsedBy } from '@/lib/plan';
+import type { PlanFailureSeed, PlanStepSpec, StepKind } from '@/lib/model';
+
+/**
+ * What the block holding the payload is called, per kind. Three words rather than one
+ * generic one: a reader scanning the drawer for what this step will actually do is
+ * looking for the noun, and "Payload" is a noun about the format instead.
+ */
+const BLOCK: Record<StepKind, string> = {
+  http: 'Request',
+  sql: 'Statement',
+  shell: 'Command',
+};
+
+/** The language the payload is coloured as. Both are in `langOf`'s six. */
+const LANG: Record<'sql' | 'shell', string> = { sql: 'sql', shell: 'bash' };
 
 function Pairs({ rows }: { rows: [string, string][] }) {
   return (
@@ -77,8 +91,14 @@ export function StepInspector({
 }) {
   const broke = failure?.stepId === step.id;
   const uses = variablesUsedBy(step);
-  const headers = Object.entries(step.request.headers ?? {}) as [string, string][];
-  const query = Object.entries(step.request.query ?? {}) as [string, string][];
+  const kind = stepKindOf(step);
+  /* Optional chained, and that is the fix rather than a refinement of it: these two
+     lines read `step.request.headers` before anything had established there was a
+     request, so opening any step that was not one took the drawer down with it. */
+  const request = step.request;
+  const headers = Object.entries(request?.headers ?? {}) as [string, string][];
+  const query = Object.entries(request?.query ?? {}) as [string, string][];
+  const run = kind === 'sql' ? step.action?.statement : step.action?.command;
 
   return (
     <Drawer
@@ -112,13 +132,29 @@ export function StepInspector({
         <Prose>{step.description}</Prose>
       </DrawerBlock>
 
-      <DrawerBlock label="Request">
+      <DrawerBlock label={BLOCK[kind]}>
         <div className="flex flex-wrap items-center gap-2">
-          <MethodBadge method={step.request.method} />
-          <span className="min-w-0 break-all font-mono text-[11.5px] text-ink">
-            {step.request.url}
-          </span>
+          <StepBadge kind={kind} method={request?.method} />
+          {request ? (
+            <span className="min-w-0 break-all font-mono text-[11.5px] text-ink">
+              {request.url}
+            </span>
+          ) : (
+            <span className="text-[11.5px] text-ink-muted">
+              {kind === 'shell'
+                ? "Runs in GritQA's own container, with the project mounted"
+                : step.action?.target === 'setup'
+                  ? "Writes, against GritQA's own copy of the database"
+                  : "Reads GritQA's own copy of the database for evidence"}
+            </span>
+          )}
         </div>
+
+        {/* Verbatim and coloured, not collapsed to one line the way the spine shows it.
+            This is the drawer somebody opens to read what will run before they approve
+            it, so a statement's line breaks are part of what they are reading. */}
+        {kind !== 'http' && run && <Fence code={run} tag={LANG[kind]} />}
+
         {query.length > 0 && (
           <div className="mt-3">
             <p className="mb-1.5 text-[11px] text-ink-subtle">Query</p>
@@ -133,9 +169,9 @@ export function StepInspector({
         </DrawerBlock>
       )}
 
-      {step.request.body && (
+      {request?.body && (
         <DrawerBlock label="Body">
-          <Json value={step.request.body} />
+          <Json value={request.body} />
         </DrawerBlock>
       )}
 

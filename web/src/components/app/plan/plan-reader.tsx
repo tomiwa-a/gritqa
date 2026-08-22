@@ -30,6 +30,7 @@ export function PlanReader({
   selectedStepId,
   stepHrefFor,
   refineHref,
+  approveHref,
   className,
 }: {
   plan: TestPlan;
@@ -39,6 +40,8 @@ export function PlanReader({
   stepHrefFor: (stepId: string) => string;
   /** Opens the conversation panel over this page. */
   refineHref: string;
+  /** Set only when this plan writes; the bar submits directly otherwise. */
+  approveHref?: string;
   className?: string;
 }) {
   const fullHref = `/dashboard/test-plans/${plan.publicId}`;
@@ -94,6 +97,7 @@ export function PlanReader({
             planId={plan.publicId}
             cliConnected={cliConnected}
             refineHref={refineHref}
+            confirmHref={approveHref}
             showKeys
             className="shrink-0 lg:max-w-[22rem]"
           />
