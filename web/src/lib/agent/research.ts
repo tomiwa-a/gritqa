@@ -72,8 +72,8 @@ async function endpoint(): Promise<{ url: string; token: string } | null> {
     const [row] = await db
       .select({ mcpUrl: cliInstances.mcpUrl, mcpToken: cliInstances.mcpToken })
       .from(cliInstances)
-      .where(sql`last_seen_at > now() - interval ${CONNECTED_WITHIN}`)
-      .orderBy(sql`last_seen_at DESC`)
+      .where(sql`${cliInstances.lastSeenAt} > now() - ${CONNECTED_WITHIN}::interval`)
+      .orderBy(sql`${cliInstances.lastSeenAt} DESC`)
       .limit(1);
 
     if (row?.mcpUrl && row?.mcpToken) {
