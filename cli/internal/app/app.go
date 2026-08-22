@@ -129,9 +129,10 @@ func Run(ctx context.Context, opts Options) error {
 // still registers, short enough that nobody watches a blank screen for it.
 const bindWithin = 10 * time.Second
 
-// startMCP puts the research surface on loopback, so the dashboard can reach this
-// machine without anyone copying a URL into an environment. A nil server is not
-// fatal: the poll loop still runs approved plans, and drafting says what is missing.
+// startMCP puts the research surface on loopback, so a dashboard on this machine
+// reaches it without anyone copying a URL into an environment. A failed bind is not
+// fatal and the server is still returned: dial-out needs no listener, and reporting
+// advertises the address only while one is live.
 func startMCP(ctx context.Context, w *term.Writer, s *session) (*mcp.Server, string) {
 	srv, err := mcp.New(mcp.Options{
 		Project: s.cfg.Project,
@@ -156,14 +157,12 @@ func startMCP(ctx context.Context, w *term.Writer, s *session) (*mcp.Server, str
 	select {
 	case <-srv.Ready():
 	case <-ctx.Done():
-		return nil, ""
 	case <-time.After(bindWithin):
 	}
 
 	if _, ok := srv.Live(); !ok {
-		w.Write(term.Line{Kind: term.Info,
-			Text: "the research surface did not come up, so drafting from the dashboard will say so"})
-		return nil, ""
+		w.Write(term.Line{Kind: term.Info, Text: "nothing is listening on this machine, so the dashboard " +
+			"reaches these tools only over the connection the CLI opens"})
 	}
 	return srv, srv.Tokens()[mcp.Read]
 }

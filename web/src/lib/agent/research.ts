@@ -2,10 +2,14 @@ import { createMCPClient } from '@ai-sdk/mcp';
 import type { MCPClient } from '@ai-sdk/mcp';
 import { jsonSchema } from 'ai';
 import type { JSONSchema7 } from '@ai-sdk/provider';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { cliInstances } from '@/lib/db/schema';
-import { sql } from 'drizzle-orm';
 import { CONNECTED_WITHIN } from '@/lib/db/cli';
+import { currentScope } from '@/lib/db/scope';
+import { newestDial } from '@/lib/agent/relay';
+import type { Held } from '@/lib/agent/relay';
+import { DialTransport } from '@/lib/agent/dial-transport';
 
 /**
  * The agent's read access to the codebase, over the CLI's MCP server.
@@ -17,13 +21,16 @@ import { CONNECTED_WITHIN } from '@/lib/db/cli';
  * dials the CLI and waits, because an agent mid-draft has a question and cannot
  * proceed without the answer.
  *
- * **The honest limit.** The CLI binds its MCP server to loopback on purpose -- a
- * tool surface over someone's project is not something to put on a network
- * interface -- so this channel only exists when the agent and the CLI are on the
- * same machine. That is true in development and it is not true of a hosted
- * deployment, which will need a tunnel or a research-over-jobs fallback that
- * `CAP.md` has already ruled out on latency grounds. Naming it here rather than
- * discovering it later: nothing below pretends otherwise, and `jobs` is
+ * Two ways in, and the same tools either way. The CLI binds its MCP server to
+ * loopback on purpose -- a tool surface over someone's project is not something to put
+ * on a network interface -- so an address only works when the agent and the CLI are on
+ * the same machine. It also dials out (decision 24), and a connection it opened works
+ * from anywhere, which is what a hosted deployment will use. A held dial is preferred
+ * for the same reason: it is proof of reachability, where a `127.0.0.1:PORT` row is a
+ * claim, and on a hosted deploy that claim points at the server's own loopback.
+ *
+ * **The honest limit that remains.** The relay holding a dial is a `Map` in one Node
+ * process, so this works across machines but not across server instances. `jobs` is
  * unaffected either way.
  */
 
@@ -50,37 +57,53 @@ export class CliUnavailableError extends Error {
 }
 
 /**
- * Where the CLI is, and the bearer for it -- resolved here and nowhere else, so
- * that changing how it is discovered is a change to this function.
+ * How to reach the CLI -- resolved here and nowhere else, so that changing how it is
+ * discovered is a change to this function.
  *
- * Resolution order:
- *   1. Environment variables (manual override, always wins)
- *   2. Database (auto-registered by the CLI's poll heartbeat)
+ * Order:
+ *   1. Environment variables, the manual override for a hand-run `gritqa --serve`
+ *   2. A dial this project's CLI has open, held by the relay
+ *   3. The loopback address the CLI registers on every poll
  *
- * The env vars exist for remote setups where the CLI and web app are on different
- * machines. In the common case (same machine), the CLI auto-registers its MCP
- * address on every poll and the database is the source of truth.
+ * A dial beats an address because it has already proved it works. The address is a
+ * row the CLI wrote about itself, and on a hosted deploy `127.0.0.1:PORT` names the
+ * server rather than the laptop.
  */
-async function endpoint(): Promise<{ url: string; token: string } | null> {
-  // 1. Env vars — manual override.
+type Reach =
+  | { kind: 'http'; label: string; url: string; token: string }
+  | { kind: 'dial'; label: string; conn: Held };
+
+async function endpoint(): Promise<Reach | null> {
   const url = process.env[URL_VAR]?.trim();
   const token = process.env[TOKEN_VAR]?.trim();
-  if (url && token) return { url, token };
+  if (url && token) return { kind: 'http', label: url, url, token };
 
-  // 2. Database — auto-registered by the CLI's poll heartbeat.
+  const scope = await currentScope();
+  if (!scope) return null;
+
+  const dial = newestDial(scope.projectId);
+  if (dial) {
+    return { kind: 'dial', label: `the dial from ${dial.instanceId}`, conn: dial.conn };
+  }
+
   try {
     const [row] = await db
       .select({ mcpUrl: cliInstances.mcpUrl, mcpToken: cliInstances.mcpToken })
       .from(cliInstances)
-      .where(sql`${cliInstances.lastSeenAt} > now() - ${CONNECTED_WITHIN}::interval`)
+      .where(
+        and(
+          eq(cliInstances.projectId, scope.projectId),
+          sql`${cliInstances.lastSeenAt} > now() - ${CONNECTED_WITHIN}::interval`,
+        ),
+      )
       .orderBy(sql`${cliInstances.lastSeenAt} DESC`)
       .limit(1);
 
     if (row?.mcpUrl && row?.mcpToken) {
-      return { url: row.mcpUrl, token: row.mcpToken };
+      return { kind: 'http', label: row.mcpUrl, url: row.mcpUrl, token: row.mcpToken };
     }
   } catch {
-    // Database unavailable — fall through to null.
+    /* No database is the same answer as no machine: there is nothing to research with. */
   }
 
   return null;
@@ -117,7 +140,7 @@ export async function openResearch(): Promise<Research> {
   const target = await endpoint();
   if (!target) {
     throw new CliUnavailableError(
-      `No MCP server found. Set ${URL_VAR} and ${TOKEN_VAR} in .env.local, or start the CLI with \`gritqa --serve\` — it registers automatically on every poll.`,
+      `No machine is reachable for this project. Run \`gritqa\` in the project — it registers its address and dials in on every poll — or set ${URL_VAR} and ${TOKEN_VAR} in .env.local to point at one by hand.`,
     );
   }
 
@@ -125,11 +148,16 @@ export async function openResearch(): Promise<Research> {
   try {
     client = await withTimeout(
       createMCPClient({
-        transport: {
-          type: 'http',
-          url: target.url,
-          headers: { Authorization: `Bearer ${target.token}` },
-        },
+        /* A dial is already connected, so the transport over it is the connection
+           rather than a way of making one. Nothing else about the client changes. */
+        transport:
+          target.kind === 'dial'
+            ? new DialTransport(target.conn)
+            : {
+                type: 'http',
+                url: target.url,
+                headers: { Authorization: `Bearer ${target.token}` },
+              },
         clientName: 'gritqa-web',
         /* One attempt. A retry only helps a server that is briefly busy, and the
            failure this actually sees is a process that is not running -- which
@@ -143,7 +171,7 @@ export async function openResearch(): Promise<Research> {
        answering. The reason is kept on `detail` for the log, and the surface gets
        one state with one fix. A 401 is the exception worth spelling out, because
        it means the CLI *is* running and the bearer is from a previous process. */
-    throw new CliUnavailableError(describe(error, target.url));
+    throw new CliUnavailableError(describe(error, target.label));
   }
 
   try {
@@ -156,7 +184,7 @@ export async function openResearch(): Promise<Research> {
     /* The handshake succeeded and listing tools did not, so this session is open
        and nobody else holds a reference to it. */
     await client.close().catch(() => {});
-    throw new CliUnavailableError(describe(error, target.url));
+    throw new CliUnavailableError(describe(error, target.label));
   }
 }
 
@@ -235,12 +263,12 @@ function collapseNullables(node: unknown): unknown {
   return out;
 }
 
-function describe(error: unknown, url: string): string {
+function describe(error: unknown, where: string): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/401|unauthor/i.test(message)) {
-    return `${url} rejected the bearer. The CLI mints a new one each time it starts, so this is likely a token from a previous run.`;
+    return `${where} rejected the bearer. The CLI mints a new one each time it starts, so this is likely a token from a previous run.`;
   }
-  return `${url} did not answer (${message}).`;
+  return `${where} did not answer (${message}).`;
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {

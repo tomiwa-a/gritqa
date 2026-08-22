@@ -62,6 +62,8 @@ func attach(ctx context.Context, s *session, snap *index.Snapshot, srv *mcp.Serv
 	}
 	a.snap = snap
 
+	go a.dialOut(ctx)
+
 	a.mirror(ctx, snap)
 	w.Write(term.Line{Kind: term.Blank})
 	w.Write(term.Line{Kind: term.Info, Text: "waiting for approved plans — Ctrl-C to stop"})
