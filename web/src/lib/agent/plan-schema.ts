@@ -212,7 +212,9 @@ export const revisionSchema = z.object({
   description: z.string(),
   variables: z
     .record(z.string(), z.string())
-    .describe('Plan-level values steps interpolate. Secrets by $ENV reference, never literal'),
+    .describe(
+      'Plan-level values steps interpolate. A credential is a name with a placeholder value the developer maps to their environment, never the literal secret',
+    ),
   covers: z
     .array(endpointSchema)
     .describe('The endpoints this plan is about. Sign-in scaffolding excluded'),
@@ -367,7 +369,7 @@ const wireStepSchema = stepSchema.omit({ kind: true, request: true, action: true
 });
 
 const wireVariables = entries(
-  'Plan-level values the steps interpolate as {{name}} -- the credentials and fixtures a run is given. Secrets by $ENV reference, never the literal.',
+  'Plan-level values the steps interpolate as {{name}} -- the credentials and fixtures a run is given. A credential is a name with a placeholder value the developer maps to their environment, never the literal secret.',
 );
 
 export const wireRevisionSchema = revisionSchema

@@ -64,16 +64,23 @@ Paths in \`covers\` are route patterns -- /customers/:id/orders, never
 /customers/42/orders. Coverage is keyed by pattern, so a concrete id there joins
 to nothing.
 
-Never write a credential into a plan. Reference it: {{$ENV.STRIPE_KEY}}. The plan
-is stored, shown on screen and copied into a job payload, and a literal secret
-would travel through all three.
+Never write a credential into a plan. Give it a variable -- adminPassword -- with
+a value that is plainly a placeholder, and reference it as {{adminPassword}}. The
+developer's own config maps that name to an environment variable on their machine,
+and the resolved value overrides whatever the plan declares, so the secret never
+has to be written down here. Note the names that need mapping in \`assumptions\`: an
+unmapped one refuses the run before the first request, which is a better outcome
+than a 401 that reads as a bug in the code.
 
 Every {{name}} is either a variable the plan declares or a value an earlier step
-extracted, and {{$ENV.NAME}} is the only exception. There are no functions: no
-date arithmetic, no now(), no random. A date is a literal -- 2026-09-01 --
-declared once as a variable so the request that sends it and the assertion that
-checks it read the same one. A {{name}} nothing supplies is a step that sends
-those characters to the API verbatim.
+extracted, with one exception the engine supplies: {{runId}} is different on every
+run. Use it wherever a value has to be new, or the second run fails on a row the
+first one left behind -- guest-{{runId}}@example.com rather than a literal address
+somebody has to remember to change. Nothing else is supplied for you: no date
+arithmetic, no now(), no random, and no way to read the environment from a step. A
+date is a literal -- 2026-09-01 -- declared once as a variable so the request that
+sends it and the assertion that checks it read the same one. A {{name}} nothing
+supplies is a step that sends those characters to the API verbatim.
 
 The other direction is a tell too: a value a step extracts and no later step
 reads is a value you meant to send and did not.
