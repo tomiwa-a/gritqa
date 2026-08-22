@@ -25,6 +25,7 @@ import (
 // interface: every handler is testable without either.
 type stub struct {
 	root     string
+	compose  *sandbox.Compose
 	proposed *sandbox.Recipe
 	ran      string
 	down     bool
@@ -44,6 +45,13 @@ func (s *stub) Sandbox() *sandbox.Sandbox { return nil }
 
 func (s *stub) StartSandbox(context.Context) (Boot, error) {
 	return Boot{}, errNoDocker
+}
+
+func (s *stub) Compose(context.Context) (*sandbox.Compose, error) {
+	if s.compose == nil {
+		return nil, errors.New("no compose file found")
+	}
+	return s.compose, nil
 }
 
 func (s *stub) Recipe(context.Context) (sandbox.Recipe, error) {
@@ -127,7 +135,7 @@ func TestAnExecuteToolIsNotAdvertisedToAReadClient(t *testing.T) {
 	got := names(t, read)
 
 	for _, want := range []string{"get_index", "read_file", "search", "db", "start_sandbox",
-		"teardown", "derive_environment"} {
+		"teardown", "read_compose", "derive_environment"} {
 		if !has(got, want) {
 			t.Errorf("a read client cannot reach %s: %v", want, got)
 		}
@@ -336,6 +344,44 @@ func TestDBRefusesAnythingThatWrites(t *testing.T) {
 	}
 	if err := wrote(errors.New("boom")); err == nil || err.Error() != "boom" {
 		t.Errorf("an unrelated error was rewritten to %v", err)
+	}
+}
+
+// The declaration reaches the agent whole and unread: a profiled service arrives
+// labelled rather than filtered, an interpolated value arrives as its expression,
+// and the note points at the next read instead of at a conclusion.
+func TestReadComposeHandsOverWhatTheFileDeclares(t *testing.T) {
+	cs, back := connect(t, Read)
+
+	if msg := fails(t, cs, "read_compose", nil); !strings.Contains(msg, "compose") {
+		t.Errorf("a project with no compose file said %q", msg)
+	}
+
+	back.compose = &sandbox.Compose{
+		Name:        "shop",
+		Files:       []string{filepath.Join(back.root, "compose.yml")},
+		Fingerprint: "9f2c",
+		Services: []sandbox.Service{
+			{Name: "api", Build: back.root,
+				Ports: []sandbox.Port{{Container: 3000, Published: "3000", Protocol: "tcp"}}},
+			{Name: "store", Image: "postgres:16",
+				Environment: map[string]string{"POSTGRES_PASSWORD": "${PW}"}},
+			{Name: "migrate", Image: "postgres:16", Profiles: []string{"tools"}},
+		},
+	}
+
+	got := call[composeOut](t, cs, "read_compose", nil)
+	if got.Compose == nil || got.Compose.Name != "shop" || len(got.Compose.Services) != 3 {
+		t.Fatalf("got %+v", got.Compose)
+	}
+	if !got.Compose.Services[2].Gated() {
+		t.Error("a service behind a profile has to arrive labelled, not dropped")
+	}
+	if got.Compose.Services[1].Environment["POSTGRES_PASSWORD"] != "${PW}" {
+		t.Errorf("environment = %v", got.Compose.Services[1].Environment)
+	}
+	if !strings.Contains(got.Note, "3 services") {
+		t.Errorf("note = %q", got.Note)
 	}
 }
 

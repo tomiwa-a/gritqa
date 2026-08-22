@@ -44,6 +44,27 @@ var surface = []struct {
 				"source files, returning matching lines with their paths."}, s.search)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
+		sdk.AddTool(m, &sdk.Tool{Name: "read_compose",
+			Description: "The project's own Docker Compose file, as compose itself resolves it: " +
+				"interpolation done, .env applied, overrides merged, every short form expanded, and " +
+				"services behind a profile included and labelled. This is a straight read of what " +
+				"the developer declared — nothing in it is interpreted.\n\n" +
+				"Interpreting it is your job, and it is the whole job. Which service is the app, " +
+				"which holds its data, which port serves HTTP, how the schema gets created, what " +
+				"has to be neutralised before a second copy can run alongside theirs — none of " +
+				"that is written down anywhere, and none of it is guessed for you. Work it out " +
+				"from these services plus the code: read_file the Dockerfile a service builds " +
+				"from, the manifest, the framework's config, whatever the commands reference. A " +
+				"service gated behind a profile is a strong hint on its own, but a project may " +
+				"declare no runner at all and do its migrating some other way, or have nothing to " +
+				"migrate yet.\n\n" +
+				"Values are reported as the file declares them. A value that came from .env or the " +
+				"shell is shown as the ${...} expression it came from rather than what it resolved " +
+				"to, because that one can be a live credential.\n\n" +
+				"Costs nothing and starts nothing. Read this before start_sandbox, and record what " +
+				"you concluded with derive_environment."}, s.readCompose)
+	}},
+	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "start_sandbox",
 			Description: "Bring up GritQA's own copy of this project: a database it created and " +
 				"migrated with the project's own tooling, and the app running against it. " +
@@ -515,6 +536,27 @@ func render(cells []any) []any {
 		}
 	}
 	return out
+}
+
+// read_compose
+
+type composeOut struct {
+	Compose *sandbox.Compose `json:"compose"`
+	Version string           `json:"compose_version,omitempty"`
+	Note    string           `json:"note"`
+}
+
+func (s *Server) readCompose(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, composeOut, error) {
+	got, err := s.back.Compose(ctx)
+	if err != nil {
+		return nil, composeOut{}, err
+	}
+	return nil, composeOut{
+		Compose: got,
+		Version: sandbox.ComposeVersion(ctx),
+		Note: fmt.Sprintf("%d services as declared, nothing interpreted. Reading the files a "+
+			"service builds from is usually the next thing worth doing.", len(got.Services)),
+	}, nil
 }
 
 // derive_environment

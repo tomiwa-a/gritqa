@@ -190,6 +190,10 @@ func fill(to *Recipe, from Recipe, author string) {
 	}
 }
 
+// MountRoot is the directory a container sees as the project. Exported because
+// the compose lookup needs the same answer before any recipe exists.
+func MountRoot(root, configured string) string { return resolveMount(root, configured) }
+
 // resolveMount finds the dependency root. The git root is the default because it
 // is where a project's manifests and its vendored dependencies sit, and a command
 // reaching above the project root has to still resolve.

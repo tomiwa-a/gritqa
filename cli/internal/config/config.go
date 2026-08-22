@@ -76,6 +76,10 @@ type Run struct {
 // never touches the user's own database and needs no credential from them: GritQA
 // generates the password because it owns the instance.
 type Sandbox struct {
+	// Compose names the project's compose files, relative to the project root.
+	// Empty means compose's own lookup order, tried at the project root and then
+	// at the mount.
+	Compose []string `yaml:"compose,omitempty"`
 	// Image is "mysql:8" shaped. Set it and the sandbox is on.
 	Image string `yaml:"image"`
 	// Database names the schema created inside it, "gritqa" when unset.

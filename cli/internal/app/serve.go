@@ -61,6 +61,24 @@ func (b *serve) Index(ctx context.Context) (*index.Snapshot, index.Delta, error)
 	return got.snap, got.delta, nil
 }
 
+// Compose reads the developer's own compose files. Nothing is interpreted here:
+// which service is the app and which is the database are questions about their
+// declaration, and the agent answers them.
+func (b *serve) Compose(ctx context.Context) (*sandbox.Compose, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	opts := b.cfg.Run.SandboxOpts()
+	files := sandbox.LocateCompose(b.cfg.Root(), sandbox.MountRoot(b.cfg.Root(), opts.Mount), opts.Compose)
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no compose file found at %s or above it — "+
+			"GritQA boots a project the way its own compose file says to, so it needs one; "+
+			"name it under run.sandbox.compose in %s if it lives somewhere else",
+			b.cfg.Root(), config.Name)
+	}
+	return sandbox.ReadCompose(ctx, files)
+}
+
 func (b *serve) Recipe(ctx context.Context) (sandbox.Recipe, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -29,6 +29,8 @@ type Backend interface {
 	// StartSandbox brings the run's own database, app and baseline up, and reports
 	// what came up. Slow the first time, a no-op after that.
 	StartSandbox(ctx context.Context) (Boot, error)
+	// Compose reads the project's compose files, as compose itself resolves them.
+	Compose(ctx context.Context) (*sandbox.Compose, error)
 	// Recipe is how GritQA currently thinks this project boots.
 	Recipe(ctx context.Context) (sandbox.Recipe, error)
 	// Propose records a recipe the agent worked out. It is pending until a human
