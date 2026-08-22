@@ -22,12 +22,20 @@ import { draftPlanAction } from '@/lib/actions/generate';
  * Step three of the wizard used to be a URL step reached by a `<Link>`, which is
  * how it managed to animate a progress bar over no work at all. It is a state now:
  * you are on step three exactly as long as the agent is reading your code.
+ *
+ * `defaultBrief` is what the other two doors hand over. It arrives already written,
+ * from a set of ticked endpoints or a range of commits, and it lands in the box
+ * rather than going straight to the agent -- the selection knows which code, and
+ * only you know what the journey is supposed to prove. So this is one drafting
+ * surface for all three doors instead of three, and the two that pick a scope stop
+ * being dead ends.
  */
 export function DraftForm({
   closeHref,
   backHref,
   gapsHref,
   gapCount,
+  defaultBrief,
   defaultBaseUrl,
   canPickGaps,
 }: {
@@ -35,13 +43,19 @@ export function DraftForm({
   backHref: string;
   gapsHref: string;
   gapCount: number;
+  /** Composed from a selection when you arrived through one of the other doors. */
+  defaultBrief: string;
   /** The last address a plan in this project was written against. */
   defaultBaseUrl: string | null;
   canPickGaps: boolean;
 }) {
   const [state, submit, pending] = useActionState(draftPlanAction, null);
-  const [brief, setBrief] = useState('');
+  const [brief, setBrief] = useState(defaultBrief);
   const ready = brief.trim().length > 0 && !pending;
+
+  /* Arrived with a brief already in it, which changes what this screen is for: not
+     a blank box to fill but a draft of the scope to check and add intent to. */
+  const composed = defaultBrief.length > 0;
 
   return (
     <Modal
@@ -49,7 +63,7 @@ export function DraftForm({
       closeHref={closeHref}
       label="draft plans"
       eyebrow={`Draft plans · Step ${pending ? 3 : 2} of 3`}
-      title={pending ? 'Writing the draft' : 'Describe the journey'}
+      title={pending ? 'Writing the draft' : composed ? 'Check the brief' : 'Describe the journey'}
       progress={{ current: pending ? 3 : 2, total: 3 }}
       footer={
         pending ? (
@@ -107,15 +121,16 @@ export function DraftForm({
             <span className="text-[12.5px] font-medium text-ink">What should it prove?</span>
             <textarea
               name="brief"
-              rows={4}
+              rows={composed ? 8 : 4}
               value={brief}
               onChange={(event) => setBrief(event.target.value)}
               placeholder="Book a room as a guest, then check the booking shows up on the admin list with the right dates."
               className="w-full resize-y rounded-md border border-rule-strong bg-surface px-3.5 py-2.5 text-[13px] leading-relaxed text-ink transition-colors duration-150 placeholder:text-ink-subtle hover:border-ink-subtle"
             />
             <span className="text-[11.5px] leading-snug text-ink-subtle">
-              Plain words. This is the whole brief the draft is written from — GritQA reads your
-              code to work out the rest.
+              {composed
+                ? 'Written from what you picked. Add what the journey should prove — the half a list of endpoints cannot say.'
+                : 'Plain words. This is the whole brief the draft is written from — GritQA reads your code to work out the rest.'}
             </span>
           </label>
 
@@ -144,7 +159,7 @@ export function DraftForm({
             <p className="text-[12px] leading-snug text-punch-red">{state.error}</p>
           )}
 
-          {canPickGaps && (
+          {canPickGaps && !composed && (
             <p className="text-[12px] text-ink-subtle">
               Or{' '}
               <Link

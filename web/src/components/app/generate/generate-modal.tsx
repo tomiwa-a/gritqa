@@ -11,7 +11,14 @@ import { Segmented } from '@/components/ui/segmented';
 import { cn } from '@/lib/cn';
 import { diffFrom, resolveFrom, searchCommits } from '@/lib/commits';
 import { endpointKey } from '@/lib/plan';
-import { withOverlayParams, type PageParams } from '@/lib/overlay';
+import { briefForChanges, briefForEndpoints, type PickedEndpoint } from '@/lib/brief';
+import {
+  changesPrefill,
+  parsePrefill,
+  withOverlayParams,
+  type PageParams,
+  type Prefill,
+} from '@/lib/overlay';
 import {
   getCommits,
   getCoverage,
@@ -20,7 +27,7 @@ import {
   getLastBaseUrl,
   getLastDraftedFrom,
 } from '@/lib/data';
-import type { CoverageFile } from '@/lib/model';
+import type { Commit, CoverageFile } from '@/lib/model';
 
 const SOURCES = ['changes', 'endpoints', 'blank'] as const;
 type Source = (typeof SOURCES)[number];
@@ -105,6 +112,32 @@ function findEndpoint(coverage: CoverageFile[], key: string) {
   return undefined;
 }
 
+/**
+ * Endpoint keys off the URL, back to endpoints. A key that no longer resolves is
+ * dropped rather than reported: the index moved under a link somebody kept, and a
+ * brief one endpoint short is a better answer than an error about a stale URL.
+ */
+function resolvePicks(coverage: CoverageFile[], keys: string[]): PickedEndpoint[] {
+  return keys.flatMap((key) => {
+    const found = findEndpoint(coverage, key);
+    return found ? [{ file: found.file, method: found.method, path: found.path }] : [];
+  });
+}
+
+/** The one place a selection turns into prose, so both doors hand over the same way. */
+function composedBrief(
+  prefill: Prefill | null,
+  coverage: CoverageFile[],
+  commits: Commit[],
+  fallbackFrom: string,
+): string {
+  if (!prefill) return '';
+  if (prefill.kind === 'endpoints') return briefForEndpoints(resolvePicks(coverage, prefill.keys));
+
+  const diff = diffFrom(commits, resolveFrom(commits, prefill.from, fallbackFrom));
+  return diff ? briefForChanges(diff, coverage) : '';
+}
+
 function pickerFiles(coverage: CoverageFile[], filter: StateFilter, only?: string[]): PickerFile[] {
   return coverage
     .filter((file) => !only || only.includes(file.file))
@@ -180,6 +213,7 @@ export async function GenerateModal({
   const askedFrom = typeof params.since === 'string' ? params.since : undefined;
   const query = typeof params.q === 'string' ? params.q : undefined;
   const askedOnly = typeof params.only === 'string' ? params.only : undefined;
+  const prefill = parsePrefill(typeof params.prefill === 'string' ? params.prefill : undefined);
 
   /**
    * The index gates two of the three doors, not the wizard.
@@ -201,26 +235,115 @@ export async function GenerateModal({
   const href = (patch: Record<string, string | undefined>) =>
     withOverlayParams(pathname, params, patch);
 
-  /* The one door that needs nothing read first, and the only surface that drafts.
-     It owns its own Modal because the submit button and the progress panel sit on
-     opposite sides of the footer and both have to know the draft is in flight. */
+  const from = resolveFrom(commits, askedFrom, lastDraftedFrom);
+  const diff = diffFrom(commits, from);
+  const shown = searchCommits(commits, query);
+  const pickable = pickerFiles(coverage, stateFilter, focus ? [focus.file] : undefined);
+
+  /* Arriving from a door that picks a scope: the ticks came along on the URL, so
+     coming back lands on them rather than on an empty list. Unioned with `only`'s
+     one endpoint, because both are things you asked for. */
+  const ticked = [
+    ...new Set([
+      ...(focus ? [focus.key] : []),
+      ...(prefill?.kind === 'endpoints' ? prefill.keys : []),
+    ]),
+  ];
+
+  /* The one surface that drafts, for all three doors. It owns its own Modal because
+     the submit button and the progress panel sit on opposite sides of the footer and
+     both have to know the draft is in flight.
+     Back retraces the door you came through, picks intact -- the whole point of
+     carrying them on the URL rather than in a component that unmounts. */
   if (step === 'scope' && source === 'blank') {
+    const backHref =
+      prefill?.kind === 'endpoints'
+        ? href({ from: 'endpoints', g: 'scope', prefill: undefined })
+        : prefill?.kind === 'changes'
+          ? href({ from: 'changes', g: 'scope', since: prefill.from, prefill: undefined })
+          : href({ g: 'source' });
+
     return (
       <DraftForm
         closeHref={closeHref}
-        backHref={href({ g: 'source' })}
+        backHref={backHref}
         gapsHref={href({ from: 'endpoints', g: 'scope' })}
         gapCount={coverageTotals.none}
+        defaultBrief={composedBrief(prefill, coverage, commits, lastDraftedFrom)}
         defaultBaseUrl={baseUrl}
         canPickGaps={indexed && coverageTotals.none > 0}
       />
     );
   }
 
-  const from = resolveFrom(commits, askedFrom, lastDraftedFrom);
-  const diff = diffFrom(commits, from);
-  const shown = searchCommits(commits, query);
-  const pickable = pickerFiles(coverage, stateFilter, focus ? [focus.file] : undefined);
+  /* And the picker owns its own for the same shape of reason: Continue has to know
+     how many endpoints are ticked. The empty case falls through to the shared box
+     below, which has nothing to count and a different thing to say. */
+  if (step === 'scope' && source === 'endpoints' && pickable.length > 0) {
+    return (
+      <EndpointPicker
+        files={pickable}
+        preselected={ticked}
+        title={SCOPE_TITLE.endpoints}
+        closeHref={closeHref}
+        pathname={pathname}
+        params={params}
+        above={
+          <>
+            {focus && (
+              <p className="flex flex-wrap items-baseline gap-x-2 border-b border-rule-soft px-4 py-2.5 text-[12px] text-ink-muted">
+                <span className="font-mono text-[11.5px] text-ink">{focus.file}</span>
+                <span>only.</span>
+                <Link
+                  href={href({ only: undefined, state: undefined })}
+                  className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
+                >
+                  Show every file
+                </Link>
+              </p>
+            )}
+
+            <div className="max-w-full overflow-x-auto border-b border-rule-soft px-4 py-2.5">
+              <Segmented
+                className="w-max"
+                label="Which endpoints to show"
+                active={stateFilter}
+                options={[
+                  {
+                    key: 'none',
+                    label: 'The gaps',
+                    href: href({ state: undefined }),
+                    dot: 'bg-rule-strong',
+                    count: coverageTotals.none,
+                  },
+                  {
+                    key: 'failing',
+                    label: 'Failing',
+                    href: href({ state: 'failing' }),
+                    dot: 'bg-fail',
+                    count: coverageTotals.failing,
+                  },
+                  {
+                    key: 'draft',
+                    label: 'In review',
+                    href: href({ state: 'draft' }),
+                    dot: 'bg-warn',
+                    count: coverageTotals.draft,
+                  },
+                  {
+                    key: 'all',
+                    label: 'Everything',
+                    href: href({ state: 'all' }),
+                    count: coverageTotals.total,
+                  },
+                ]}
+              />
+            </div>
+          </>
+        }
+      />
+    );
+  }
 
   return (
     <Modal
@@ -244,16 +367,28 @@ export async function GenerateModal({
               <Icon name="arrowRight" size={14} className="rotate-180" />
               Back
             </Link>
-            {/* Drafting from a diff or from a set of ticked endpoints still has to
-                compose the brief for you, and it does not yet. So this goes where
-                drafting actually happens rather than to a bar that fills up. */}
+
+            {/* Quiet, because it is the way out rather than the way on: the diff door
+                has a Continue beside it and the empty endpoints list has nothing else. */}
             <Link
-              href={href({ from: 'blank', g: 'scope' })}
-              className={buttonVariants({ variant: 'primary', size: 'sm', className: 'ml-auto' })}
+              href={href({ from: 'blank', g: 'scope', prefill: undefined })}
+              className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'ml-auto' })}
             >
-              <Icon name="sparkle" size={14} />
-              Describe it instead
+              Describe instead
             </Link>
+
+            {/* Forward from the diff, which is what this door was missing. The range
+                travels as a commit rather than as composed prose -- the brief is written
+                at the far end, off the same hash `?since=` already carries. */}
+            {source === 'changes' && diff && (
+              <Link
+                href={href({ from: 'blank', g: 'scope', prefill: changesPrefill(from) })}
+                className={buttonVariants({ variant: 'primary', size: 'sm' })}
+              >
+                <Icon name="sparkle" size={14} />
+                Continue
+              </Link>
+            )}
           </div>
         )
       }
@@ -401,68 +536,21 @@ export async function GenerateModal({
         </>
       )}
 
+      {/* Only the empty case reaches here; anything pickable returned the picker's own
+          box above, filters and all. */}
       {step === 'scope' && source === 'endpoints' && (
-        <>
-          {focus && (
-            <p className="flex flex-wrap items-baseline gap-x-2 border-b border-rule-soft px-4 py-2.5 text-[12px] text-ink-muted">
-              <span className="font-mono text-[11.5px] text-ink">{focus.file}</span>
-              <span>only.</span>
-              <Link
-                href={href({ only: undefined, state: undefined })}
-                className="font-medium text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
-              >
-                Show every file
-              </Link>
-            </p>
-          )}
-
-          <div className="max-w-full overflow-x-auto border-b border-rule-soft px-4 py-2.5">
-            <Segmented
-              className="w-max"
-              label="Which endpoints to show"
-              active={stateFilter}
-              options={[
-                {
-                  key: 'none',
-                  label: 'The gaps',
-                  href: href({ state: undefined }),
-                  dot: 'bg-rule-strong',
-                  count: coverageTotals.none,
-                },
-                {
-                  key: 'failing',
-                  label: 'Failing',
-                  href: href({ state: 'failing' }),
-                  dot: 'bg-fail',
-                  count: coverageTotals.failing,
-                },
-                {
-                  key: 'draft',
-                  label: 'In review',
-                  href: href({ state: 'draft' }),
-                  dot: 'bg-warn',
-                  count: coverageTotals.draft,
-                },
-                {
-                  key: 'all',
-                  label: 'Everything',
-                  href: href({ state: 'all' }),
-                  count: coverageTotals.total,
-                },
-              ]}
-            />
-          </div>
-
-          {pickable.length === 0 ? (
-            <Nothing title="Nothing in this state">
-              <p className="text-[12.5px] leading-relaxed text-ink-muted">
-                Try Everything, or come back after the next run.
-              </p>
-            </Nothing>
-          ) : (
-            <EndpointPicker files={pickable} preselected={focus ? [focus.key] : undefined} />
-          )}
-        </>
+        <Nothing title="Nothing in this state">
+          <p className="text-[12.5px] leading-relaxed text-ink-muted">
+            Try Everything, or come back after the next run.
+          </p>
+          <Link
+            href={href({ state: 'all' })}
+            className={buttonVariants({ variant: 'secondary', size: 'sm', className: 'mt-1' })}
+          >
+            <Icon name="endpoint" size={14} />
+            Show everything
+          </Link>
+        </Nothing>
       )}
     </Modal>
   );

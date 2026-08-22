@@ -11,7 +11,17 @@ export type OverlayToken =
   | { kind: 'generate'; id: null };
 
 /** Params an overlay owns. Everything else on the URL belongs to the page. */
-export const OVERLAY_PARAMS = ['open', 'g', 'from', 'state', 'since', 'q', 'only', 'edit'] as const;
+export const OVERLAY_PARAMS = [
+  'open',
+  'g',
+  'from',
+  'state',
+  'since',
+  'q',
+  'only',
+  'edit',
+  'prefill',
+] as const;
 
 export type PageParams = Record<string, string | string[] | undefined>;
 
@@ -89,6 +99,60 @@ export function ruleToken(publicId: string) {
  */
 export function approveToken(planPublicId: string) {
   return `approve:${planPublicId}`;
+}
+
+/* ---------------------------------------------------------------------------
+ * The wizard's hand-off, on the URL like every other step of it
+ * ------------------------------------------------------------------------- */
+
+/**
+ * What the brief box was filled from.
+ *
+ * Two of the wizard's doors pick a scope rather than write a brief -- a set of
+ * ticked endpoints, a range of commits -- and `draftPlanAction` takes prose. This
+ * is the param that carries the selection across to the step that has the prose
+ * in it, so the composing happens on the server, off values short enough to live
+ * on a URL. The brief itself never travels: it is derived at the far end, which
+ * keeps the whole wizard linkable and the URL readable.
+ */
+export type Prefill = { kind: 'endpoints'; keys: string[] } | { kind: 'changes'; from: string };
+
+/** Ticked endpoints, by the same `METHOD /path` key the coverage grid uses. */
+export function endpointsPrefill(keys: string[]) {
+  return `endpoints:${keys.join(',')}`;
+}
+
+/** A commit range, named by its oldest commit -- the same value `?since=` carries. */
+export function changesPrefill(from: string) {
+  return `changes:${from}`;
+}
+
+/**
+ * Read back, forgivingly: an unknown kind prefills nothing, the same way an
+ * unknown `?open=` opens nothing. A key that no longer resolves to an endpoint is
+ * dropped by the caller rather than here, because only the caller has the index.
+ */
+export function parsePrefill(value: string | undefined): Prefill | null {
+  if (!value) return null;
+
+  const at = value.indexOf(':');
+  if (at < 1) return null;
+
+  const kind = value.slice(0, at);
+  const rest = value.slice(at + 1);
+  if (!rest) return null;
+
+  if (kind === 'endpoints') {
+    const keys = rest
+      .split(',')
+      .map((key) => key.trim())
+      .filter(Boolean);
+    return keys.length > 0 ? { kind: 'endpoints', keys } : null;
+  }
+
+  if (kind === 'changes') return { kind: 'changes', from: rest };
+
+  return null;
 }
 
 function search(params: PageParams, drop: readonly string[]) {

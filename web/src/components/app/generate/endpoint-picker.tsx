@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useState, type ReactNode } from 'react';
+import { Modal } from '../modal';
 import { MethodBadge, type Method } from '@/components/ui/method-badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { COVERAGE_FILL, COVERAGE_LABEL } from '@/lib/coverage';
+import { endpointsPrefill, withOverlayParams, type PageParams } from '@/lib/overlay';
 import type { CoverageState } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -25,12 +28,36 @@ function Box({ on }: { on: boolean }) {
   );
 }
 
+/**
+ * Step two of the endpoints door, and it owns the whole `Modal` for the reason
+ * `DraftForm` does: the button that advances the wizard has to know how many
+ * endpoints are ticked, and the ticks live here. A footer on the far side of the
+ * server boundary could not see them, which is how this step spent a while with no
+ * way forward at all -- the picks never left the browser, so the only live button
+ * was the one that gave up and went to the describe journey.
+ *
+ * Forward writes the picks onto the URL and lets the describe step compose the
+ * brief. Back reads them off it again, so a round trip through the brief box does
+ * not cost you four clicks of picking.
+ */
 export function EndpointPicker({
   files,
   preselected = [],
+  title,
+  closeHref,
+  pathname,
+  params,
+  above,
 }: {
   files: PickerFile[];
   preselected?: string[];
+  title: string;
+  closeHref: string;
+  /** The page underneath, so this can build its own hrefs off the params it was given. */
+  pathname: string;
+  params: PageParams;
+  /** The focus note and the state filter, rendered on the server and handed down. */
+  above?: ReactNode;
 }) {
   const [picked, setPicked] = useState<string[]>(preselected);
   const has = (key: string) => picked.includes(key);
@@ -46,11 +73,64 @@ export function EndpointPicker({
     );
   };
 
+  /* Picks the current filter is not showing. Kept rather than dropped, because
+     narrowing the list is not the same act as changing your mind -- but said out
+     loud, because a count that disagrees with what is on screen is a count nobody
+     trusts. */
+  const showing = new Set(files.flatMap((file) => file.endpoints.map((e) => e.key)));
+  const hidden = picked.filter((key) => !showing.has(key)).length;
+
+  const href = (patch: Record<string, string | undefined>) =>
+    withOverlayParams(pathname, params, patch);
+
   return (
-    <div className="flex flex-col">
-      {/* What you have picked, not what to do about it — advancing the wizard
-          belongs to the one button in the footer, and saying it twice is worse
-          than saying it once. */}
+    <Modal
+      id="generate-modal"
+      closeHref={closeHref}
+      label="draft plans"
+      eyebrow="Draft plans · Step 2 of 3"
+      title={title}
+      progress={{ current: 2, total: 3 }}
+      footer={
+        <div className="flex items-center gap-2">
+          <Link
+            href={href({ g: 'source' })}
+            className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+          >
+            <Icon name="arrowRight" size={14} className="rotate-180" />
+            Back
+          </Link>
+
+          {/* The escape hatch, and it is quiet on purpose: it is the live path when
+              nothing is ticked and the wrong one the moment something is. */}
+          <Link
+            href={href({ from: 'blank', g: 'scope', prefill: undefined })}
+            className={buttonVariants({ variant: 'ghost', size: 'sm', className: 'ml-auto' })}
+          >
+            Describe instead
+          </Link>
+
+          {picked.length > 0 ? (
+            <Link
+              href={href({ from: 'blank', g: 'scope', prefill: endpointsPrefill(picked) })}
+              className={buttonVariants({ variant: 'primary', size: 'sm' })}
+            >
+              <Icon name="sparkle" size={14} />
+              Continue with {picked.length}
+            </Link>
+          ) : (
+            <Button type="button" variant="primary" size="sm" disabled>
+              <Icon name="sparkle" size={14} />
+              Continue
+            </Button>
+          )}
+        </div>
+      }
+    >
+      {above}
+
+      {/* What you have picked, not what to do about it — that is the footer's job,
+          and saying it twice is worse than saying it once. */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-rule bg-app-panel/95 px-4 py-2.5 backdrop-blur-sm">
         <p className="nums shrink-0 text-[12px] font-medium text-ink">
           {picked.length === 0 ? 'Nothing picked yet' : `${picked.length} picked`}
@@ -65,7 +145,9 @@ export function EndpointPicker({
         <p className="text-[11.5px] leading-snug text-ink-subtle">
           {picked.length === 0
             ? 'Pick the endpoints the drafts should cover.'
-            : 'GritQA reads these together, so one plan can cover several of them in order.'}
+            : hidden > 0
+              ? `${hidden} of them ${hidden === 1 ? 'is' : 'are'} outside this filter, and still counted.`
+              : 'GritQA reads these together, so one plan can cover several of them in order.'}
         </p>
       </div>
 
@@ -124,6 +206,6 @@ export function EndpointPicker({
           </section>
         );
       })}
-    </div>
+    </Modal>
   );
 }
