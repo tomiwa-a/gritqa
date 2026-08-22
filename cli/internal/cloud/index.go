@@ -10,9 +10,7 @@ import (
 
 // The index mirror.
 //
-// **The route this posts to does not exist yet.** `/api/cli/index` is the web half
-// of M7a and it is owed; this is the shape it has to accept, written down here so
-// the two halves were designed against one contract rather than two:
+// The contract, kept here because the two halves were designed against one:
 //
 //	POST /api/cli/index   Authorization: Bearer <cli token>
 //	{ "instanceId": "...", "complete": true, "files": [ { filePath, fileHash,
