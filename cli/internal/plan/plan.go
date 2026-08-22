@@ -9,7 +9,7 @@ import (
 )
 
 // variable is the {{ name }} spelling shared with web/src/lib/plan.ts.
-var variable = regexp.MustCompile(`\{\{\s*[\w.]+\s*\}\}`)
+var variable = regexp.MustCompile(`\{\{\s*([\w.]+)\s*\}\}`)
 
 type Plan struct {
 	Name        string            `json:"name"`

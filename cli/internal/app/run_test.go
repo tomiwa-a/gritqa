@@ -294,8 +294,32 @@ func TestRevisionsKeepDeclinedAttempts(t *testing.T) {
 }
 
 // The base URL points at a dead port, so naming the variable rather than the
-// silence proves the check runs before anything is sent.
+// silence proves the check runs before anything is sent. The step reads the
+// variable, which is what makes it this run's problem.
 func TestRunRefusesAnUnsetVariableBeforeTouchingTheNetwork(t *testing.T) {
+	cfg := conf(t, &config.Run{
+		BaseURL:   "http://127.0.0.1:1",
+		Variables: map[string]string{"adminPassword": "$GRITQA_NOT_EXPORTED"},
+	})
+	file := filepath.Join(t.TempDir(), "p.json")
+	if err := os.WriteFile(file, []byte(`{"name":"p","version":1,"steps":[{"id":"s1",
+		"request":{"method":"GET","url":"/x","headers":{"X-Pw":"{{adminPassword}}"}},
+		"assertions":[{"type":"status",
+		"operator":"equals","target":"status","expected":200}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w, _ := writer()
+	err := runPlan(context.Background(), w, cfg, Options{PlanFile: file})
+	if err == nil || !strings.Contains(err.Error(), "adminPassword ($GRITQA_NOT_EXPORTED)") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// The other half of that contract: one stale mapping in run.variables used to refuse
+// every plan on the machine, including the ones that never wanted the credential. This
+// plan reads nothing, so it gets as far as the network and fails there instead.
+func TestRunIgnoresAnUnsetVariableNoStepReads(t *testing.T) {
 	cfg := conf(t, &config.Run{
 		BaseURL:   "http://127.0.0.1:1",
 		Variables: map[string]string{"adminPassword": "$GRITQA_NOT_EXPORTED"},
@@ -309,7 +333,7 @@ func TestRunRefusesAnUnsetVariableBeforeTouchingTheNetwork(t *testing.T) {
 
 	w, _ := writer()
 	err := runPlan(context.Background(), w, cfg, Options{PlanFile: file})
-	if err == nil || !strings.Contains(err.Error(), "adminPassword ($GRITQA_NOT_EXPORTED)") {
+	if err == nil || strings.Contains(err.Error(), "adminPassword") {
 		t.Fatalf("got %v", err)
 	}
 }

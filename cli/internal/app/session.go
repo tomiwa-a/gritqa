@@ -112,9 +112,9 @@ type prepared struct {
 // a cheap failure and pulling an image first would make it an expensive one.
 func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 	vars := s.cfg.Run.ResolvedVariables()
-	if len(vars.Missing) > 0 {
+	if missing := unset(p, vars.Missing); len(missing) > 0 {
 		return prepared{}, fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
-			strings.Join(vars.Missing, ", "))
+			strings.Join(missing, ", "))
 	}
 
 	if !s.cfg.Run.Sandboxed() {
@@ -145,6 +145,27 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 		vars:      vars.Values,
 		secrets:   secrets(vars, st),
 	}, nil
+}
+
+// unset narrows the missing set to what this plan actually reads. Refusing on all of
+// them made one stale mapping enough to stop every plan on the machine, including the
+// ones that never wanted the credential; a plan that does read it still fails here,
+// which is the cheap failure the check exists for.
+func unset(p *plan.Plan, missing []string) []string {
+	if len(missing) == 0 {
+		return nil
+	}
+	reads := p.References()
+	var out []string
+	for _, entry := range missing {
+		// Entries read "name ($ENV)", because naming the environment variable is what
+		// tells the user what to fix. Only the name is what a plan can reference.
+		name, _, _ := strings.Cut(entry, " ")
+		if reads[name] {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // engine builds the walk. State is assigned only when there is a sandbox to

@@ -129,9 +129,9 @@ func (b *serve) StartSandbox(ctx context.Context) (mcp.Boot, error) {
 // agent gets the failed assertions back and can refine instead.
 func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) {
 	vars := b.cfg.Run.ResolvedVariables()
-	if len(vars.Missing) > 0 {
+	if missing := unset(p, vars.Missing); len(missing) > 0 {
 		return nil, fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
-			strings.Join(vars.Missing, ", "))
+			strings.Join(missing, ", "))
 	}
 
 	b.mu.Lock()

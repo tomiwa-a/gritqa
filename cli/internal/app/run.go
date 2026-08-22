@@ -35,9 +35,9 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	// Checked before anything is brought up: a missing password is a cheap
 	// failure and pulling an image first would make it an expensive one.
 	vars := cfg.Run.ResolvedVariables()
-	if len(vars.Missing) > 0 {
+	if missing := unset(p, vars.Missing); len(missing) > 0 {
 		return fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
-			strings.Join(vars.Missing, ", "))
+			strings.Join(missing, ", "))
 	}
 
 	store, snap := cache(w, cfg)
