@@ -214,9 +214,17 @@ func (a *attached) execute(ctx context.Context, job *cloud.Job) {
 	a.w.Write(term.Line{Kind: term.Blank})
 	a.w.Write(term.Line{Kind: term.Out, Text: "what happened"})
 
+	// The dashboard gets each step as it lands. Closed before the completion, never
+	// after: a preview still in flight would land on top of the record. Held on the
+	// session context rather than the walk's, so cancelling the walk does not throw
+	// away the steps still queued from it.
+	live := a.c.Live(ctx, job.PublicID, a.id.InstanceID, pre.base, p)
+	defer live.Close()
+
 	done := 0
 	started := time.Now()
 	res, err := pre.engine(func(s run.StepResult) {
+		live.Send(done, s)
 		done++
 		a.w.Write(term.Line{
 			Kind:   term.Tree,
@@ -227,6 +235,7 @@ func (a *attached) execute(ctx context.Context, job *cloud.Job) {
 		})
 	}).Run(walk, p)
 	stop()
+	live.Close()
 
 	switch {
 	case err != nil:

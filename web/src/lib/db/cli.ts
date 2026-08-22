@@ -1,7 +1,8 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import {
   cliInstances,
+  codebaseIndex,
   executionState,
   jobs,
   projects,
@@ -118,6 +119,91 @@ export async function touchInstance(projectId: number, identity: InstanceIdentit
         mcpToken: identity.mcpToken ?? null,
       },
     });
+}
+
+export type MirroredFile = {
+  filePath: string;
+  fileHash: string;
+  language: string;
+  symbols: unknown;
+  dependencies: unknown;
+  endpoints: unknown;
+};
+
+export type Mirrored = { written: number; removed: number };
+
+/**
+ * The index arrives.
+ *
+ * Mark and sweep, not a diff: every pushed file is stamped with one `now`, and a
+ * `complete` push then deletes whatever still carries an older stamp. That is one
+ * cheap statement where `NOT IN (...4000 paths)` would be a query the size of the
+ * push, and it needs nothing remembered between calls.
+ *
+ * The mirror is not correctness-bearing -- the agent reads files through the CLI, not
+ * from here -- so this replaces rather than reconciles, and nothing about a run
+ * depends on it being current.
+ */
+export async function mirrorIndex(
+  projectId: number,
+  files: MirroredFile[],
+  complete: boolean,
+): Promise<Mirrored> {
+  /* Last one wins. Two entries for one path in a single statement is
+     "ON CONFLICT DO UPDATE cannot affect row a second time" -- a 500 caused by a
+     machine reporting the same file twice, which is exactly the misconfiguration
+     this file's header says not to trust the body about. */
+  const unique = new Map(files.map((f) => [f.filePath, f]));
+
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const rows = [...unique.values()].map((f) => ({
+      projectId,
+      filePath: f.filePath,
+      fileHash: f.fileHash,
+      language: f.language,
+      symbols: f.symbols,
+      dependencies: f.dependencies,
+      endpoints: f.endpoints,
+      lastIndexedAt: now,
+    }));
+
+    /* Postgres takes 65535 bound parameters per statement and each row spends eight,
+       so a project of any size has to arrive in more than one. */
+    for (let at = 0; at < rows.length; at += 500) {
+      await tx
+        .insert(codebaseIndex)
+        .values(rows.slice(at, at + 500))
+        .onConflictDoUpdate({
+          target: [codebaseIndex.projectId, codebaseIndex.filePath],
+          set: {
+            fileHash: sql`excluded.file_hash`,
+            language: sql`excluded.language`,
+            symbols: sql`excluded.symbols`,
+            dependencies: sql`excluded.dependencies`,
+            endpoints: sql`excluded.endpoints`,
+            lastIndexedAt: sql`excluded.last_indexed_at`,
+            updatedAt: now,
+          },
+        });
+    }
+
+    /* Swept only when something arrived. An empty `complete` push is a walk that
+       failed, not a project that lost every file, and emptying the mirror on it would
+       turn a CLI bug into deleted rows. */
+    let removed = 0;
+    if (complete && rows.length) {
+      const gone = await tx
+        .delete(codebaseIndex)
+        .where(and(eq(codebaseIndex.projectId, projectId), lt(codebaseIndex.lastIndexedAt, now)))
+        .returning({ id: codebaseIndex.id });
+      removed = gone.length;
+    }
+
+    await tx.update(projects).set({ lastIndexedAt: now }).where(eq(projects.id, projectId));
+
+    return { written: rows.length, removed };
+  });
 }
 
 export type ClaimedJob = {
@@ -554,6 +640,131 @@ export async function completeJob(
       );
 
     return { runPublicId: executionPublicId, steps: report.steps.length };
+  });
+}
+
+/**
+ * A step lands while the run is still going.
+ *
+ * **A preview, not the record.** `completeJob` clears every step of a run before it
+ * writes the completion's, so nothing written here survives the end of the run and
+ * nothing here can make a finished run say something the runner did not report. What
+ * it buys is a dashboard that shows a thirty-second run as it happens rather than as a
+ * blank panel followed by everything at once.
+ *
+ * Idempotent by replacement: a step that arrives twice -- a retried POST, a step the
+ * repairer re-ran -- replaces the row it wrote before, and the delete cascades to that
+ * row's ledger so margins do not accumulate either. No new column and no migration:
+ * the step id is already the identity within a run.
+ *
+ * Null when the job is not this machine's, same as the heartbeat, and it renews the
+ * claim on the way past for the same reason -- a machine sending steps is a machine
+ * still working.
+ */
+export async function recordSteps(
+  scope: CliScope,
+  jobPublicId: string,
+  instanceId: string,
+  steps: StepReport[],
+): Promise<number | null> {
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .update(jobs)
+      .set({ claimedAt: new Date() })
+      .where(
+        and(
+          eq(jobs.publicId, jobPublicId),
+          eq(jobs.projectId, scope.projectId),
+          eq(jobs.status, 'claimed'),
+          eq(jobs.claimedBy, instanceId),
+        ),
+      )
+      .returning({ type: jobs.type, payload: jobs.payload });
+    if (!job) return null;
+
+    // Only a run has steps. An `index_codebase` job has no execution behind it, and a
+    // machine previewing steps for one is confused rather than unauthorised.
+    if (job.type !== 'execute_tests' || !steps.length) return 0;
+
+    const executionPublicId = executionIdOf(job.payload);
+    if (!executionPublicId) return 0;
+
+    const [execution] = await tx
+      .select({ id: testExecutions.id })
+      .from(testExecutions)
+      .where(
+        and(
+          eq(testExecutions.publicId, executionPublicId),
+          eq(testExecutions.projectId, scope.projectId),
+        ),
+      )
+      .limit(1);
+    if (!execution) return 0;
+
+    await tx.delete(testResults).where(
+      and(
+        eq(testResults.executionId, execution.id),
+        inArray(
+          testResults.stepId,
+          steps.map((s) => s.stepId),
+        ),
+      ),
+    );
+
+    const written = await tx
+      .insert(testResults)
+      .values(
+        steps.map((step) => ({
+          executionId: execution.id,
+          stepId: step.stepId,
+          stepName: step.stepName,
+          status: step.status,
+          requestMethod: step.method,
+          routePattern: step.routePattern,
+          requestUrl: step.requestUrl,
+          requestBody: step.requestBody ?? null,
+          responseStatus: step.responseStatus,
+          responseBody: step.responseBody ?? null,
+          responseTimeMs: step.responseTimeMs,
+          assertionResults: step.assertions ?? null,
+          errorMessage: step.errorMessage,
+        })),
+      )
+      .returning({ id: testResults.id, stepId: testResults.stepId });
+
+    const resultIds = new Map(written.map((row) => [row.stepId, row.id]));
+    const ledger = steps.flatMap((step) =>
+      (step.moved ?? []).map((unit) => ({
+        unit,
+        resultId: resultIds.get(step.stepId) ?? null,
+      })),
+    );
+
+    if (ledger.length) {
+      /* `seq` continues from what is already there, so a ledger read in `seq` order is
+         read in the order the readings were taken. Only approximately, for a step that
+         arrived twice -- its replacement sorts after steps that came later. The
+         completion rewrites the whole ledger in one go, which is where the ordering
+         stops being approximate. */
+      const [{ used }] = await tx
+        .select({ used: sql<number>`count(*)::int` })
+        .from(executionState)
+        .where(eq(executionState.executionId, execution.id));
+
+      await tx.insert(executionState).values(
+        ledger.map(({ unit, resultId }, at) => ({
+          executionId: execution.id,
+          testResultId: resultId,
+          seq: used + at,
+          unit: unit.unit,
+          rowsMoved: unit.rows,
+          fromValue: unit.from ?? null,
+          toValue: unit.to ?? null,
+        })),
+      );
+    }
+
+    return written.length;
   });
 }
 
