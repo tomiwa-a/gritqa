@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
@@ -39,62 +38,15 @@ func runServer(ctx context.Context, opts Options) error {
 		Root:    cfg.Root(),
 		Backend: b,
 		Execute: opts.Execute,
+		// Asked for by hand, so the address and its bearer are what the person
+		// running it needs to configure a client.
+		Printed: true,
 		Log:     func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
 	})
 	if err != nil {
 		return err
 	}
 	return srv.Serve(ctx, opts.Serve)
-}
-
-// runAndServe starts the MCP server in the background and runs the attach loop
-// in the foreground. The MCP address is passed to the poll loop so the web app
-// can discover it automatically.
-func runAndServe(ctx context.Context, w *term.Writer, opts Options) error {
-	cfg, _, err := resolveConfig(ctx, opts)
-	if err != nil {
-		return err
-	}
-
-	got, err := read(ctx, w, cfg, opts)
-	if err != nil {
-		return err
-	}
-
-	b := &serve{session: newSession(cfg, opts, w)}
-	defer b.close(context.WithoutCancel(ctx))
-
-	srv, err := mcp.New(mcp.Options{
-		Project: cfg.Project,
-		Root:    cfg.Root(),
-		Backend: b,
-		Execute: opts.Execute,
-		Log:     func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
-	})
-	if err != nil {
-		return err
-	}
-
-	// Start MCP server in the background.
-	mcpCtx, mcpCancel := context.WithCancel(ctx)
-	defer mcpCancel()
-	go func() {
-		if err := srv.Serve(mcpCtx, opts.Serve); err != nil && !errors.Is(err, context.Canceled) {
-			w.Write(term.Line{Kind: term.Fail, Text: "MCP server: " + err.Error()})
-		}
-	}()
-
-	// Wait briefly for the server to bind.
-	time.Sleep(200 * time.Millisecond)
-
-	// Read the MCP address the server bound to.
-	mcpURL := "http://" + srv.Addr()
-	var mcpToken string
-	if tokens := srv.Tokens(); tokens != nil {
-		mcpToken = tokens[mcp.Read]
-	}
-
-	return attach(ctx, w, cfg, opts, got.snap, mcpURL, mcpToken)
 }
 
 func (b *serve) Index(ctx context.Context) (*index.Snapshot, index.Delta, error) {

@@ -98,14 +98,14 @@ const (
 type AssertionType string
 
 const (
-	Status          AssertionType = "status"
-	BodyField       AssertionType = "bodyField"
-	HeaderField     AssertionType = "header"
-	ResponseTime    AssertionType = "responseTime"
-	RowCount        AssertionType = "rowCount"
-	ValueEquals     AssertionType = "valueEquals"
-	ExitCode        AssertionType = "exitCode"
-	StdoutContains  AssertionType = "stdoutContains"
+	Status         AssertionType = "status"
+	BodyField      AssertionType = "bodyField"
+	HeaderField    AssertionType = "header"
+	ResponseTime   AssertionType = "responseTime"
+	RowCount       AssertionType = "rowCount"
+	ValueEquals    AssertionType = "valueEquals"
+	ExitCode       AssertionType = "exitCode"
+	StdoutContains AssertionType = "stdoutContains"
 )
 
 type Operator string

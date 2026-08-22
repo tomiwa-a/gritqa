@@ -69,9 +69,10 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	// Before the banner: in stdio mode stdout carries JSON-RPC, and one line of
-	// ours on it is a protocol error at the client.
+	// ours on it is a protocol error at the client. --serve is the hand-configured
+	// surface and nothing else; bare gritqa is the one that also watches a queue.
 	if opts.Serve != "" {
-		return runAndServe(ctx, w, opts)
+		return runServer(ctx, opts)
 	}
 
 	w.Write(term.Line{Kind: term.Cmd, Text: "gritqa"})
@@ -113,43 +114,58 @@ func Run(ctx context.Context, opts Options) error {
 		return nil
 	}
 
-	mcpURL, mcpToken := startMCP(ctx, w, cfg, opts, got)
-	return attach(ctx, w, cfg, opts, got.snap, mcpURL, mcpToken)
+	// One session for both channels: the surface the dashboard researches through,
+	// and the loop that runs what it approved. Two would mean two sandboxes and two
+	// handles on one cache for one project.
+	s := newSession(cfg, opts, w)
+	s.snap = got.snap
+	defer s.close(context.WithoutCancel(ctx))
+
+	srv, token := startMCP(ctx, w, s)
+	return attach(ctx, s, got.snap, srv, token)
 }
 
-// startMCP launches the MCP server in a goroutine and returns its address and
-// read bearer token. Empty strings mean the server did not start (e.g. stdio
-// mode or a flag that suppressed it).
-func startMCP(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options, got *reading) (url, token string) {
-	b := &serve{session: newSession(cfg, opts, w)}
+// bindWithin bounds the wait for a listener. Long enough that a slow machine
+// still registers, short enough that nobody watches a blank screen for it.
+const bindWithin = 10 * time.Second
 
+// startMCP puts the research surface on loopback, so the dashboard can reach this
+// machine without anyone copying a URL into an environment. A nil server is not
+// fatal: the poll loop still runs approved plans, and drafting says what is missing.
+func startMCP(ctx context.Context, w *term.Writer, s *session) (*mcp.Server, string) {
 	srv, err := mcp.New(mcp.Options{
-		Project: cfg.Project,
-		Root:    cfg.Root(),
-		Backend: b,
-		Execute: opts.Execute,
-		Log:     func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
+		Project: s.cfg.Project,
+		Root:    s.cfg.Root(),
+		Backend: &serve{session: s},
+		Execute: s.opts.Execute,
+		// The bearer goes to the dashboard in memory, so it has no reason to be on
+		// a screen. --serve, where a person copies it into a client, prints it.
+		Log: func(line string) { w.Write(term.Line{Kind: term.Info, Text: line}) },
 	})
 	if err != nil {
-		w.Write(term.Line{Kind: term.Info, Text: "MCP server not started: " + err.Error()})
-		return "", ""
+		w.Write(term.Line{Kind: term.Info, Text: "no research surface: " + err.Error()})
+		return nil, ""
 	}
 
-	mcpCtx, _ := context.WithCancel(ctx)
 	go func() {
-		if err := srv.Serve(mcpCtx, "127.0.0.1:0"); err != nil && !errors.Is(err, context.Canceled) {
-			w.Write(term.Line{Kind: term.Info, Text: "MCP server stopped: " + err.Error()})
+		if err := srv.Serve(ctx, "127.0.0.1:0"); err != nil && !errors.Is(err, context.Canceled) {
+			w.Write(term.Line{Kind: term.Fail, Text: "the research surface stopped: " + err.Error()})
 		}
 	}()
 
-	// Wait briefly for the server to bind.
-	time.Sleep(200 * time.Millisecond)
-
-	addr := srv.Addr()
-	if addr == "" {
-		return "", ""
+	select {
+	case <-srv.Ready():
+	case <-ctx.Done():
+		return nil, ""
+	case <-time.After(bindWithin):
 	}
-	return "http://" + addr, srv.Tokens()[mcp.Read]
+
+	if _, ok := srv.Live(); !ok {
+		w.Write(term.Line{Kind: term.Info,
+			Text: "the research surface did not come up, so drafting from the dashboard will say so"})
+		return nil, ""
+	}
+	return srv, srv.Tokens()[mcp.Read]
 }
 
 // resolveConfig finds the project root and loads its config, writing one on

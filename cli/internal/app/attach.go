@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/creds"
 	"github.com/gritqa/cli/internal/index"
+	"github.com/gritqa/cli/internal/mcp"
 	"github.com/gritqa/cli/internal/plan"
 	"github.com/gritqa/cli/internal/run"
 	"github.com/gritqa/cli/internal/term"
@@ -30,14 +30,19 @@ const (
 )
 
 // attached is the poll loop: one machine, one project, one job at a time. It holds
-// a session, so a second run arrives to a warm sandbox and a warm index.
+// the session the research surface holds, so a second run arrives to a warm
+// sandbox and a warm index.
 type attached struct {
 	*session
-	c  *cloud.Client
-	id cloud.Identity
+	c   *cloud.Client
+	id  cloud.Identity
+	srv *mcp.Server
+	tok string
 }
 
-func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options, snap *index.Snapshot, mcpURL, mcpToken string) error {
+func attach(ctx context.Context, s *session, snap *index.Snapshot, srv *mcp.Server, token string) error {
+	w, cfg, opts := s.w, s.cfg, s.opts
+
 	c, err := connect(ctx, w, cfg, opts)
 	if err != nil {
 		return err
@@ -49,12 +54,13 @@ func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Option
 	host, _ := os.Hostname()
 
 	a := &attached{
-		session: newSession(cfg, opts, w),
+		session: s,
 		c:       c,
-		id: cloud.Identity{InstanceID: machine, Hostname: host, Version: opts.Version, MCPUrl: mcpURL, MCPToken: mcpToken},
+		id:      cloud.Identity{InstanceID: machine, Hostname: host, Version: opts.Version},
+		srv:     srv,
+		tok:     token,
 	}
 	a.snap = snap
-	defer a.close(context.WithoutCancel(ctx))
 
 	a.mirror(ctx, snap)
 	w.Write(term.Line{Kind: term.Blank})
@@ -68,7 +74,7 @@ func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Option
 		case <-time.After(wait):
 		}
 
-		got, err := a.c.Claim(ctx, a.id)
+		got, err := a.c.Claim(ctx, a.reporting())
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -93,6 +99,20 @@ func attach(ctx context.Context, w *term.Writer, cfg *config.Config, opts Option
 		}
 		wait = got.PollAfter()
 	}
+}
+
+// reporting is the identity as it stands right now. The research address is read
+// per poll rather than captured at startup, because a surface that stopped must
+// stop being advertised: the dashboard clears the column when the field is absent,
+// so an unreachable port becomes "start it" instead of a fetch that fails.
+func (a *attached) reporting() cloud.Identity {
+	id := a.id
+	if a.srv != nil && a.tok != "" {
+		if addr, ok := a.srv.Live(); ok {
+			id.MCPUrl, id.MCPToken = "http://"+addr, a.tok
+		}
+	}
+	return id
 }
 
 func slower(d time.Duration) time.Duration {

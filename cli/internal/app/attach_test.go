@@ -14,6 +14,7 @@ import (
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/creds"
 	"github.com/gritqa/cli/internal/index"
+	"github.com/gritqa/cli/internal/mcp"
 )
 
 // dashboard is the four /api/cli routes the loop talks to, and it settles the test
@@ -131,7 +132,7 @@ func TestAttachRunsAClaimedPlan(t *testing.T) {
 
 	w, out := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,7 +175,7 @@ func TestAttachGivesBackWhatItCannotDo(t *testing.T) {
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +205,7 @@ func TestAttachSettlesAnUnreadablePayload(t *testing.T) {
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
-	if err := attach(ctx, w, cfg, Options{Server: srv.URL}, &index.Snapshot{Root: cfg.Root()}, "", ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,5 +216,49 @@ func TestAttachSettlesAnUnreadablePayload(t *testing.T) {
 	}
 	if d.report.ErrorMessage == "" {
 		t.Fatal("the run was settled as an error with no reason on it")
+	}
+}
+
+// What the dashboard is told about the research surface has to track what is
+// actually listening, or drafting fetches a port that stopped answering.
+func TestReportingOnlyAdvertisesALiveSurface(t *testing.T) {
+	w, _ := writer()
+	cfg := conf(t, &config.Run{})
+	s := newSession(cfg, Options{}, w)
+
+	none := &attached{session: s, id: cloud.Identity{InstanceID: "i"}}
+	if got := none.reporting(); got.MCPUrl != "" || got.MCPToken != "" {
+		t.Fatalf("with no surface it advertised %+v", got)
+	}
+
+	srv, err := mcp.New(mcp.Options{Root: t.TempDir(), Backend: &serve{session: s}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &attached{session: s, id: cloud.Identity{InstanceID: "i"}, srv: srv, tok: "read-token"}
+
+	// Held but never served: there is no address, so there is nothing to say.
+	if got := a.reporting(); got.MCPUrl != "" {
+		t.Fatalf("an unserved surface was advertised as %q", got.MCPUrl)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go srv.Serve(ctx, "127.0.0.1:0")
+	<-srv.Ready()
+
+	addr, _ := srv.Live()
+	if got := a.reporting(); got.MCPUrl != "http://"+addr || got.MCPToken != "read-token" {
+		t.Fatalf("serving on %s and reporting %+v", addr, got)
+	}
+
+	cancel()
+	for i := 0; i < 1000; i++ {
+		if _, ok := srv.Live(); !ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := a.reporting(); got.MCPUrl != "" || got.MCPToken != "" {
+		t.Fatalf("the surface stopped and it still advertises %+v", got)
 	}
 }

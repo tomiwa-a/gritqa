@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -57,6 +58,10 @@ type Options struct {
 	Execute bool
 	// Log goes to stderr. Stdout belongs to the protocol.
 	Log func(string)
+	// Printed asks for the lines a person needs to configure a client by hand:
+	// the address and its bearer. Off when the bearer is handed over in process,
+	// because then it is a credential on a screen for no reason.
+	Printed bool
 }
 
 type Server struct {
@@ -67,9 +72,16 @@ type Server struct {
 	keys    keyring
 	// stdio is the scope a spawned server serves, since a subprocess carries no
 	// bearer: spawning it is the authorization.
-	stdio Scope
-	// addr is the actual bound address after Serve() starts, set by serveHTTP.
-	addr string
+	stdio   Scope
+	printed bool
+
+	// addr is written by Serve on another goroutine and read by whoever
+	// advertises it, so it is guarded. It empties when serving stops: an address
+	// nothing listens on is worse than no address, because it is believed.
+	mu    sync.RWMutex
+	addr  string
+	ready chan struct{}
+	once  sync.Once
 }
 
 const version = "1"
@@ -99,7 +111,8 @@ func New(opts Options) (*Server, error) {
 	}
 	return &Server{
 		project: opts.Project, root: opts.Root, back: opts.Backend,
-		log: log, keys: keys, stdio: stdio,
+		log: log, keys: keys, stdio: stdio, printed: opts.Printed,
+		ready: make(chan struct{}),
 	}, nil
 }
 
@@ -134,5 +147,24 @@ func scopeNote(scope Scope) string {
 // Tokens are what a client presents over HTTP, by scope. Empty for stdio.
 func (s *Server) Tokens() map[Scope]string { return s.keys.tokens }
 
-// Addr is the actual bound address after Serve() starts. Empty for stdio.
-func (s *Server) Addr() string { return s.addr }
+// Ready closes once Serve has bound a listener or failed trying, so a caller
+// waiting for the address waits on the event rather than on a duration.
+func (s *Server) Ready() <-chan struct{} { return s.ready }
+
+// Live is the address to advertise, and whether there is still something behind
+// it. False once serving has stopped, which is what stops a dead port being
+// handed to the dashboard as somewhere to research.
+func (s *Server) Live() (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.addr, s.addr != ""
+}
+
+// bound records the address and releases anyone waiting on Ready. Every exit from
+// Serve calls it, so a server that never binds is a short wait rather than a hang.
+func (s *Server) bound(addr string) {
+	s.mu.Lock()
+	s.addr = addr
+	s.mu.Unlock()
+	s.once.Do(func() { close(s.ready) })
+}

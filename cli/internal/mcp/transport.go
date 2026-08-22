@@ -21,6 +21,10 @@ const Stdio = "stdio"
 
 // Serve runs until the context is cancelled.
 func (s *Server) Serve(ctx context.Context, addr string) error {
+	// Whatever happens, stop being pending: a caller waiting for an address has
+	// to learn that there will not be one.
+	defer s.bound("")
+
 	if addr == "" || addr == Stdio {
 		return s.serveStdio(ctx)
 	}
@@ -86,10 +90,14 @@ func (s *Server) serveHTTP(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
-	s.addr = ln.Addr().String()
-	s.log("serving MCP on http://" + s.addr)
-	for scope, token := range s.keys.tokens {
-		s.log(fmt.Sprintf("  %-7s %d tools   Authorization: Bearer %s", scope, s.count(scope), token))
+	s.bound(ln.Addr().String())
+	s.log("serving MCP on http://" + ln.Addr().String())
+	// The bearer is printed only for a client configured by hand. The resident
+	// process passes it to the dashboard in memory instead.
+	if s.printed {
+		for scope, token := range s.keys.tokens {
+			s.log(fmt.Sprintf("  %-7s %d tools   Authorization: Bearer %s", scope, s.count(scope), token))
+		}
 	}
 
 	done := make(chan error, 1)
