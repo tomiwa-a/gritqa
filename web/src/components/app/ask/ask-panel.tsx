@@ -21,6 +21,10 @@ import { NEW_CONVERSATION, askToken } from '@/lib/overlay';
  * conversation named it shows that thread, and without one it shows the box and what
  * there is to go back to. Nothing here is lost by closing the panel -- the exchange is
  * a row before it is on screen.
+ *
+ * The history here is the last few and not all of them, since `/dashboard/conversations`
+ * exists to be the list: a drawer showing everything twice is two places to maintain
+ * and neither is the good one. What the panel is for is asking from wherever you are.
  */
 
 /** Plans that came out of this conversation, which is the reason the column exists. */
@@ -65,6 +69,14 @@ function PlansFrom({
 }
 
 /** With nothing asked yet, what this is for -- in behaviour, like the answers. */
+/**
+ * How many earlier threads the panel shows before handing over to the page.
+ *
+ * Enough to recognise the one you were in ten minutes ago, which is what somebody
+ * opening this actually wants. Anything older is a search, and a search wants a page.
+ */
+const RECENT = 4;
+
 function Opening({ everAsked }: { everAsked: boolean }) {
   return (
     <div className="px-4 py-4">
@@ -148,7 +160,20 @@ export async function AskPanel({
           <Opening everAsked={conversations.length > 0} />
           {conversations.length > 0 && (
             <div className="border-t border-rule-soft">
-              <AskHistory conversations={conversations} hrefFor={hrefFor} />
+              <AskHistory conversations={conversations.slice(0, RECENT)} hrefFor={hrefFor} />
+              <Link
+                href="/dashboard/conversations"
+                className="group flex items-center gap-1.5 border-t border-rule-soft px-4 py-2.5 text-[12px] font-medium text-ink-muted transition-colors duration-150 hover:bg-app-hover hover:text-ink"
+              >
+                {conversations.length > RECENT
+                  ? `All ${conversations.length} conversations`
+                  : 'Open conversations'}
+                <Icon
+                  name="arrowRight"
+                  size={12}
+                  className="transition-transform duration-200 group-hover:translate-x-0.5"
+                />
+              </Link>
             </div>
           )}
         </>

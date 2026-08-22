@@ -364,6 +364,11 @@ export type Conversation = {
   turnCount: number;
   /** How many plans came out of this conversation. Usually none, sometimes one. */
   planCount: number;
+  /**
+   * The last thing said, flattened out of markdown, for a row you are scanning.
+   * Null only for a thread with no turns, which nothing writes.
+   */
+  preview: string | null;
 };
 
 export type ConversationTurn = {

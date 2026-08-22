@@ -79,6 +79,21 @@ function pageOf(here: string): string {
   return path.startsWith('/dashboard') ? path : '/dashboard';
 }
 
+/** Where a thread lives when it is a page rather than a panel. */
+const CONVERSATIONS = '/dashboard/conversations';
+
+/**
+ * Whether the question came from the conversation pages or from the panel.
+ *
+ * The two surfaces address a thread differently -- the page by route, the panel by
+ * search param -- and a new thread has to land wherever it was started. Read off
+ * `here` rather than passed as a flag, because the composer already sends where it
+ * is and a second field could disagree with the first.
+ */
+function fromConversationPage(here: string): boolean {
+  return pageOf(here).startsWith(CONVERSATIONS);
+}
+
 export type AskState = null | { error: string } | { ok: true; turn: number };
 
 /**
@@ -127,10 +142,24 @@ export async function askAction(_previous: AskState, formData: FormData): Promis
   }
 
   revalidatePath(pageOf(here));
+  /* And the list, which sorts by activity and counts turns -- stale the moment an
+     exchange lands, wherever it was asked from. Before the redirect below, because
+     `redirect` throws and nothing after it runs. */
+  revalidatePath(CONVERSATIONS);
 
   /* Outside the try, because `redirect` works by throwing and a catch around it
      would read a saved exchange as a failed one. */
-  if (!conversation) redirect(withOverlayOn(here, askToken(written.publicId)));
+  if (!conversation) {
+    /* Asked from the pages -- including the panel opened over them, which is how a
+       thread is started there -- the new thread is a page. Asked from anywhere else,
+       it is the panel over the page you were reading, which is where you still are. */
+    redirect(
+      fromConversationPage(here)
+        ? `${CONVERSATIONS}/${written.publicId}`
+        : withOverlayOn(here, askToken(written.publicId)),
+    );
+  }
+
   return { ok: true, turn: turns };
 }
 
@@ -259,6 +288,10 @@ export async function draftFromConversationAction(
   revalidatePath('/dashboard/queue');
   revalidatePath('/dashboard/test-plans');
   revalidatePath('/dashboard/settings/activity');
+  /* Both conversation surfaces count the plans a thread produced, and this is the
+     one call that changes that number. */
+  revalidatePath(CONVERSATIONS);
+  revalidatePath(`${CONVERSATIONS}/${conversation.publicId}`);
 
   /* Outside the try, for the same reason as above. The plan is worth a page: it is
      long, it is the thing to read, and the conversation is one click back. */

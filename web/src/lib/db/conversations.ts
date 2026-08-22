@@ -28,6 +28,35 @@ export function titleFrom(question: string): string {
   return `${clean.slice(0, 71).trimEnd()}…`;
 }
 
+/**
+ * One line of an answer, for a list you are scanning rather than reading.
+ *
+ * The model writes markdown, and markdown clamped to two lines at 12px is worse than
+ * no preview at all -- a row that opens with three hashes or a fence marker tells you
+ * about the formatting instead of about the answer. So the markers come out here
+ * rather than being rendered: this is the one place text from the agent is
+ * deliberately not `Prose`, because it is a label and not a document.
+ *
+ * `_` is left alone on purpose. It is emphasis about as often as it is the middle of
+ * `route_pattern`, and mangling an identifier costs more than an unclosed italic.
+ */
+export function snippet(body: string | null, max = 190): string | null {
+  if (!body) return null;
+  const flat = body
+    /* A fenced block says nothing in one line, and its first line is usually an
+       import or a brace. */
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}(?:[-*+]|\d+\.)\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*~`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!flat) return null;
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
+}
+
 /** `revision_author` on the way out, in the read model's two-sided naming. */
 function authorOf(stored: 'agent' | 'human'): ConversationTurn['author'] {
   return stored === 'agent' ? 'ai' : 'you';
@@ -50,6 +79,15 @@ export async function listConversations(projectId: number): Promise<Conversation
         SELECT count(*) FROM ${testPlans}
         WHERE ${testPlans.conversationId} = ${conversations.id}
       )::int`,
+      /* The last thing said. Always the agent's answer, because an exchange is written
+         as a pair -- and that is the half worth showing: a thread is recognised by
+         what you were told, not by how you asked. */
+      last: sql<string | null>`(
+        SELECT ${conversationMessages.body} FROM ${conversationMessages}
+        WHERE ${conversationMessages.conversationId} = ${conversations.id}
+        ORDER BY ${conversationMessages.seq} DESC
+        LIMIT 1
+      )`,
     })
     .from(conversations)
     .where(eq(conversations.projectId, projectId))
@@ -62,6 +100,7 @@ export async function listConversations(projectId: number): Promise<Conversation
     updatedAt: row.updatedAt.toISOString(),
     turnCount: row.turnCount,
     planCount: row.planCount,
+    preview: snippet(row.last),
   }));
 }
 
@@ -114,6 +153,7 @@ export async function conversationDetail(
     updatedAt: row.updatedAt.toISOString(),
     turnCount: turns.length,
     planCount: plans.length,
+    preview: snippet(turns.at(-1)?.body ?? null),
     turns: turns.map((turn) => ({
       publicId: turn.publicId,
       seq: turn.seq,

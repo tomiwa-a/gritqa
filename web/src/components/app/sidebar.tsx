@@ -41,6 +41,9 @@ const groupsOf = ({ projects, reviewCount }: ShellData): Group[] => [
     label: 'This project',
     items: [
       { href: '/dashboard/test-plans', icon: 'plan', label: 'Test plans' },
+      /* A destination, unlike the ask button above the nav: this is where threads are
+         browsed and re-read, which is a place you go rather than a panel you open. */
+      { href: '/dashboard/conversations', icon: 'sparkle', label: 'Conversations' },
       { href: '/dashboard/rules', icon: 'rules', label: 'Rules' },
       { href: '/dashboard/mocks', icon: 'mock', label: 'Mock server' },
       { href: '/dashboard/codebase', icon: 'codebase', label: 'Codebase' },
