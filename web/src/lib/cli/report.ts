@@ -34,7 +34,8 @@ export const MAX_MOVED = 2_000;
  * Per-body ceiling. Over it, the body is replaced by a marker rather than the request
  * being refused: a step's status, timing and assertions are what the report is for,
  * and losing all of that because one response was a 4MB file dump would be the wrong
- * trade. Nothing renders bodies yet, which is why replacing one costs nothing today.
+ * trade. The run report reads bodies now, so the marker is rendered as the sentence it
+ * is -- "too big to keep, 4.2MB came back" -- rather than as a mystery empty panel.
  */
 const MAX_BODY_BYTES = 64 * 1024;
 

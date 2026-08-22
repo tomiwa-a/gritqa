@@ -4,7 +4,7 @@ import { Icon } from '@/components/ui/icon';
 import { Fence } from '@/components/ui/prose';
 import { StatusDot } from '@/components/ui/badge';
 import { endpointHref } from '@/lib/plan';
-import { STEP_TONE, STEP_WORD, stepLine, stepOutcome } from '@/lib/runs';
+import { STEP_TONE, STEP_WORD, bodyText, checkLine, stepLine, stepOutcome } from '@/lib/runs';
 import type { StepResult } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -43,6 +43,123 @@ function Row({
     <Link href={href} title={title} className={shape}>
       {children}
     </Link>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-1.5 font-mono text-[10px] tracking-[0.16em] text-ink-subtle uppercase">
+      {children}
+    </p>
+  );
+}
+
+/** A body, or a sentence about why there is not one. Nothing at all when it is empty. */
+function Body({ value }: { value: unknown }) {
+  const read = bodyText(value);
+  if (!read) return null;
+  if (typeof read === 'string') {
+    return <p className="text-[12.5px] leading-relaxed text-ink-subtle">{read}</p>;
+  }
+  return <Fence code={read.code} tag={read.tag} />;
+}
+
+/**
+ * What actually came back, under the step it came back from.
+ *
+ * Closed by default and that is the load-bearing decision. The report's job is to be
+ * scannable -- twelve steps, one of them red -- and twelve open response bodies is not
+ * a report. Every one of these was already in Postgres and simply never read back, so
+ * what this adds is the answer to "and what did it say", one click from the question.
+ *
+ * Outside the row's link rather than inside it: a `details` nested in an anchor opens
+ * the endpoint panel instead of expanding, and no amount of `preventDefault` in a
+ * server component fixes that.
+ *
+ * The checks are worth as much as the body. A green step showing `data.token is there`
+ * is the difference between trusting the run and taking its word for it -- and a plan
+ * that quietly asserts nothing looks identical to one that passed, until you open it
+ * and find no checks listed.
+ */
+function Evidence({ step }: { step: StepResult }) {
+  const broke = step.status === 'failed' || step.status === 'error';
+  /* The inline block above already prints a failed command's output, which is where it
+     belongs -- so this carries the output nobody could see: the one from a step that
+     worked. */
+  const output = broke ? null : step.output;
+  const checks = step.assertions;
+
+  if (!checks.length && !step.responseBody && !step.requestBody && !output) return null;
+
+  const counts = [
+    checks.length ? `${checks.length} check${checks.length === 1 ? '' : 's'}` : null,
+    step.responseBody ? 'response' : null,
+    output ? 'output' : null,
+  ].filter(Boolean);
+
+  return (
+    <details className="group relative z-10 -mt-1.5 pr-4 pb-3.5 pl-[52px]">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-[11.5px] text-ink-subtle transition-colors duration-150 hover:text-ink-muted [&::-webkit-details-marker]:hidden">
+        <Icon
+          name="chevronRight"
+          size={11}
+          className="transition-transform duration-150 group-open:rotate-90"
+        />
+        <span className="nums">What came back · {counts.join(' · ')}</span>
+      </summary>
+
+      <div className="mt-2.5 flex flex-col gap-3.5 border-l border-rule-soft pl-3">
+        {checks.length > 0 && (
+          <div>
+            <Label>Checks</Label>
+            <ul className="flex flex-col gap-1">
+              {checks.map((check, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  <Icon
+                    name={check.passed ? 'check' : 'close'}
+                    size={11}
+                    className={cn('mt-[3.5px] shrink-0', check.passed ? 'text-pass' : 'text-fail')}
+                  />
+                  <span
+                    className={cn(
+                      'font-mono text-[11.5px] leading-snug [overflow-wrap:anywhere]',
+                      check.passed ? 'text-ink-muted' : 'text-fail',
+                    )}
+                  >
+                    {checkLine(check)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {step.responseBody !== null && step.responseBody !== undefined && (
+          <div>
+            <Label>{step.kind === 'sql' ? 'Rows' : 'Response'}</Label>
+            <Body value={step.responseBody} />
+          </div>
+        )}
+
+        {output && (
+          <div>
+            <Label>Output</Label>
+            <Fence code={output} tag={undefined} />
+          </div>
+        )}
+
+        {/* Named for what it is. The runner stores the body the plan declares, not the
+            body it sent, which is why no password a run uses is in the database -- and
+            saying "Request" over a `{{signupPassword}}` would be a quiet lie about
+            what went over the wire. */}
+        {step.requestBody !== null && step.requestBody !== undefined && (
+          <div>
+            <Label>Sent, as the plan writes it</Label>
+            <Body value={step.requestBody} />
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -165,6 +282,8 @@ export function RunSteps({ steps, className }: { steps: StepResult[]; className?
                 )}
               </span>
             </Row>
+
+            <Evidence step={step} />
           </li>
         );
       })}

@@ -4,7 +4,13 @@ import { executionState, testExecutions, testPlans, testResults } from '@/lib/db
 import { agoLabel } from '@/lib/when';
 import { asDate } from '@/lib/db/when';
 import type { Method } from '@/components/ui/method-badge';
-import type { MovedUnit, RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
+import type {
+  AssertionResult,
+  MovedUnit,
+  RunHistoryEntry,
+  StepResult,
+  TestExecution,
+} from '@/lib/model';
 
 /**
  * Executions, at the two levels of detail the screens ask for.
@@ -148,6 +154,12 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       output: testResults.output,
       responseTimeMs: testResults.responseTimeMs,
       errorMessage: testResults.errorMessage,
+      // The three the ingest has always written and the report never read back.
+      // Bounded on the way in -- 64KB per body, 16KB of output -- so selecting them
+      // for the handful of runs this returns is a known cost, not an open one.
+      requestBody: testResults.requestBody,
+      responseBody: testResults.responseBody,
+      assertions: testResults.assertionResults,
     })
     .from(testResults)
     .where(inArray(testResults.executionId, ids))
@@ -198,6 +210,9 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
       output: step.output,
       responseTimeMs: step.responseTimeMs,
       errorMessage: step.errorMessage,
+      responseBody: step.responseBody,
+      requestBody: step.requestBody,
+      assertions: checks(step.assertions),
       moved: stepMoved.get(step.id) ?? [],
     };
     group(byExecution, key, entry);
@@ -215,6 +230,32 @@ export async function recentExecutions(projectId: number, limit = 6): Promise<Te
     moved: runMoved.get(String(row.id)) ?? [],
     stateNote: row.stateNote,
   }));
+}
+
+/**
+ * `assertion_results` is jsonb, so what comes back is whatever was written -- and one
+ * CLI older than the column wrote nothing at all. Reading it defensively costs a loop
+ * and means a malformed row renders as a step with no checks rather than throwing on
+ * the whole run report.
+ */
+function checks(value: unknown): AssertionResult[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const check = entry as Record<string, unknown>;
+    if (typeof check.type !== 'string') return [];
+    return [
+      {
+        type: check.type,
+        operator: typeof check.operator === 'string' ? check.operator : '',
+        target: typeof check.target === 'string' ? check.target : null,
+        expected: typeof check.expected === 'string' ? check.expected : null,
+        actual: typeof check.actual === 'string' ? check.actual : null,
+        passed: check.passed === true,
+        found: check.found === true,
+      },
+    ];
+  });
 }
 
 function group<K, V>(map: Map<K, V[]>, key: K, value: V) {

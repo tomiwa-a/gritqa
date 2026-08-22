@@ -1,4 +1,10 @@
-import type { ExecutionStatus, RunHistoryEntry, StepResult, TestExecution } from '@/lib/model';
+import type {
+  AssertionResult,
+  ExecutionStatus,
+  RunHistoryEntry,
+  StepResult,
+  TestExecution,
+} from '@/lib/model';
 
 export const CELL_FILL: Record<string, string> = { p: 'bg-pass', f: 'bg-fail', s: 'bg-skip' };
 export const CELL_WORD: Record<string, string> = { p: 'passed', f: 'failed', s: 'skipped' };
@@ -48,6 +54,57 @@ export function stepOutcome(step: StepResult): string | null {
     return step.exitCode === null ? null : `exit ${step.exitCode}`;
   }
   return step.responseStatus === null ? null : String(step.responseStatus);
+}
+
+/**
+ * One check, as a sentence, and the same sentence the CLI prints on the terminal --
+ * `run/describe` in the Go half. Deliberately duplicated rather than shipped over the
+ * wire: `error_message` carries the one that failed, and this has to read the same for
+ * the checks that passed, which the runner never had a reason to write down.
+ *
+ * `found` is what the third arm is for. "expected data.token, and it was not there" is
+ * a different bug from "expected 250, got 400" -- the first is usually the plan naming
+ * a field the API does not have, the second is the code.
+ */
+export function checkLine(check: AssertionResult): string {
+  const subject = check.target || check.type;
+  const want = check.expected;
+
+  if (check.operator === 'exists') {
+    return check.passed ? `${subject} is there` : `${subject} is not there`;
+  }
+  const verb = check.operator === 'contains' ? 'contains' : 'is';
+  if (!check.found) return `expected ${subject} ${verb} ${want}, and there is no ${subject}`;
+  if (check.passed) return `${subject} ${verb} ${check.actual || want}`;
+  return `expected ${subject} ${verb} ${want}, got ${check.actual || 'nothing'}`;
+}
+
+/**
+ * A body as something to read, with its language.
+ *
+ * Three shapes arrive here and only one of them is JSON. The runner quotes a body it
+ * could not parse, so an HTML error page reaches Postgres as a JSON string -- printing
+ * that through `JSON.stringify` would show it wrapped in quotes with every newline as
+ * a literal `\n`, which is the least readable form of the most interesting response in
+ * the report. And a body over 64KB was replaced by a marker upstream, which is a fact
+ * about the report rather than a response, so it gets said in words.
+ */
+export function bodyText(value: unknown): { code: string; tag: string | undefined } | string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return { code: value, tag: undefined };
+
+  if (typeof value === 'object' && 'truncated' in value) {
+    const bytes = (value as { bytes?: unknown }).bytes;
+    return typeof bytes === 'number'
+      ? `Too big to keep — ${bytes.toLocaleString()} bytes came back.`
+      : 'Too big to keep.';
+  }
+
+  try {
+    return { code: JSON.stringify(value, null, 2), tag: 'json' };
+  } catch {
+    return '';
+  }
 }
 
 export type RunRow = RunHistoryEntry & {

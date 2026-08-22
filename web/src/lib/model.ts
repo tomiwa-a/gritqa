@@ -285,6 +285,21 @@ export type MovedUnit = {
   to: string | null;
 };
 
+/**
+ * One check as the runner settled it. `found` is separate from `passed` because the
+ * two failures read differently: a field that came back wrong is a bug in the code,
+ * and a field that was not in the response at all is usually a bug in the plan.
+ */
+export type AssertionResult = {
+  type: string;
+  operator: string;
+  target: string | null;
+  expected: string | null;
+  actual: string | null;
+  passed: boolean;
+  found: boolean;
+};
+
 export type StepResult = {
   stepName: string;
   status: StepStatus;
@@ -306,6 +321,25 @@ export type StepResult = {
   exitCode: number | null;
   /** What a command printed. */
   output: string | null;
+  /**
+   * What actually came back: a JSON body for a request, the rows for a query, the
+   * count for a fixture. Stored masked, so a secret the step sent is not in here.
+   *
+   * `unknown` because it is whatever the endpoint returned. The runner replaces a
+   * body over 64KB with `{truncated: true, bytes: n}` rather than dropping the step,
+   * and quotes a non-JSON body as a string, so this is valid JSON either way and
+   * never a promise about shape.
+   */
+  responseBody: unknown;
+  /**
+   * What the plan declared it would send, before interpolation -- `{{password}}`
+   * rather than the password. That is deliberate and it is why no credential a run
+   * uses reaches the database, but it means this is the request as written and not
+   * as sent. The URL beside it is the other way round: filled in, then masked.
+   */
+  requestBody: unknown;
+  /** Every check the step made, passed and failed alike. A pass is evidence too. */
+  assertions: AssertionResult[];
   /** How long the step took, whatever kind it was. */
   responseTimeMs: number | null;
   /**
