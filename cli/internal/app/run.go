@@ -112,7 +112,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	if st != nil {
 		engine.State = st.box
 		engine.SandboxDB = st.box.DB()
-		engine.ShellExec = st.box.DockerExec
+		engine.ShellExec = st.box.ShellExec
 	}
 	if judge != nil {
 		o := cfg.Run.RepairOpts()
@@ -348,6 +348,13 @@ func handlers(root string, snap *index.Snapshot) func(plan.Step) run.Handler {
 	sort.Slice(paths, func(i, j int) bool { return len(paths[i]) > len(paths[j]) })
 
 	return func(s plan.Step) run.Handler {
+		// A sql or shell step has no request, and an empty URL prefix-matches
+		// every route -- which handed the repair pass an arbitrary controller as
+		// "the code serving this". There is no serving code to find.
+		if s.Kind != plan.HTTPStep && s.Kind != "" {
+			return run.Handler{}
+		}
+
 		url := s.Request.URL
 		if i := strings.Index(url, "{{"); i >= 0 {
 			url = url[:i]
@@ -405,17 +412,31 @@ func execution(file, base string, started time.Time, res *run.Result) *index.Exe
 		e.Moved = append(e.Moved, index.MovedRow{Unit: m.Unit, Rows: m.Rows, From: m.From, To: m.To})
 	}
 	for _, s := range res.Steps {
-		e.Steps = append(e.Steps, index.StepRow{
+		row := index.StepRow{
 			StepID:   s.ID,
 			Name:     s.Name,
 			Status:   string(s.Status),
-			Method:   s.Method,
-			Path:     strings.TrimPrefix(s.URL, base),
-			Code:     s.Code,
 			Duration: s.Elapsed,
 			Detail:   strings.Join(reasons(s), "; "),
 			Moved:    moved(s.Moved),
-		})
+		}
+		switch s.Kind {
+		case plan.SQLStep:
+			// The statement went into URL, which is what a sql step has instead
+			// of a route, and it is not trimmed against the base URL because it
+			// was never one.
+			row.Kind, row.RowCount = string(plan.SQLStep), &s.RowsAffected
+			row.Path = s.URL
+		case plan.ShellStep:
+			code := s.ExitCode
+			row.Kind, row.ExitCode, row.Output = string(plan.ShellStep), &code, s.Stdout
+			row.Path = s.URL
+		default:
+			row.Kind = string(plan.HTTPStep)
+			row.Method, row.Code = s.Method, s.Code
+			row.Path = strings.TrimPrefix(s.URL, base)
+		}
+		e.Steps = append(e.Steps, row)
 	}
 	return e
 }

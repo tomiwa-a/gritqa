@@ -57,11 +57,13 @@ type Engine struct {
 	// SandboxDB is the *sql.DB for the throwaway database. SQL steps use it
 	// directly; with nil, a SQL step is an error.
 	SandboxDB *sql.DB
-	// SandboxName is the container name, for shell steps that run docker exec.
-	SandboxName string
-	// ShellExec runs a command in the sandbox container and returns stdout and
-	// the exit code. With nil, a shell step is an error.
-	ShellExec func(ctx context.Context, command string) (stdout string, exitCode int, err error)
+	// ShellExec runs a command inside the sandbox container. The two streams
+	// come back apart because a shell step asserts on stdout and a reader wants
+	// stderr, and merging them makes the first unreliable. err is for a command
+	// that could not be run at all — a non-zero exitCode is an answer.
+	//
+	// With nil, a shell step is an error, and Run refuses before the first step.
+	ShellExec func(ctx context.Context, command string) (stdout, stderr string, exitCode int, err error)
 
 	plan     string
 	spent    int
@@ -110,6 +112,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := e.canRun(p); err != nil {
+		return nil, err
+	}
 
 	vars := make(map[string]string, len(p.Variables)+len(e.Variables)+1)
 	vars[RunID] = runID()
@@ -133,9 +138,9 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan) (*Result, error) {
 		var r StepResult
 		switch {
 		case aborted:
-			r = shell(s, StepPending, "")
+			r = notRun(s, StepPending, "")
 		case blocker(s, settled) != "":
-			r = shell(s, StepSkipped, fmt.Sprintf(
+			r = notRun(s, StepSkipped, fmt.Sprintf(
 				"%s did not pass, so this had nothing to run with", blocker(s, settled)))
 		default:
 			r = e.step(ctx, s, vars)
@@ -227,9 +232,40 @@ func blocker(s plan.Step, settled map[string]StepStatus) string {
 	return ""
 }
 
-func shell(s plan.Step, status StepStatus, why string) StepResult {
+// canRun refuses a plan the engine has nothing to run it with, before the first
+// step rather than at the step itself.
+//
+// The difference matters more than a nicer error. A plan that inserts a fixture,
+// posts a booking against it and then checks the row would get through two of
+// those and fail on the third, leaving a booking behind and reporting the run as
+// failed rather than as never having started. Whether a container is up is
+// something only the caller knows, so the check lives where the wiring arrives.
+func (e *Engine) canRun(p *plan.Plan) error {
+	for _, s := range p.Steps {
+		switch s.Kind {
+		case plan.SQLStep:
+			if e.SandboxDB == nil {
+				return fmt.Errorf("%s is a sql step, and sql steps read GritQA's own copy of the "+
+					"database, which this run has none of — run it with a sandbox", s.Label())
+			}
+		case plan.ShellStep:
+			if e.ShellExec == nil {
+				return fmt.Errorf("%s is a shell step, and shell steps run inside GritQA's own "+
+					"container, which this run has none of — run it with a sandbox", s.Label())
+			}
+		}
+	}
+	return nil
+}
+
+// notRun is the result for a step that never executed: pending behind an aborted
+// step, or skipped because a dependency did not pass. Method and URL are the
+// declared ones, empty for a step that has no request, which is what the reporters
+// already expect of a non-HTTP step.
+func notRun(s plan.Step, status StepStatus, why string) StepResult {
 	return StepResult{
 		ID:     s.ID,
+		Kind:   kindOf(s),
 		Name:   s.Label(),
 		Method: s.Request.Method,
 		URL:    s.Request.URL,

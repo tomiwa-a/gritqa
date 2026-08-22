@@ -7,6 +7,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -344,23 +345,56 @@ func (s *Sandbox) Port() int     { return s.port }
 func (s *Sandbox) Name() string  { return s.name }
 func (s *Sandbox) Image() string { return s.img.Ref }
 
-// DockerExec runs a command inside the sandbox container and returns stdout+stderr
-// and the exit code. It is used by shell steps that need to run arbitrary commands
-// in the same environment as the database.
-func (s *Sandbox) DockerExec(ctx context.Context, command string) (stdout string, exitCode int, err error) {
-	cmd := exec.CommandContext(ctx, "docker", "exec", s.name, "sh", "-c", command)
-	out, err := cmd.CombinedOutput()
-	text := s.creds.scrub(strings.TrimSpace(string(out)))
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return text, exitErr.ExitCode(), nil
-		}
-		if ctx.Err() != nil {
-			return "", 0, ctx.Err()
-		}
-		return text, 1, fmt.Errorf("docker exec: %w", err)
+// ShellExec runs one line for a shell step: in a throwaway container off the app
+// image, on the run's network, with the project mounted and the sandbox's own DB_*
+// in the environment. It is inImage with the output kept — Prepare throws stdout
+// away because a migration either worked or it did not, while a shell step's output
+// is the evidence its assertions read.
+//
+// The app image and not the database container, which is where this used to go and
+// is the one place a project's toolchain is guaranteed not to be: mysql:8 has no
+// composer, no artisan, no php. And never on this machine, which is the whole of
+// the containment story — a plan is something a reviewer approved, not something
+// they audited line by line.
+//
+// The mount is read-only, so a command cannot edit the project. The writable
+// directories are volumes shared with the app container, so a command that seeds a
+// file lands it where an upload would, and it is still there for the next step.
+func (s *Sandbox) ShellExec(ctx context.Context, command string) (stdout, stderr string, exitCode int, err error) {
+	if s.image == "" {
+		return "", "", 0, errors.New("this run has no container to execute in — it is configured " +
+			"runtime: host, and a shell step never runs on your machine")
 	}
-	return text, 0, nil
+	envFile, err := s.containerEnvFile("shell")
+	if err != nil {
+		return "", "", 0, err
+	}
+	args := append([]string{"run", "--rm"}, s.containerArgs(envFile)...)
+	args = append(args, s.image, "sh", "-c", command)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var out, errs bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errs
+	runErr := cmd.Run()
+	stdout = s.creds.scrub(strings.TrimSpace(out.String()))
+	stderr = s.creds.scrub(strings.TrimSpace(errs.String()))
+
+	if runErr == nil {
+		return stdout, stderr, 0, nil
+	}
+	if ce := ctx.Err(); ce != nil {
+		return stdout, stderr, 0, ce
+	}
+	var exit *exec.ExitError
+	if errors.As(runErr, &exit) {
+		// A non-zero exit is an answer rather than a failure to ask, which is
+		// why exitCode is an assertion type. Docker's own failures land here
+		// too and are indistinguishable from the command's by design: it
+		// reserves 125 for itself, 126 and 127 for a command it could not
+		// start, and stderr says which.
+		return stdout, stderr, exit.ExitCode(), nil
+	}
+	return stdout, stderr, 1, fmt.Errorf("docker run: %w", runErr)
 }
 
 // DSN is the connection string. It carries the generated password, so it is for

@@ -93,6 +93,7 @@ const (
 	maxRows     = 200
 	maxEndpoint = 400
 	clip        = 300
+	maxStdout   = 4000
 )
 
 // get_index
@@ -340,6 +341,16 @@ func clipped(s string) string {
 		return s
 	}
 	return s[:clip] + "…"
+}
+
+// tail is the last n bytes of what a command printed, which is the end a reader
+// wants: a build says why it failed at the bottom, under the noise of it working
+// up to that point. ToValidUTF8 because the cut can land mid-rune.
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "…" + strings.ToValidUTF8(s[len(s)-n:], "")
 }
 
 // start_sandbox
@@ -624,15 +635,25 @@ type runOut struct {
 }
 
 type stepOut struct {
-	Name    string     `json:"name"`
-	Status  string     `json:"status"`
-	Method  string     `json:"method,omitempty"`
-	URL     string     `json:"url,omitempty"`
-	Code    int        `json:"code,omitempty"`
-	Elapsed int64      `json:"elapsed_ms"`
-	Failed  []checkOut `json:"failed_checks,omitempty"`
-	Err     string     `json:"error,omitempty"`
-	Moved   []movedOut `json:"moved,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// Kind is omitted for http, so the shape a refine turn already reads is
+	// unchanged for the steps that are still requests. URL carries the statement
+	// or the command for the other two -- what actually ran, either way.
+	Kind    string `json:"kind,omitempty"`
+	Method  string `json:"method,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Code    int    `json:"code,omitempty"`
+	Elapsed int64  `json:"elapsed_ms"`
+	// Rows is what a sql step's query came back with, or what its fixture moved.
+	// Pointers, because zero rows is the answer a verification step exists to
+	// catch and omitempty would drop it.
+	Rows   *int64     `json:"rows,omitempty"`
+	Exit   *int       `json:"exit_code,omitempty"`
+	Output string     `json:"output,omitempty"`
+	Failed []checkOut `json:"failed_checks,omitempty"`
+	Err    string     `json:"error,omitempty"`
+	Moved  []movedOut `json:"moved,omitempty"`
 }
 
 type movedOut struct {
@@ -666,11 +687,20 @@ func (s *Server) runPlan(ctx context.Context, _ *sdk.CallToolRequest, in runIn) 
 		Moved: movedList(res.Moved), Note: res.StateErr,
 	}
 	for _, st := range res.Steps {
-		out.Steps = append(out.Steps, stepOut{
+		row := stepOut{
 			Name: st.Name, Status: string(st.Status), Method: st.Method, URL: st.URL,
 			Code: st.Code, Elapsed: st.Elapsed.Milliseconds(), Failed: failed(st),
 			Err: st.Err, Moved: movedList(st.Moved),
-		})
+		}
+		switch st.Kind {
+		case plan.SQLStep:
+			rows := st.RowsAffected
+			row.Kind, row.Rows = string(plan.SQLStep), &rows
+		case plan.ShellStep:
+			code := st.ExitCode
+			row.Kind, row.Exit, row.Output = string(plan.ShellStep), &code, tail(st.Stdout, maxStdout)
+		}
+		out.Steps = append(out.Steps, row)
 	}
 	return nil, out, nil
 }

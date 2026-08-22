@@ -54,9 +54,19 @@ type Request struct {
 // Target; shell steps use Command. HTTP steps leave this nil.
 type Action struct {
 	Statement string `json:"statement,omitempty"`
-	Target    string `json:"target,omitempty"`
+	Target    Target `json:"target,omitempty"`
 	Command   string `json:"command,omitempty"`
 }
+
+// Target is what a SQL step is for. Setup executes and reports rows affected;
+// Verify queries and reports the rows themselves, which is the evidence a 201 is
+// not. Empty reads as Setup.
+type Target string
+
+const (
+	Setup  Target = "setup"
+	Verify Target = "verify"
+)
 
 type Extraction struct {
 	Name   string `json:"name"`

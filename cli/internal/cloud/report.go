@@ -22,6 +22,7 @@ const (
 	maxURL       = 4096
 	maxMessage   = 4000
 	maxContainer = 64
+	maxOutput    = 16000
 )
 
 type Report struct {
@@ -36,9 +37,12 @@ type Report struct {
 }
 
 type Step struct {
-	StepID         string          `json:"stepId"`
-	StepName       string          `json:"stepName"`
-	Status         string          `json:"status"`
+	StepID   string `json:"stepId"`
+	StepName string `json:"stepName"`
+	Status   string `json:"status"`
+	// Kind is omitted for an HTTP step, which the route reads as http, so an
+	// older CLI reporting into a newer dashboard still says something true.
+	Kind           string          `json:"kind,omitempty"`
 	Method         string          `json:"method,omitempty"`
 	RoutePattern   string          `json:"routePattern,omitempty"`
 	RequestURL     string          `json:"requestUrl,omitempty"`
@@ -46,9 +50,20 @@ type Step struct {
 	ResponseStatus int             `json:"responseStatus,omitempty"`
 	ResponseBody   json.RawMessage `json:"responseBody,omitempty"`
 	ResponseTimeMs int64           `json:"responseTimeMs,omitempty"`
-	Assertions     []Check         `json:"assertions,omitempty"`
-	ErrorMessage   string          `json:"errorMessage,omitempty"`
-	Moved          []Moved         `json:"moved,omitempty"`
+	// RowCount is a sql step's evidence: rows a query came back with, or rows a
+	// fixture moved. Carried as a pointer because zero is the interesting answer
+	// -- "returned 201, wrote nothing" is the bug this whole step type exists
+	// for, and omitempty would drop exactly that.
+	RowCount *int64 `json:"rowCount,omitempty"`
+	// ExitCode is a shell step's, and zero is the ordinary answer, so it is a
+	// pointer for the same reason. It is deliberately not folded into
+	// ResponseStatus: an exit code of 0 must never render as HTTP 0.
+	ExitCode *int `json:"exitCode,omitempty"`
+	// Output is what a shell step printed, already masked by the runner.
+	Output       string  `json:"output,omitempty"`
+	Assertions   []Check `json:"assertions,omitempty"`
+	ErrorMessage string  `json:"errorMessage,omitempty"`
+	Moved        []Moved `json:"moved,omitempty"`
 }
 
 type Check struct {
@@ -124,10 +139,14 @@ func step(i int, s run.StepResult, declared plan.Step, base string) Step {
 	}
 
 	out := Step{
-		StepID:         id,
-		StepName:       name,
-		Status:         string(s.Status),
-		Method:         cut(strings.ToUpper(s.Method), maxMethod),
+		StepID:   id,
+		StepName: name,
+		Status:   string(s.Status),
+		Kind:     kindOf(s),
+		Method:   cut(strings.ToUpper(s.Method), maxMethod),
+		// RequestURL is the interpolated statement or command for a non-HTTP
+		// step, which is the same promise it makes for an HTTP one: what
+		// actually went out, replayable.
 		RoutePattern:   cut(pattern(declared, s, base), maxPattern),
 		RequestURL:     cut(s.URL, maxURL),
 		ResponseStatus: s.Code,
@@ -135,6 +154,15 @@ func step(i int, s run.StepResult, declared plan.Step, base string) Step {
 		ResponseTimeMs: s.Elapsed.Milliseconds(),
 		ErrorMessage:   cut(s.Err, maxMessage),
 		Moved:          units(s.Moved),
+	}
+	switch s.Kind {
+	case plan.SQLStep:
+		rows := s.RowsAffected
+		out.RowCount = &rows
+	case plan.ShellStep:
+		code := s.ExitCode
+		out.ExitCode = &code
+		out.Output = cut(s.Stdout, maxOutput)
 	}
 	if len(declared.Request.Body) > 0 {
 		if b, err := json.Marshal(declared.Request.Body); err == nil {
@@ -150,10 +178,27 @@ func step(i int, s run.StepResult, declared plan.Step, base string) Step {
 	return out
 }
 
+// kindOf spells a step's kind for the wire, leaving http empty so the common case
+// costs nothing and an older dashboard reads it the way it always has.
+func kindOf(s run.StepResult) string {
+	if s.IsHTTP() {
+		return ""
+	}
+	return string(s.Kind)
+}
+
 // pattern is the URL as the plan wrote it, placeholders and all. The step's own
 // URL is the concrete one, so keeping both is what makes "every run that touched
 // this route" answerable later.
+//
+// Empty for a non-HTTP step, and it has to be: route_pattern is what the coverage
+// grid counts, and a SQL statement landing in that column would invent an endpoint
+// named SELECT. A sql step proving a row was written is evidence about an endpoint
+// but it is not traffic to one.
 func pattern(declared plan.Step, s run.StepResult, base string) string {
+	if !s.IsHTTP() {
+		return ""
+	}
 	if declared.Request.URL != "" {
 		return strings.TrimPrefix(declared.Request.URL, strings.TrimRight(base, "/"))
 	}

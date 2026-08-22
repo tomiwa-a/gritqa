@@ -160,7 +160,7 @@ func (p prepared) engine(onStep func(run.StepResult)) *run.Engine {
 	if p.box != nil {
 		e.State = p.box
 		e.SandboxDB = p.box.DB()
-		e.ShellExec = p.box.DockerExec
+		e.ShellExec = p.box.ShellExec
 	}
 	return e
 }

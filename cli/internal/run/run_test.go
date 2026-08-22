@@ -2,12 +2,15 @@ package run
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/gritqa/cli/internal/plan"
 )
@@ -333,11 +336,11 @@ func TestShellStepPassesWhenCommandSucceeds(t *testing.T) {
 		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
 
 	e := &Engine{
-		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
+		ShellExec: func(ctx context.Context, cmd string) (string, string, int, error) {
 			if cmd != "echo hello" {
 				t.Errorf("command = %q, want 'echo hello'", cmd)
 			}
-			return "hello", 0, nil
+			return "hello", "", 0, nil
 		},
 	}
 	res, err := e.Run(context.Background(), p)
@@ -360,8 +363,8 @@ func TestShellStepFailsWhenAssertionFails(t *testing.T) {
 		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
 
 	e := &Engine{
-		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
-			return "", 1, nil
+		ShellExec: func(ctx context.Context, cmd string) (string, string, int, error) {
+			return "", "no such file or directory", 1, nil
 		},
 	}
 	res, err := e.Run(context.Background(), p)
@@ -378,8 +381,8 @@ func TestShellStepStdoutContainsAssertion(t *testing.T) {
 		"assertions":[{"type":"stdoutContains","operator":"contains","target":"stdout","expected":"localhost"}]}`)
 
 	e := &Engine{
-		ShellExec: func(ctx context.Context, cmd string) (string, int, error) {
-			return "127.0.0.1 localhost", 0, nil
+		ShellExec: func(ctx context.Context, cmd string) (string, string, int, error) {
+			return "127.0.0.1 localhost", "", 0, nil
 		},
 	}
 	res, err := e.Run(context.Background(), p)
@@ -391,29 +394,141 @@ func TestShellStepStdoutContainsAssertion(t *testing.T) {
 	}
 }
 
-func TestShellStepNoExecIsAnError(t *testing.T) {
+// A run with nothing to execute against is refused before the first step, not on
+// the step itself. On step five, four steps have already written things.
+func TestShellStepWithNoContainerRefusesTheRun(t *testing.T) {
 	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"echo hi"},
-		"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}`)
+		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
 
 	res, err := (&Engine{}).Run(context.Background(), p)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatalf("the run went ahead: %+v", res)
 	}
-	if res.Steps[0].Status != StepError || !strings.Contains(res.Steps[0].Err, "no shell exec") {
-		t.Fatalf("got %s %q", res.Steps[0].Status, res.Steps[0].Err)
+	if !strings.Contains(err.Error(), "container") {
+		t.Errorf("the reason does not say why: %v", err)
 	}
 }
 
-func TestSQLStepNoDBIsAnError(t *testing.T) {
+func TestSQLStepWithNoDatabaseRefusesTheRun(t *testing.T) {
 	p := parse(t, `{"id":"s1","kind":"sql","action":{"statement":"SELECT 1"},
-		"assertions":[{"type":"status","operator":"equals","target":"status","expected":200}]}`)
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowCount","expected":1}]}`)
 
 	res, err := (&Engine{}).Run(context.Background(), p)
+	if err == nil {
+		t.Fatalf("the run went ahead: %+v", res)
+	}
+	if !strings.Contains(err.Error(), "database") {
+		t.Errorf("the reason does not say why: %v", err)
+	}
+}
+
+// The one question this step type exists to answer: the endpoint said 201, and a
+// query is what decides whether a row is there. A verify step queries, so it has
+// rows to count -- through Exec it had none and the assertion could not fail.
+func TestSQLVerifyStepCountsRowsAQueryReturned(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE bookings (id INTEGER, total INTEGER)`)
+	mustExec(t, db, `INSERT INTO bookings VALUES (1, 250), (2, 400)`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"SELECT id, total FROM bookings ORDER BY id","target":"verify"},
+		"assertions":[
+			{"type":"rowCount","operator":"equals","target":"rowCount","expected":2},
+			{"type":"valueEquals","operator":"equals","target":"row.total","expected":"250"},
+			{"type":"valueEquals","operator":"equals","target":"rows[1].total","expected":"400"}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Steps[0].Status != StepError || !strings.Contains(res.Steps[0].Err, "no sandbox database") {
-		t.Fatalf("got %s %q", res.Steps[0].Status, res.Steps[0].Err)
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps[0].Checks)
+	}
+	if res.Steps[0].RowsAffected != 2 {
+		t.Errorf("rows = %d, want 2", res.Steps[0].RowsAffected)
+	}
+}
+
+// And the failure it exists to catch: nothing was written, and the step says so
+// instead of passing on a row count Exec reported as zero for a different reason.
+func TestSQLVerifyStepFailsWhenNothingWasWritten(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE bookings (id INTEGER, transaction_id INTEGER)`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"SELECT id FROM bookings WHERE transaction_id = 7","target":"verify"},
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowCount","expected":1}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunFailed {
+		t.Fatalf("status = %s, want failed", res.Status)
+	}
+}
+
+// A setup step executes, so its number is rows it moved, and the next step can
+// read what it wrote -- a fixture in a rolled-back transaction would be invisible
+// to the request that needs it.
+func TestSQLSetupStepReportsRowsItMoved(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE guests (id INTEGER, email TEXT)`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"INSERT INTO guests VALUES (1, 'a@b.test'), (2, 'c@d.test')","target":"setup"},
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowsAffected","expected":2}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps[0].Checks)
+	}
+	if res.Steps[0].RowsAffected != 2 {
+		t.Errorf("rows = %d, want 2", res.Steps[0].RowsAffected)
+	}
+}
+
+// A fixture hands the real id to the request after it, which is what makes a
+// setup step cheaper than three HTTP steps spent on a login.
+func TestSQLStepExtractsForTheStepAfterIt(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE rooms (id INTEGER, code TEXT)`)
+	mustExec(t, db, `INSERT INTO rooms VALUES (41, 'DLX')`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"SELECT id FROM rooms WHERE code = 'DLX'","target":"verify"},
+		"extract":[{"name":"roomId","path":"row.id","source":"result"}],
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowCount","expected":1}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Vars["roomId"] != "41" {
+		t.Errorf("roomId = %q, want 41", res.Vars["roomId"])
+	}
+}
+
+// sqlite rather than MySQL, which the sandbox actually uses: what is under test
+// here is the two branches and the shape they hand the assertions, and both are
+// database/sql.
+func memoryDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func mustExec(t *testing.T, db *sql.DB, stmt string) {
+	t.Helper()
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("%s: %v", stmt, err)
 	}
 }
 
@@ -475,5 +590,48 @@ func TestEngineMasksASecretInTheReportedURL(t *testing.T) {
 	}
 	if !strings.Contains(got, "pass=") {
 		t.Errorf("masking should replace the value, not the URL: %q", got)
+	}
+}
+
+// A shell step's stdout travels to the dashboard and into a repair prompt, so a
+// command that echoes a configured credential must not write it into either.
+func TestShellStepMasksASecretInWhatItPrinted(t *testing.T) {
+	p := parse(t, `{"id":"s1","kind":"shell","action":{"command":"printenv DB_PASSWORD"},
+		"assertions":[{"type":"exitCode","operator":"equals","target":"exitCode","expected":0}]}`)
+
+	e := &Engine{
+		Secrets: []string{"s3cret"},
+		ShellExec: func(ctx context.Context, cmd string) (string, string, int, error) {
+			return "s3cret", "", 0, nil
+		},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Steps[0].Stdout, "s3cret") {
+		t.Errorf("the password survived into stdout: %q", res.Steps[0].Stdout)
+	}
+}
+
+// A statement is interpolated before it runs, and what it reports is the
+// interpolated one -- masked, because a fixture can carry a credential too.
+func TestSQLStepReportsTheStatementItRan(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE guests (id INTEGER, email TEXT)`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"INSERT INTO guests VALUES (1, '{{email}}')","target":"setup"},
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowsAffected","expected":1}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != RunPassed {
+		t.Fatalf("status = %s: %+v", res.Status, res.Steps[0].Checks)
+	}
+	if !strings.Contains(res.Steps[0].URL, "qa@gritqa.dev") {
+		t.Errorf("the reported statement is not the one that ran: %q", res.Steps[0].URL)
 	}
 }

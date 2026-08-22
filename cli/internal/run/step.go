@@ -37,7 +37,11 @@ const (
 // StepResult is what one step did. Body is kept because M3's repair pass needs
 // the response the assertion actually saw.
 type StepResult struct {
-	ID       string
+	ID string
+	// Kind is what this step was. The engine always resolves it, so a reporter
+	// reads it rather than repeating the default -- and IsHTTP is there for the
+	// zero value a result built by hand still has.
+	Kind     plan.StepKind
 	Name     string
 	Method   string
 	URL      string
@@ -60,18 +64,33 @@ type StepResult struct {
 
 // step runs one step, dispatching by kind.
 func (e *Engine) step(ctx context.Context, s plan.Step, vars map[string]string) StepResult {
-	kind := s.Kind
-	if kind == "" {
-		kind = plan.HTTPStep
-	}
+	kind := kindOf(s)
+	var r StepResult
 	switch kind {
 	case plan.SQLStep:
-		return e.sqlStep(ctx, s, vars)
+		r = e.sqlStep(ctx, s, vars)
 	case plan.ShellStep:
-		return e.shellStep(ctx, s, vars)
+		r = e.shellStep(ctx, s, vars)
 	default:
-		return e.httpStep(ctx, s, vars)
+		r = e.httpStep(ctx, s, vars)
 	}
+	r.Kind = kind
+	return r
+}
+
+// IsHTTP is the question every reporter asks: does this step have a method, a
+// route and a status, or does it have rows or an exit code instead.
+func (s StepResult) IsHTTP() bool {
+	return s.Kind == plan.HTTPStep || s.Kind == ""
+}
+
+// kindOf resolves the absent kind a plan written before there was more than one
+// carries. It is done in one place so nothing downstream repeats the default.
+func kindOf(s plan.Step) plan.StepKind {
+	if s.Kind == "" {
+		return plan.HTTPStep
+	}
+	return s.Kind
 }
 
 // httpStep runs one HTTP step: interpolate once, then send until it passes or

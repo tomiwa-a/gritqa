@@ -79,11 +79,15 @@ func repairMessages(req run.RepairRequest) []model.Message {
 	b.WriteString(indented(req.Step))
 
 	r := req.Result
-	fmt.Fprintf(&b, "\nIt called %s %s and got %d in %s.\n", r.Method, r.URL, r.Code, r.Elapsed)
+	b.WriteString("\n" + whatItDid(r) + "\n")
 	if r.Err != "" {
 		fmt.Fprintf(&b, "The step errored: %s\n", r.Err)
 	}
-	if body := clip(string(r.Body), bodyCap); body != "" {
+	if r.Kind == plan.ShellStep {
+		if out := clip(r.Stdout, bodyCap); out != "" {
+			fmt.Fprintf(&b, "\nWhat it printed:\n%s\n", out)
+		}
+	} else if body := clip(string(r.Body), bodyCap); body != "" {
 		fmt.Fprintf(&b, "\nResponse body:\n%s\n", body)
 	}
 
@@ -113,7 +117,13 @@ func confirmMessages(req ConfirmRequest) []model.Message {
 
 	b.WriteString("\nWhat every step did:\n")
 	for i, s := range req.Steps {
-		fmt.Fprintf(&b, "\n%d. %s — %s %s → %d in %s\n", i+1, s.Name, s.Method, s.URL, s.Code, s.Elapsed)
+		fmt.Fprintf(&b, "\n%d. %s — %s\n", i+1, s.Name, whatItDid(s))
+		if s.Kind == plan.ShellStep {
+			if out := clip(s.Stdout, confirmCap); out != "" {
+				fmt.Fprintf(&b, "%s\n", out)
+			}
+			continue
+		}
 		if body := clip(string(s.Body), confirmCap); body != "" {
 			fmt.Fprintf(&b, "%s\n", body)
 		}
@@ -122,6 +132,26 @@ func confirmMessages(req ConfirmRequest) []model.Message {
 		{Role: "system", Content: confirmSystem},
 		{Role: "user", Content: b.String()},
 	}
+}
+
+// whatItDid is one sentence saying what a step actually did, in the terms of the
+// kind it was. Both prompts asked "It called %s %s and got %d", which for a sql
+// step read "It called   and got 0 in 12ms." -- three blanks and a number that
+// meant nothing, in the one place the model has to reason from.
+func whatItDid(r run.StepResult) string {
+	switch r.Kind {
+	case plan.SQLStep:
+		// The rows are the finding: a verification query that came back with
+		// none is the whole reason this step type exists.
+		rows := "rows"
+		if r.RowsAffected == 1 {
+			rows = "row"
+		}
+		return fmt.Sprintf("It ran %s and got %d %s in %s.", r.URL, r.RowsAffected, rows, r.Elapsed)
+	case plan.ShellStep:
+		return fmt.Sprintf("It ran %s and exited %d in %s.", r.URL, r.ExitCode, r.Elapsed)
+	}
+	return fmt.Sprintf("It called %s %s and got %d in %s.", r.Method, r.URL, r.Code, r.Elapsed)
 }
 
 type fixReply struct {

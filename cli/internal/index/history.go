@@ -90,6 +90,13 @@ var added = []struct{ table, column, decl string }{
 	{"executions", "confirm_note", "TEXT NOT NULL DEFAULT ''"},
 	{"step_results", "moved", "TEXT NOT NULL DEFAULT ''"},
 	{"executions", "state_note", "TEXT NOT NULL DEFAULT ''"},
+	// A step is no longer necessarily a request. kind is '' in a cache written
+	// before this, which reads as http -- and truthfully so, because every step
+	// that ran before this existed was one.
+	{"step_results", "kind", "TEXT NOT NULL DEFAULT ''"},
+	{"step_results", "row_count", "INTEGER"},
+	{"step_results", "exit_code", "INTEGER"},
+	{"step_results", "output", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // upgrade adds those columns to a cache that predates them. A run that cannot be
@@ -163,14 +170,24 @@ type MovedRow struct {
 // StepRow is one step. Code and Duration are zero when the request never
 // completed, which is the UI's null.
 type StepRow struct {
-	StepID   string
-	Name     string
-	Status   string
+	StepID string
+	Name   string
+	Status string
+	// Kind is http, sql or shell, empty for a run recorded before there was more
+	// than one. Method, Path and Code are the HTTP step's three, and are empty
+	// for the others -- a sql step has no verb and no route.
+	Kind     string
 	Method   string
 	Path     string
 	Code     int
 	Duration time.Duration
 	Detail   string
+	// RowCount is a sql step's rows, ExitCode a shell step's status, Output what
+	// it printed. Pointers because zero is the answer that matters: no rows is
+	// the finding, and exit 0 is success.
+	RowCount *int64
+	ExitCode *int
+	Output   string
 	// Moved is what this step changed, rendered. Empty for a step that changed
 	// nothing, which for a POST is a finding of its own.
 	Moved string
@@ -225,8 +242,8 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 	insert, err := tx.Prepare(
 		`INSERT INTO step_results
 		   (execution_id, seq, step_id, name, status, method, path, code, duration_ms, detail,
-		    verdict, moved)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		    verdict, moved, kind, row_count, exit_code, output)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -235,7 +252,8 @@ func (s *Store) SaveExecution(e *Execution) (int64, error) {
 	for i, st := range e.Steps {
 		if _, err := insert.Exec(id, i, st.StepID, st.Name, st.Status, st.Method, st.Path,
 			nullInt(st.Code), nullInt(int(st.Duration.Milliseconds())), st.Detail,
-			orUndecided(st.Verdict), st.Moved); err != nil {
+			orUndecided(st.Verdict), st.Moved,
+			st.Kind, ptrInt(st.RowCount), ptrInt(st.ExitCode), st.Output); err != nil {
 			return 0, err
 		}
 	}
@@ -396,7 +414,8 @@ func (s *Store) Executions(limit int) ([]Execution, error) {
 
 func (s *Store) steps(id int64) ([]StepRow, error) {
 	rows, err := s.db.Query(
-		`SELECT step_id, name, status, method, path, code, duration_ms, detail, verdict, moved
+		`SELECT step_id, name, status, method, path, code, duration_ms, detail, verdict, moved,
+		        kind, row_count, exit_code, output
 		 FROM step_results WHERE execution_id = ? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err
@@ -406,16 +425,34 @@ func (s *Store) steps(id int64) ([]StepRow, error) {
 	var out []StepRow
 	for rows.Next() {
 		var st StepRow
-		var code, ms sql.NullInt64
+		var code, ms, rowCount, exitCode sql.NullInt64
 		if err := rows.Scan(&st.StepID, &st.Name, &st.Status, &st.Method, &st.Path,
-			&code, &ms, &st.Detail, &st.Verdict, &st.Moved); err != nil {
+			&code, &ms, &st.Detail, &st.Verdict, &st.Moved,
+			&st.Kind, &rowCount, &exitCode, &st.Output); err != nil {
 			return nil, err
 		}
 		st.Code = int(code.Int64)
 		st.Duration = time.Duration(ms.Int64) * time.Millisecond
+		if rowCount.Valid {
+			st.RowCount = &rowCount.Int64
+		}
+		if exitCode.Valid {
+			n := int(exitCode.Int64)
+			st.ExitCode = &n
+		}
 		out = append(out, st)
 	}
 	return out, rows.Err()
+}
+
+// ptrInt is the nullInt of an optional number: a nil pointer is SQL NULL, and a
+// zero it points at is a zero, which for a row count and an exit code is the whole
+// distinction worth keeping.
+func ptrInt[T int | int64](v *T) any {
+	if v == nil {
+		return nil
+	}
+	return int64(*v)
 }
 
 func orUndecided(v string) string {

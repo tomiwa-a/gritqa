@@ -92,3 +92,45 @@ func TestMirrorNeverSendsNull(t *testing.T) {
 		t.Fatalf("the push carries a null: %s", b)
 	}
 }
+
+// A sql step must not invent an endpoint. route_pattern is what the coverage grid
+// counts, and a statement landing in that column would draw a square for a route
+// named SELECT.
+func TestReportedGivesANonHTTPStepNoRoute(t *testing.T) {
+	p := &plan.Plan{Name: "p", Steps: []plan.Step{
+		{ID: "one", Kind: plan.SQLStep, Action: &plan.Action{
+			Statement: "SELECT id FROM bookings WHERE transaction_id = 7", Target: plan.Verify}},
+		{ID: "two", Kind: plan.ShellStep, Action: &plan.Action{Command: "php artisan migrate"}},
+	}}
+	res := &run.Result{Plan: "p", Status: run.RunPassed, Elapsed: time.Second, Steps: []run.StepResult{
+		{ID: "one", Kind: plan.SQLStep, Name: "the row is there", Status: run.StepPassed,
+			URL: "SELECT id FROM bookings WHERE transaction_id = 7", RowsAffected: 1},
+		{ID: "two", Kind: plan.ShellStep, Name: "migrate", Status: run.StepPassed,
+			URL: "php artisan migrate", Stdout: "Migrated: 2021_01_01_create_bookings"},
+	}}
+
+	rep := Reported("machine", p, "http://x", res, "abc")
+	sqlStep, shellStep := rep.Steps[0], rep.Steps[1]
+
+	if sqlStep.RoutePattern != "" || shellStep.RoutePattern != "" {
+		t.Errorf("routePattern = %q and %q, want neither", sqlStep.RoutePattern, shellStep.RoutePattern)
+	}
+	if sqlStep.Kind != "sql" || shellStep.Kind != "shell" {
+		t.Errorf("kind = %q and %q", sqlStep.Kind, shellStep.Kind)
+	}
+	// A pointer, so that one row and no rows are different answers rather than
+	// both being dropped by omitempty.
+	if sqlStep.RowCount == nil || *sqlStep.RowCount != 1 {
+		t.Errorf("rowCount = %v, want 1", sqlStep.RowCount)
+	}
+	if shellStep.ExitCode == nil || *shellStep.ExitCode != 0 {
+		t.Errorf("exitCode = %v, want 0", shellStep.ExitCode)
+	}
+	if !strings.Contains(shellStep.Output, "Migrated") {
+		t.Errorf("output = %q", shellStep.Output)
+	}
+	// The statement is what went out, which is the promise requestUrl makes.
+	if !strings.HasPrefix(sqlStep.RequestURL, "SELECT") {
+		t.Errorf("requestUrl = %q", sqlStep.RequestURL)
+	}
+}

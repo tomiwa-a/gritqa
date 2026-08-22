@@ -148,7 +148,7 @@ func validateSQLStep(s *Step, where string) error {
 	if strings.TrimSpace(s.Action.Statement) == "" {
 		return fmt.Errorf("%s has no statement", where)
 	}
-	if s.Action.Target != "" && s.Action.Target != "setup" && s.Action.Target != "verify" {
+	if s.Action.Target != "" && s.Action.Target != Setup && s.Action.Target != Verify {
 		return fmt.Errorf("%s has target %q, which is neither setup nor verify", where, s.Action.Target)
 	}
 	return validateCommon(s, where)

@@ -152,7 +152,7 @@ func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) 
 		Secrets:   secrets(vars, st),
 		State:     st.box,
 		SandboxDB: st.box.DB(),
-		ShellExec: st.box.DockerExec,
+		ShellExec: st.box.ShellExec,
 	}
 	b.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("running %s against %s", p.Name, st.base)})
 	return engine.Run(ctx, p)
