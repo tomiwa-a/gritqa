@@ -4,6 +4,7 @@ import { Meter } from '../meter';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { approvePlanAction, runPlanAction, sendBackPlanAction } from '@/lib/actions/plans';
 import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
@@ -206,7 +207,7 @@ export async function PlanPreview({
             v{plan.version}
           </Badge>
         </div>
-        <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-muted">{plan.description}</p>
+        <Prose className="mt-2.5">{plan.description}</Prose>
       </DrawerBlock>
 
       <DrawerBlock label="What it covers" meta={`${plan.covers.length}`}>

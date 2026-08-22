@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import { Badge } from '@/components/ui/badge';
 import type { PlanRevision, TestPlan } from '@/lib/model';
 import { cn } from '@/lib/cn';
@@ -94,10 +95,7 @@ function Version({
               variant="outline"
               size="sm"
               mono
-              className={cn(
-                'nums bg-app-panel',
-                current && 'border-punch-red/40 text-punch-red',
-              )}
+              className={cn('nums bg-app-panel', current && 'border-punch-red/40 text-punch-red')}
             >
               v{revision.version}
             </Badge>
@@ -120,7 +118,9 @@ function Version({
           </p>
         )}
 
-        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">{revision.summary}</p>
+        <Prose size="md" className="mt-2">
+          {revision.summary}
+        </Prose>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className="nums text-[11.5px] text-ink-subtle">

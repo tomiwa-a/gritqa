@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Badge, Kbd } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import { PlanBody } from './plan-body';
 import { DecisionBar } from './decision-bar';
 import type { TestPlan, TestPlanDetail } from '@/lib/model';
@@ -67,9 +68,9 @@ export function PlanReader({
             <h2 className="mt-2 text-[19px] leading-snug font-semibold tracking-[-0.02em] text-ink">
               {plan.name}
             </h2>
-            <p className="mt-1 max-w-[62ch] text-[13.5px] leading-relaxed text-ink-muted">
+            <Prose size="lg" className="mt-1 max-w-[62ch]">
               {plan.description}
-            </p>
+            </Prose>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <Summary plan={plan} />

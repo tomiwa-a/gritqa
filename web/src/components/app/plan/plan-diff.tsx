@@ -1,4 +1,5 @@
 import { Icon, type IconName } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import type { PlanChange, PlanRevision } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -126,7 +127,7 @@ export function PlanDiff({
             {revision.instruction}
           </blockquote>
         )}
-        <p className="text-[13px] leading-relaxed text-ink-muted">{revision.summary}</p>
+        <Prose size="md">{revision.summary}</Prose>
       </div>
 
       {revision.changes.length === 0 ? (

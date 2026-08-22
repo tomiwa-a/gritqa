@@ -1,4 +1,5 @@
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 
 /**
  * What the plan took on faith, said out loud.
@@ -25,9 +26,9 @@ export function Assumptions({ assumptions }: { assumptions: string[] }) {
           className="flex items-start gap-2.5 border-b border-rule-soft px-4 py-2.5 last:border-b-0"
         >
           <Icon name="alert" size={13} className="mt-[3px] shrink-0 text-warn" />
-          <p className="text-[13px] leading-relaxed text-ink-muted [overflow-wrap:anywhere]">
+          <Prose size="md" className="min-w-0 flex-1">
             {assumption}
-          </p>
+          </Prose>
         </li>
       ))}
     </ul>

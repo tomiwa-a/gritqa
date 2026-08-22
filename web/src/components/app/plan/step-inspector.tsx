@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { MethodBadge } from '@/components/ui/method-badge';
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import { Badge } from '@/components/ui/badge';
 import { Drawer, DrawerBlock } from '../drawer';
 import { assertionPredicate, assertionTarget, variablesUsedBy } from '@/lib/plan';
@@ -108,7 +109,7 @@ export function StepInspector({
       )}
 
       <DrawerBlock label="What it does">
-        <p className="text-[12.5px] leading-relaxed text-ink-muted">{step.description}</p>
+        <Prose>{step.description}</Prose>
       </DrawerBlock>
 
       <DrawerBlock label="Request">

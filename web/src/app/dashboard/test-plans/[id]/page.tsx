@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Topbar } from '@/components/app/topbar';
 import { PageBody } from '@/components/app/page-body';
 import { Panel } from '@/components/app/panel';
+import { Prose } from '@/components/ui/prose';
 import { Meter } from '@/components/app/meter';
 import { PlanBody } from '@/components/app/plan/plan-body';
 import { PlanDiff } from '@/components/app/plan/plan-diff';
@@ -268,9 +269,9 @@ export default async function PlanDetailPage({
             <h2 className="mt-2 text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
               {plan.name}
             </h2>
-            <p className="mt-1 max-w-[68ch] text-[13.5px] leading-relaxed text-ink-muted">
+            <Prose size="lg" className="mt-1 max-w-[68ch]">
               {plan.description}
-            </p>
+            </Prose>
 
             <p className="nums mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-ink-subtle">
               <span>{plan.stepCount} steps</span>

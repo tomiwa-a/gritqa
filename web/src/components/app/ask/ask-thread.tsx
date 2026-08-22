@@ -1,5 +1,6 @@
 import { TurnRow } from '../plan/revision-thread';
 import { Icon } from '@/components/ui/icon';
+import { Prose } from '@/components/ui/prose';
 import type { AgentStep, ConversationTurn } from '@/lib/model';
 
 /**
@@ -70,32 +71,16 @@ function Steps({ steps }: { steps: AgentStep[] }) {
   );
 }
 
-/**
- * A model's prose, with its paragraphs kept.
- *
- * Blank lines separate paragraphs and single ones are held as they were written, so a
- * numbered list arrives as a list. Not a markdown renderer: this is the answer to a
- * question, not a document, and the first thing a renderer would buy is the ability
- * for a stray asterisk to eat a sentence.
- */
-function Answer({ body }: { body: string }) {
-  const paragraphs = body.split(/\n{2,}/).filter((p) => p.trim());
-
-  return (
-    <div className="mt-2 flex flex-col gap-2">
-      {paragraphs.map((paragraph, i) => (
-        <p
-          key={i}
-          className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-muted [overflow-wrap:anywhere]"
-        >
-          {paragraph.trim()}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-export function AskThread({ turns, author }: { turns: ConversationTurn[]; author: string }) {
+export function AskThread({
+  turns,
+  author,
+  size = 'sm',
+}: {
+  turns: ConversationTurn[];
+  author: string;
+  /** The drawer is narrow and the conversation page is not. */
+  size?: 'sm' | 'md' | 'lg';
+}) {
   return (
     <ol className="flex flex-col">
       {turns.map((turn, i) => {
@@ -114,7 +99,9 @@ export function AskThread({ turns, author }: { turns: ConversationTurn[]; author
               </blockquote>
             ) : (
               <>
-                <Answer body={turn.body} />
+                <Prose size={size} className="mt-2">
+                  {turn.body}
+                </Prose>
                 {turn.steps.length > 0 && <Steps steps={turn.steps} />}
               </>
             )}
