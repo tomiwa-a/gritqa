@@ -30,6 +30,75 @@ export const RUN_WORD: Record<ExecutionStatus, string> = {
 const VARIABLE = /\{\{\s*([\w.]+)\s*\}\}/g;
 
 /**
+ * The `{{ }}` a runner would refuse, or null when there is none.
+ *
+ * `literal()` in `cli/internal/plan/load.go`, mirrored: strip every well-formed
+ * reference and any `{{` still standing is one nothing can resolve, so the step would
+ * send those characters verbatim. The regex above was already shared with that half;
+ * only the *check* lived on one side of the wire, which is how a plan reading
+ * `{{$ENV.RUN_ID}}` got drafted, saved, reviewed, approved, dispatched, and then
+ * refused before its first step on a machine nobody was watching.
+ */
+export function badReference(value: string, where: string): string | null {
+  if (!value.replace(VARIABLE, '').includes('{{')) return null;
+  const shown = value.length > 60 ? `${value.slice(0, 60)}\u2026` : value;
+  return (
+    `${where} reads ${JSON.stringify(shown)} \u2014 {{ }} holds one variable name and ` +
+    'nothing else, so this would be sent exactly as written'
+  );
+}
+
+/** Anything reachable, the way `deepBraces` walks it: strings, maps, arrays. */
+function deepBad(value: unknown, where: string): string | null {
+  if (typeof value === 'string') return badReference(value, where);
+  if (Array.isArray(value)) {
+    return value.reduce<string | null>(
+      (bad, item, i) => bad ?? deepBad(item, `${where}[${i}]`),
+      null,
+    );
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce<string | null>(
+      (bad, [key, inner]) => bad ?? deepBad(inner, `${where} ${key}`),
+      null,
+    );
+  }
+  return null;
+}
+
+/**
+ * The first reason this plan could not be loaded, or null.
+ *
+ * Same fields and same order as `braces()` on the other side, so the sentence a
+ * developer reads here is the sentence the runner would have shown them later.
+ */
+export function unloadable(plan: {
+  variables: Record<string, string>;
+  steps: PlanStepSpec[];
+}): string | null {
+  for (const [name, value] of Object.entries(plan.variables)) {
+    const bad = badReference(value, `the variable ${name}`);
+    if (bad) return bad;
+  }
+  for (const [i, step] of plan.steps.entries()) {
+    const where = `step ${i + 1} (${step.id})`;
+    const bad =
+      (step.request ? deepBad(step.request.url, `${where} url`) : null) ??
+      deepBad(step.request?.headers, where) ??
+      deepBad(step.request?.query, where) ??
+      deepBad(step.request?.body, `${where} body`) ??
+      deepBad(step.action?.statement, `${where} statement`) ??
+      deepBad(step.action?.command, `${where} command`) ??
+      step.assertions.reduce<string | null>(
+        (found, a, n) => found ?? deepBad(a.expected, `${where} check ${n + 1}`),
+        null,
+      );
+    if (bad) return bad;
+  }
+  return null;
+}
+
+/**
  * The `{{name}}` references one step reads, whatever kind of step it is.
  *
  * Stringifying the payload rather than the request specifically, because a `{{token}}`

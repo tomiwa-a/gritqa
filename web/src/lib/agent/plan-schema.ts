@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Endpoint, PlanAssertion, PlanExtraction, PlanStepSpec, StepKind } from '@/lib/model';
+import { unloadable } from '@/lib/plan';
 
 /**
  * What the agent is allowed to produce, which is exactly what the dashboard
@@ -476,14 +477,35 @@ function stepFromWire(step: z.infer<typeof wireStepSchema>): z.infer<typeof step
   return { ...common, kind, action: { command: action.command } };
 }
 
+/**
+ * The last gate before a plan becomes a row.
+ *
+ * `stepFromWire` above refuses a step whose payload contradicts its `kind`; this
+ * refuses one the runner could not interpolate. Same argument, and it is the one the
+ * plan format's own comment makes -- an unloadable plan otherwise sits in the queue
+ * looking approvable, and the developer finds out minutes later when their machine
+ * declines it before the first step.
+ */
+function loadable<T extends { variables: Record<string, string>; steps: PlanStepSpec[] }>(
+  plan: T,
+): T {
+  const bad = unloadable(plan);
+  if (bad) throw new Error(`plan-schema: ${bad}`);
+  return plan;
+}
+
 export function draftFromWire(draft: z.infer<typeof wireDraftSchema>): PlanDraft {
-  return { ...draft, variables: record(draft.variables), steps: draft.steps.map(stepFromWire) };
+  return loadable({
+    ...draft,
+    variables: record(draft.variables),
+    steps: draft.steps.map(stepFromWire),
+  });
 }
 
 export function revisionFromWire(revision: z.infer<typeof wireRevisionSchema>): RevisionDraft {
-  return {
+  return loadable({
     ...revision,
     variables: record(revision.variables),
     steps: revision.steps.map(stepFromWire),
-  };
+  });
 }

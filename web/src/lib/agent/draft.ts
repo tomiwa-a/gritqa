@@ -60,6 +60,11 @@ use them to find the real routes, the real request shapes and the real status
 codes. Do not infer an endpoint from a name, and do not invent a field. If you
 could not establish something, say so in the summary rather than guessing at it.
 
+A path is copied, never composed. Take it character for character from what you
+read -- including any query string, prefix or file name in it -- because that is
+what the project routes on, and a path you tidied into the one the framework
+*ought* to use is a 404 on every step that touches it.
+
 Paths in \`covers\` are route patterns -- /customers/:id/orders, never
 /customers/42/orders. Coverage is keyed by pattern, so a concrete id there joins
 to nothing.
