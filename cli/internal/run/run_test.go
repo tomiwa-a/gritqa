@@ -491,6 +491,51 @@ func TestSQLSetupStepReportsRowsItMoved(t *testing.T) {
 	}
 }
 
+// A row count says a row exists; the row says which one. The report carries both,
+// or the dashboard can only ever show that a verification passed.
+func TestSQLVerifyStepReportsTheRowsItRead(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE guests (id INTEGER, email TEXT, token TEXT)`)
+	mustExec(t, db, `INSERT INTO guests VALUES (7, 'a@b.test', 'sk-live-secret')`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"SELECT id, email, token FROM guests","target":"verify"},
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowCount","expected":1}]}`)
+
+	res, err := (&Engine{SandboxDB: db, Secrets: []string{"sk-live-secret"}}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(res.Steps[0].Body)
+	for _, want := range []string{`"rowCount":1`, "a@b.test", `"id":7`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s is not in the reported body: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "sk-live-secret") {
+		t.Errorf("a secret reached the report: %s", body)
+	}
+}
+
+// A setup step has no rows, and the number it reports is what the assertions read,
+// so the two have to agree.
+func TestSQLSetupStepReportsWhatItMovedAsItsBody(t *testing.T) {
+	db := memoryDB(t)
+	mustExec(t, db, `CREATE TABLE guests (id INTEGER)`)
+
+	p := parse(t, `{"id":"s1","kind":"sql",
+		"action":{"statement":"INSERT INTO guests VALUES (1), (2)","target":"setup"},
+		"assertions":[{"type":"rowCount","operator":"equals","target":"rowsAffected","expected":2}]}`)
+
+	res, err := (&Engine{SandboxDB: db}).Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := string(res.Steps[0].Body); !strings.Contains(body, `"rowsAffected":2`) {
+		t.Errorf("body = %s", body)
+	}
+}
+
 // A fixture hands the real id to the request after it, which is what makes a
 // setup step cheaper than three HTTP steps spent on a login.
 func TestSQLStepExtractsForTheStepAfterIt(t *testing.T) {

@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -60,6 +61,7 @@ func (e *Engine) sqlStep(ctx context.Context, s plan.Step, vars map[string]strin
 			continue
 		}
 		out.RowsAffected = rows
+		out.Body = body(syn.JSON, e.mask)
 		syn.Elapsed = out.Elapsed
 
 		checks, err := Assert(s.Assertions, syn, vars)
@@ -81,6 +83,17 @@ func (e *Engine) sqlStep(ctx context.Context, s plan.Step, vars map[string]strin
 		return out
 	}
 	return out
+}
+
+// body is a sql step's rows as a reporter reads them. The count alone says a row
+// exists; only this says which one, which is the evidence a verify step is for.
+// Masked, because a statement can carry a credential the same way a URL can.
+func body(v any, mask func(string) string) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return []byte(mask(string(b)))
 }
 
 // runStatement executes or queries, and builds the synthetic response the
