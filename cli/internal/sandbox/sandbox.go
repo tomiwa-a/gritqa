@@ -23,6 +23,9 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	// Linked, not used directly: a database GritQA can reach is one whose driver is
+	// registered, and a project's compose file decides which that is, not GritQA.
+	_ "github.com/lib/pq"
 )
 
 // The driver logs every failed connection to stderr, and await deliberately fails

@@ -80,10 +80,27 @@ var surface = []struct {
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "derive_environment",
-			Description: "Called empty, reports how GritQA currently thinks this project boots " +
-				"and the Dockerfile that would build it. Called with a recipe, records yours as " +
-				"a proposal for a human to approve — it does not take effect, and no run boots " +
-				"on it until approved."}, s.deriveEnvironment)
+			Description: "Where your reading of read_compose gets written down. Called empty it " +
+				"reports what is on record, which starts out as nothing at all — GritQA never " +
+				"works this out for itself, so until you do it cannot bring a copy of the project " +
+				"up.\n\n" +
+				"What it wants is the handful of answers a compose file does not state: which " +
+				"service answers HTTP and on which container port, which service holds the data " +
+				"and what it speaks, how to connect to it, how the schema and its rows come up, " +
+				"and which directories the app writes into. Every one of those is a conclusion " +
+				"about a declaration — a service named web may be a proxy, a db may be a cache, " +
+				"and a project may bring its schema up in a way nothing in compose mentions. Read " +
+				"before you answer: the Dockerfile a service builds from, the manifest, the " +
+				"framework's database config, the migration tool's own config. Leave a field out " +
+				"rather than filling it with a guess.\n\n" +
+				"Send credentials as names. $MYSQL_ROOT_PASSWORD means read that variable off that " +
+				"service once the stack is up — GritQA resolves it at boot, so the password itself " +
+				"never has to travel here. A literal is right for a fixed user like root.\n\n" +
+				"What comes back is a check on shape only: that the services exist, that the paths " +
+				"are container paths, that GritQA has a driver for what you named. Whether you " +
+				"picked the right service is not checkable and is not checked. Recorded as a " +
+				"proposal for a human to approve; nothing starts, and no run boots on it until " +
+				"then."}, s.deriveEnvironment)
 	}},
 	{Execute, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "run_plan",
@@ -562,101 +579,104 @@ func (s *Server) readCompose(ctx context.Context, _ *sdk.CallToolRequest, _ empt
 // derive_environment
 
 type envIn struct {
-	Recipe *recipeIn `json:"recipe,omitempty" jsonschema:"the environment you worked out; omit to read the current one"`
-	Why    string    `json:"why,omitempty" jsonschema:"what in the project led you to it"`
+	Environment *environmentIn `json:"environment,omitempty" jsonschema:"what you worked out; omit to read what is on record"`
+	Why         string         `json:"why,omitempty" jsonschema:"what in the project led you to it"`
 }
 
-// recipeIn is what an agent may author, which is deliberately not sandbox.Recipe.
-// Mount, the Dockerfile path, the author and the fingerprint are this machine's
-// business, and leaving them out of the schema is what keeps a proposal from
-// naming a directory outside the project.
-type recipeIn struct {
-	Base     string   `json:"base" jsonschema:"the image to build on, e.g. php:8.2-cli"`
-	Packages []string `json:"packages,omitempty" jsonschema:"apt packages the runtime needs"`
-	Setup    []string `json:"setup,omitempty" jsonschema:"build commands, e.g. docker-php-ext-install pdo_mysql"`
-	Install  string   `json:"install,omitempty" jsonschema:"how dependencies are installed, e.g. composer install"`
-	Serve    string   `json:"serve,omitempty" jsonschema:"how the app serves itself, using $PORT and $DOCROOT"`
+// environmentIn is what an agent may author, which is deliberately not
+// sandbox.Environment: the author, the compose fingerprint and staleness are this
+// machine's bookkeeping, not a judgement anyone can offer.
+type environmentIn struct {
+	App  string `json:"app" jsonschema:"the compose service that answers HTTP"`
+	Port int    `json:"port" jsonschema:"the port inside that service's container that serves it"`
 
-	Workdir    string   `json:"workdir,omitempty" jsonschema:"where commands run, relative to the project"`
-	Docroot    string   `json:"docroot,omitempty" jsonschema:"where the front controller is, relative to workdir"`
-	Installdir string   `json:"installdir,omitempty" jsonschema:"where the manifest is, relative to the project"`
-	Deps       string   `json:"deps,omitempty" jsonschema:"the dependency directory, e.g. vendor or node_modules"`
-	Writable   []string `json:"writable,omitempty" jsonschema:"directories the app writes to, relative to workdir"`
+	Database string     `json:"database,omitempty" jsonschema:"the compose service holding the data; omit if the project has none"`
+	DBPort   int        `json:"db_port,omitempty" jsonschema:"the port it listens on inside its container"`
+	Driver   string     `json:"driver,omitempty" jsonschema:"what it speaks: mysql or postgres"`
+	Login    *loginIn   `json:"login,omitempty" jsonschema:"how to connect to it"`
+	Schema   []schemaIn `json:"schema,omitempty" jsonschema:"how the schema and its data come up, in order; omit if nothing does"`
+
+	Writable []string `json:"writable,omitempty" jsonschema:"absolute container paths the app writes to, e.g. /app/uploads"`
 }
 
-func (r recipeIn) to() (sandbox.Recipe, error) {
-	for _, p := range append([]string{r.Workdir, r.Docroot, r.Installdir, r.Deps}, r.Writable...) {
-		if strings.Contains(filepath.ToSlash(p), "..") || filepath.IsAbs(p) {
-			return sandbox.Recipe{}, fmt.Errorf("%q reaches outside the project — every path in a "+
-				"recipe is relative to it", p)
-		}
+// loginIn takes keys, not values. A $KEY is read out of that service's
+// environment when the stack is up, which is how a password reaches a connection
+// without reaching this conversation.
+type loginIn struct {
+	User     string `json:"user,omitempty" jsonschema:"the user, literally, or $KEY to read it from the service's environment"`
+	Password string `json:"password,omitempty" jsonschema:"$KEY naming the variable that carries it — send the name, never the password"`
+	Name     string `json:"name,omitempty" jsonschema:"the database to connect to, literally or as $KEY"`
+}
+
+type schemaIn struct {
+	Service string   `json:"service" jsonschema:"the compose service to run it in"`
+	Run     []string `json:"run,omitempty" jsonschema:"the command, as argv; omit to run that service's own declared command"`
+}
+
+func (in environmentIn) to(why string) sandbox.Environment {
+	out := sandbox.Environment{
+		App: in.App, Port: in.Port,
+		Database: in.Database, DBPort: in.DBPort, Driver: in.Driver,
+		Writable: in.Writable, Author: sandbox.AuthorAgent, Why: why,
 	}
-	if strings.TrimSpace(r.Base) == "" {
-		return sandbox.Recipe{}, errors.New("a recipe needs a base image")
+	if in.Login != nil {
+		out.Login = sandbox.Login{User: in.Login.User, Password: in.Login.Password, Name: in.Login.Name}
 	}
-	return sandbox.Recipe{
-		Base: r.Base, Packages: r.Packages, Setup: r.Setup, Install: r.Install, Serve: r.Serve,
-		Workdir: r.Workdir, Docroot: r.Docroot, Installdir: r.Installdir, Deps: r.Deps,
-		Writable: r.Writable, Author: sandbox.AuthorAgent,
-	}, nil
+	for _, s := range in.Schema {
+		out.Schema = append(out.Schema, sandbox.SchemaStep{Service: s.Service, Run: s.Run})
+	}
+	return out
 }
 
 type envOut struct {
-	Author     string         `json:"author"`
-	Current    sandbox.Recipe `json:"recipe"`
-	Dockerfile string         `json:"dockerfile"`
-	Proposed   bool           `json:"recorded_as_proposal,omitempty"`
-	Note       string         `json:"note"`
+	Environment *sandbox.Environment `json:"environment"`
+	Compose     string               `json:"compose_fingerprint,omitempty"`
+	Stale       bool                 `json:"describes_an_older_compose_file,omitempty"`
+	Proposed    bool                 `json:"recorded_as_proposal,omitempty"`
+	Note        string               `json:"note"`
 }
 
 func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, in envIn) (*sdk.CallToolResult, envOut, error) {
-	current, err := s.back.Recipe(ctx)
+	got, err := s.back.Compose(ctx)
 	if err != nil {
 		return nil, envOut{}, err
 	}
 
-	if in.Recipe == nil {
-		body, err := current.Dockerfile()
+	if in.Environment == nil {
+		current, err := s.back.Environment(ctx)
 		if err != nil {
 			return nil, envOut{}, err
 		}
-		return nil, envOut{
-			Author: current.Author, Current: current, Dockerfile: body,
-			Note: "This is what a run would boot on today. " + describeAuthor(current.Author),
-		}, nil
+		out := envOut{Environment: current, Compose: got.Fingerprint}
+		if current == nil {
+			out.Note = "Nothing is on record. GritQA does not work this out for itself, so until " +
+				"someone does, it cannot boot a copy of this project: read_compose, read what the " +
+				"services build from and what their commands reference, then send your answer back here."
+			return nil, out, nil
+		}
+		out.Stale = current.Stale(got)
+		out.Note = "On record: " + current.Describe() + "."
+		if out.Stale {
+			out.Note += " The compose file has changed since this was worked out, so it may no " +
+				"longer be right — check it against read_compose before trusting it."
+		}
+		return nil, out, nil
 	}
 
-	proposed, err := in.Recipe.to()
-	if err != nil {
+	proposed := in.Environment.to(in.Why)
+	proposed.Fingerprint = got.Fingerprint
+	if err := proposed.Check(got); err != nil {
 		return nil, envOut{}, err
-	}
-	proposed.Mount = current.Mount
-
-	body, err := proposed.Dockerfile()
-	if err != nil {
-		return nil, envOut{}, fmt.Errorf("that recipe does not render: %w", err)
 	}
 	if err := s.back.Propose(ctx, proposed); err != nil {
 		return nil, envOut{}, err
 	}
-	s.log("the agent proposed an environment: " + proposed.Base)
+	s.log("the agent worked out an environment: " + proposed.Describe())
 	return nil, envOut{
-		Author: sandbox.AuthorAgent, Current: proposed, Dockerfile: body, Proposed: true,
-		Note: "Recorded as a proposal. It is not in effect: runs keep booting on the " +
-			describeAuthor(current.Author) + " recipe until a human approves this one.",
+		Environment: &proposed, Compose: got.Fingerprint, Proposed: true,
+		Note: "Recorded as a proposal, and not in effect: no run boots on it until a human " +
+			"approves it. Nothing was started.",
 	}, nil
-}
-
-func describeAuthor(a string) string {
-	switch a {
-	case sandbox.AuthorConfig:
-		return "the settings in .gritqa/config.yaml"
-	case sandbox.AuthorDockerfile:
-		return "a Dockerfile the project already has"
-	case sandbox.AuthorAgent:
-		return "an approved agent-derived"
-	}
-	return "GritQA's built-in table, which knows one row per language and nothing about frameworks"
 }
 
 // run_plan

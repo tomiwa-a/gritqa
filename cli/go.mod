@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/lib/pq v1.12.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/term v0.24.0

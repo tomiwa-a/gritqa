@@ -66,7 +66,7 @@ const (
 // cached recipe whose fingerprint has moved no longer describes the project — a
 // manifest or a lockfile changed — so it is dropped and the derivation taken
 // again without it.
-func Environment(in RecipeInput, mode string) (Recipe, error) {
+func RecipeFor(in RecipeInput, mode string) (Recipe, error) {
 	if mode == Always {
 		in.Cached = nil
 	}

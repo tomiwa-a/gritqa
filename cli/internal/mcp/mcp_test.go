@@ -26,7 +26,8 @@ import (
 type stub struct {
 	root     string
 	compose  *sandbox.Compose
-	proposed *sandbox.Recipe
+	env      *sandbox.Environment
+	proposed *sandbox.Environment
 	ran      string
 	down     bool
 }
@@ -54,13 +55,10 @@ func (s *stub) Compose(context.Context) (*sandbox.Compose, error) {
 	return s.compose, nil
 }
 
-func (s *stub) Recipe(context.Context) (sandbox.Recipe, error) {
-	return sandbox.Recipe{Base: "php:8.2-cli", Author: sandbox.AuthorTable,
-		Mount: s.root, Workdir: "api", Setup: []string{"docker-php-ext-install pdo_mysql"}}, nil
-}
+func (s *stub) Environment(context.Context) (*sandbox.Environment, error) { return s.env, nil }
 
-func (s *stub) Propose(_ context.Context, r sandbox.Recipe) error {
-	s.proposed = &r
+func (s *stub) Propose(_ context.Context, e sandbox.Environment) error {
+	s.proposed = &e
 	return nil
 }
 
@@ -385,25 +383,46 @@ func TestReadComposeHandsOverWhatTheFileDeclares(t *testing.T) {
 	}
 }
 
-func TestDeriveEnvironmentReadsBeforeItProposes(t *testing.T) {
+// A fixture project GritQA has no built-in opinion about: two services it could
+// not tell apart by name, one of them holding the data.
+func fixture(root string) *sandbox.Compose {
+	return &sandbox.Compose{
+		Name:        "shop",
+		Files:       []string{filepath.Join(root, "compose.yml")},
+		Fingerprint: "9f2c",
+		Services: []sandbox.Service{
+			{Name: "cache", Image: "redis:7"},
+			{Name: "store", Image: "postgres:16",
+				Environment: map[string]string{"POSTGRES_PASSWORD": "${PW}", "POSTGRES_DB": "shop"}},
+			{Name: "web", Build: root, Ports: []sandbox.Port{{Container: 3000, Published: "3000"}}},
+		},
+	}
+}
+
+// Reading says plainly that nothing is known, because nothing is: the whole point
+// of the seam is that GritQA stopped answering this for itself.
+func TestDeriveEnvironmentKnowsNothingUntilToldOnce(t *testing.T) {
 	cs, back := connect(t, Read)
+	back.compose = fixture(back.root)
 
 	got := call[envOut](t, cs, "derive_environment", nil)
-	if got.Author != sandbox.AuthorTable || got.Proposed {
-		t.Errorf("reading proposed something: %+v", got)
+	if got.Environment != nil || got.Proposed {
+		t.Fatalf("something was on record before anyone said anything: %+v", got)
 	}
-	if !strings.Contains(got.Dockerfile, "FROM php:8.2-cli") ||
-		!strings.Contains(got.Dockerfile, "pdo_mysql") {
-		t.Errorf("dockerfile = %q", got.Dockerfile)
-	}
-	if back.proposed != nil {
-		t.Fatal("a read recorded a proposal")
+	if !strings.Contains(got.Note, "read_compose") {
+		t.Errorf("the note does not say how to answer: %q", got.Note)
 	}
 
 	got = call[envOut](t, cs, "derive_environment", map[string]any{
-		"recipe": map[string]any{"base": "node:22-alpine", "serve": "npm start",
-			"workdir": "api", "writable": []string{"storage"}},
-		"why": "package.json has a start script",
+		"environment": map[string]any{
+			"app": "web", "port": 3000,
+			"database": "store", "db_port": 5432, "driver": "postgres",
+			"login": map[string]any{"user": "postgres", "password": "$POSTGRES_PASSWORD",
+				"name": "$POSTGRES_DB"},
+			"schema":   []map[string]any{{"service": "web", "run": []string{"npm", "run", "migrate"}}},
+			"writable": []string{"/app/uploads"},
+		},
+		"why": "web is the only service publishing a port, and store is what its config reads",
 	})
 	if !got.Proposed || back.proposed == nil {
 		t.Fatal("the proposal was not recorded")
@@ -411,28 +430,76 @@ func TestDeriveEnvironmentReadsBeforeItProposes(t *testing.T) {
 	if back.proposed.Author != sandbox.AuthorAgent {
 		t.Errorf("author = %q, want the agent credited", back.proposed.Author)
 	}
-	// The mount is this machine's business, and the agent cannot name it: it is
-	// not in the input schema at all, and the one on the proposal is the project's.
-	if back.proposed.Mount != back.root {
-		t.Errorf("mount = %q, want the project's own", back.proposed.Mount)
+	// The fingerprint is bookkeeping, not a judgement: it is not in the input schema
+	// and GritQA stamps it, which is what makes a later compose edit detectable.
+	if back.proposed.Fingerprint != "9f2c" {
+		t.Errorf("fingerprint = %q, want the compose it was read from", back.proposed.Fingerprint)
 	}
-	if msg := fails(t, cs, "derive_environment", map[string]any{
-		"recipe": map[string]any{"base": "x", "mount": "/etc"}}); !strings.Contains(msg, "mount") {
-		t.Errorf("naming a mount said %q", msg)
+	if back.proposed.Why == "" {
+		t.Error("the reasoning is the part a human reviews")
 	}
 	if !strings.Contains(got.Note, "not in effect") {
 		t.Errorf("the note does not say a run still ignores it: %q", got.Note)
 	}
+}
 
-	for _, bad := range []map[string]any{
-		{"serve": "npm start"},
-		{"base": "x", "workdir": "../.."},
-		{"base": "x", "writable": []string{"../../etc"}},
-		{"base": "x", "deps": "/usr/lib"},
+// Shape is checked against their own declaration; judgement is not checked at all.
+func TestDeriveEnvironmentChecksShapeAndNotJudgement(t *testing.T) {
+	cs, back := connect(t, Read)
+	back.compose = fixture(back.root)
+
+	ok := map[string]any{"app": "web", "port": 3000}
+	for _, c := range []struct {
+		what string
+		in   map[string]any
+		want string
+	}{
+		{"a service that does not exist", map[string]any{"app": "api", "port": 3000}, "api"},
+		{"a port that is not one", map[string]any{"app": "web", "port": 0}, "port"},
+		{"a host path where a container path belongs",
+			map[string]any{"app": "web", "port": 3000, "writable": []string{"uploads"}}, "container"},
+		{"a schema step in no service", map[string]any{"app": "web", "port": 3000,
+			"schema": []map[string]any{{"service": "runner"}}}, "runner"},
+		{"a database GritQA cannot speak to", map[string]any{"app": "web", "port": 3000,
+			"database": "cache", "db_port": 6379, "driver": "redis"}, "driver"},
+		{"a login key the service does not declare", map[string]any{"app": "web", "port": 3000,
+			"database": "store", "db_port": 5432, "driver": "mysql",
+			"login": map[string]any{"user": "root", "password": "$MYSQL_ROOT_PASSWORD"}},
+			"MYSQL_ROOT_PASSWORD"},
 	} {
-		if msg := fails(t, cs, "derive_environment", map[string]any{"recipe": bad}); msg == "" {
-			t.Errorf("%v was refused with no reason", bad)
+		msg := fails(t, cs, "derive_environment", map[string]any{"environment": c.in})
+		if !strings.Contains(msg, c.want) {
+			t.Errorf("%s said %q, want it to name %q", c.what, msg, c.want)
 		}
+	}
+	if back.proposed != nil {
+		t.Fatal("a refused environment was recorded")
+	}
+
+	// The cache is a plausible database and a wrong one, and nothing here can tell.
+	// GritQA takes it: picking the service is the agent's judgement, not its own.
+	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": ok})
+	if !got.Proposed {
+		t.Fatal("a well-shaped answer was not recorded")
+	}
+}
+
+// An environment worked out from a file that has since changed is reported as
+// suspect rather than as wrong: most compose edits move none of these answers.
+func TestDeriveEnvironmentSaysWhenTheComposeFileMoved(t *testing.T) {
+	cs, back := connect(t, Read)
+	back.compose = fixture(back.root)
+	back.env = &sandbox.Environment{App: "web", Port: 3000, Fingerprint: "older",
+		Author: sandbox.AuthorAgent}
+
+	got := call[envOut](t, cs, "derive_environment", nil)
+	if !got.Stale || !strings.Contains(got.Note, "changed") {
+		t.Errorf("a moved fingerprint went unreported: %+v", got)
+	}
+
+	back.env.Fingerprint = "9f2c"
+	if got := call[envOut](t, cs, "derive_environment", nil); got.Stale {
+		t.Error("the fingerprint matches, so nothing is suspect")
 	}
 }
 

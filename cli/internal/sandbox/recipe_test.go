@@ -261,7 +261,7 @@ func TestRecipeModes(t *testing.T) {
 		Cached: &Recipe{Base: "php:8.1-cli", Author: AuthorAgent, Fingerprint: "stale"},
 	}
 
-	fresh, err := Environment(in, Refresh)
+	fresh, err := RecipeFor(in, Refresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestRecipeModes(t *testing.T) {
 		t.Errorf("refresh kept a stale recipe: %s by %s", fresh.Base, fresh.Author)
 	}
 
-	kept, err := Environment(in, Reuse)
+	kept, err := RecipeFor(in, Reuse)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,10 +279,10 @@ func TestRecipeModes(t *testing.T) {
 
 	// And refresh keeps it once the fingerprint agrees.
 	in.Cached.Fingerprint = kept.Fingerprint
-	if got, _ := Environment(in, Refresh); got.Base != "php:8.1-cli" {
+	if got, _ := RecipeFor(in, Refresh); got.Base != "php:8.1-cli" {
 		t.Errorf("refresh dropped a recipe that still describes the project: %s", got.Base)
 	}
-	if got, _ := Environment(in, Always); got.Base != "php:8.2-cli" {
+	if got, _ := RecipeFor(in, Always); got.Base != "php:8.2-cli" {
 		t.Errorf("always used the cache: %s", got.Base)
 	}
 }

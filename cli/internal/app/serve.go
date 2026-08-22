@@ -79,35 +79,42 @@ func (b *serve) Compose(ctx context.Context) (*sandbox.Compose, error) {
 	return sandbox.ReadCompose(ctx, files)
 }
 
-func (b *serve) Recipe(ctx context.Context) (sandbox.Recipe, error) {
+// Environment is what has been worked out about the project's compose file, and
+// nil when nobody has. GritQA has no fallback answer to offer here: the point of
+// the whole seam is that it stops guessing how someone else's project boots.
+func (b *serve) Environment(ctx context.Context) (*sandbox.Environment, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	store, snap, err := b.cached(ctx)
+	store, _, err := b.cached(ctx)
 	if err != nil {
-		return sandbox.Recipe{}, err
+		return nil, err
 	}
-	return environment(b.w, b.cfg, store, snap)
+	body, err := store.Environment()
+	if err != nil {
+		return nil, err
+	}
+	return sandbox.DecodeEnvironment(body)
 }
 
-func (b *serve) Propose(_ context.Context, r sandbox.Recipe) error {
+func (b *serve) Propose(_ context.Context, e sandbox.Environment) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.store == nil {
 		return errors.New("the local cache is not open, so there is nowhere to record a proposal")
 	}
-	body, err := r.Encode()
+	body, err := e.Encode()
 	if err != nil {
 		return err
 	}
-	if err := b.store.SaveProposal(r.Fingerprint, r.Author, body); err != nil {
+	if err := b.store.SaveEnvironmentProposal(e.Fingerprint, e.Author, body); err != nil {
 		return err
 	}
 	b.w.Write(term.Line{
 		Kind: term.Info,
-		Text: fmt.Sprintf("the agent proposes booting this project on %s — accept it by putting it "+
-			"under run.sandbox in %s, and until then runs use what they used before", r.Base, config.Name),
+		Text: fmt.Sprintf("the agent worked out how this project boots — %s. Accept it in %s, "+
+			"and until then no run boots on it", e.Describe(), config.Name),
 	})
 	return nil
 }

@@ -31,11 +31,12 @@ type Backend interface {
 	StartSandbox(ctx context.Context) (Boot, error)
 	// Compose reads the project's compose files, as compose itself resolves them.
 	Compose(ctx context.Context) (*sandbox.Compose, error)
-	// Recipe is how GritQA currently thinks this project boots.
-	Recipe(ctx context.Context) (sandbox.Recipe, error)
-	// Propose records a recipe the agent worked out. It is pending until a human
-	// approves it, and no run boots on it before then.
-	Propose(ctx context.Context, r sandbox.Recipe) error
+	// Environment is what has been worked out about the project's compose file, and
+	// nil when nobody has: GritQA does not answer this for itself.
+	Environment(ctx context.Context) (*sandbox.Environment, error)
+	// Propose records an environment the agent worked out. It is pending until a
+	// human approves it, and no run boots on it before then.
+	Propose(ctx context.Context, e sandbox.Environment) error
 	// RunPlan executes an approved plan, with repair and the state ledger wired
 	// exactly as --plan wires them.
 	RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error)

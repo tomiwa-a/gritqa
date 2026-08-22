@@ -140,7 +140,7 @@ func environment(w *term.Writer, cfg *config.Config, store *index.Store, snap *i
 		}
 	}
 
-	r, err := sandbox.Environment(in, opts.RecipeMode())
+	r, err := sandbox.RecipeFor(in, opts.RecipeMode())
 	if err != nil || opts.OnHost() {
 		return r, err
 	}

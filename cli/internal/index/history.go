@@ -70,6 +70,24 @@ CREATE TABLE IF NOT EXISTS sandbox_proposal (
   saved_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sandbox_environment (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  fingerprint TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  saved_at    TEXT NOT NULL
+);
+
+-- Same split as sandbox_recipe and its proposal, for the same reason: a table the
+-- agent can write is a table a run would boot on without anyone approving it.
+CREATE TABLE IF NOT EXISTS sandbox_environment_proposal (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  fingerprint TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  saved_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS plan_changes (
   revision_id INTEGER NOT NULL REFERENCES plan_revisions(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
@@ -495,6 +513,40 @@ func (s *Store) Proposal() (string, error) {
 func (s *Store) SaveProposal(fingerprint, author, body string) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO sandbox_proposal
 	  (id, fingerprint, author, recipe, saved_at) VALUES (1, ?, ?, ?, ?)`,
+		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// Environment is what someone worked out about the project's compose file, as
+// JSON, and empty when nobody has. GritQA never fills this in for itself.
+func (s *Store) Environment() (string, error) { return s.envRow("sandbox_environment") }
+
+// EnvironmentProposal is an environment an agent worked out, waiting on a human.
+// Nothing reads it on the way into a run.
+func (s *Store) EnvironmentProposal() (string, error) {
+	return s.envRow("sandbox_environment_proposal")
+}
+
+func (s *Store) SaveEnvironment(fingerprint, author, body string) error {
+	return s.saveEnv("sandbox_environment", fingerprint, author, body)
+}
+
+func (s *Store) SaveEnvironmentProposal(fingerprint, author, body string) error {
+	return s.saveEnv("sandbox_environment_proposal", fingerprint, author, body)
+}
+
+func (s *Store) envRow(table string) (string, error) {
+	var body string
+	err := s.db.QueryRow(`SELECT environment FROM ` + table + ` WHERE id = 1`).Scan(&body)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return body, err
+}
+
+func (s *Store) saveEnv(table, fingerprint, author, body string) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO `+table+
+		` (id, fingerprint, author, environment, saved_at) VALUES (1, ?, ?, ?, ?)`,
 		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
