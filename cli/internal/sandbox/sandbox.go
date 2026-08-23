@@ -18,6 +18,9 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	// Linked for its side effect: registering a client is what puts a protocol in
+	// Drivers(), which is why that asks the build instead of declaring a list.
+	_ "github.com/lib/pq"
 )
 
 // The driver logs every failed connection to stderr, and awaitDB deliberately

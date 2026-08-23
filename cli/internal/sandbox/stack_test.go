@@ -104,7 +104,9 @@ volumes:
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	t.Cleanup(func() { st.Down(t.Context()) })
+	// Background, not t.Context(): that one is already cancelled by the time a
+	// cleanup runs, so a Fatal above the explicit Down would leave the copy up.
+	t.Cleanup(func() { st.Down(context.Background()) })
 
 	// The generated document carries the developer's password, because compose
 	// resolved ${PW} to write it. It is 0600 in GritQA's own directory, never in
@@ -152,6 +154,10 @@ volumes:
 	// The login named keys rather than values, and the password never left .env.
 	if st.Database() != "shop" {
 		t.Errorf("database = %q, want shop resolved out of $POSTGRES_DB", st.Database())
+	}
+	if st.DB() == nil {
+		t.Fatalf("this build has no client for %s, so nothing here reads the copy's data",
+			e.Driver)
 	}
 	if err := st.DB().PingContext(ctx); err != nil {
 		t.Fatalf("the copy's database will not answer: %v", err)
