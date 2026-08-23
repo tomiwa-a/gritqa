@@ -7,6 +7,7 @@ import { Prose } from '@/components/ui/prose';
 import { Meter } from '@/components/app/meter';
 import { PlanBody } from '@/components/app/plan/plan-body';
 import { PlanDiff } from '@/components/app/plan/plan-diff';
+import { PlanEditor } from '@/components/app/plan/plan-editor';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { DecisionBar } from '@/components/app/plan/decision-bar';
 import { OverlayHost } from '@/components/app/overlay-host';
@@ -36,7 +37,7 @@ import {
 } from '@/lib/overlay';
 import { stepIsHeavy, type TestPlan } from '@/lib/model';
 
-const TABS = ['steps', 'diff', 'raw'] as const;
+const TABS = ['steps', 'edit', 'diff', 'raw'] as const;
 type Tab = (typeof TABS)[number];
 
 function isTab(value: string | undefined): value is Tab {
@@ -330,6 +331,7 @@ export default async function PlanDetailPage({
                 icon: 'plan',
                 href: hrefFor('steps'),
               },
+              { key: 'edit', label: 'Edit', icon: 'pencil', href: hrefFor('edit') },
               {
                 key: 'diff',
                 label: 'What changed',
@@ -349,6 +351,34 @@ export default async function PlanDetailPage({
               selectedStepId={step?.id}
               stepHrefFor={stepHrefFor}
             />
+          )}
+
+          {tab === 'edit' && (
+            <div className="flex flex-col gap-4">
+              <Panel
+                title="Edit this plan"
+                subtitle="Nothing is written until you save, and saving writes a version rather than overwriting one"
+                bodyClassName="p-4"
+              >
+                {detail ? (
+                  <PlanEditor
+                    target={{ mode: 'edit', publicId: plan.publicId, version: plan.version }}
+                    initial={{
+                      name: detail.name,
+                      description: detail.description,
+                      variables: detail.variables,
+                      covers: detail.covers,
+                      steps: detail.steps,
+                      assumptions: detail.assumptions,
+                    }}
+                  />
+                ) : (
+                  <p className="text-[13px] leading-relaxed text-ink-muted">
+                    The steps for this plan have not been loaded into this build yet.
+                  </p>
+                )}
+              </Panel>
+            </div>
           )}
 
           {tab === 'diff' && (
@@ -411,8 +441,14 @@ export default async function PlanDetailPage({
                       className="shadow-none"
                     />
                     <p className="mt-3 text-[12.5px] leading-relaxed text-ink-subtle">
-                      Read-only for now. Editing this by hand is coming — until then, ask for a
-                      change in your own words and read what comes back.
+                      This is what your machine reads. To change it, use{' '}
+                      <Link
+                        href={hrefFor('edit')}
+                        className="text-ink underline decoration-rule-strong underline-offset-2 hover:decoration-ink"
+                      >
+                        Edit
+                      </Link>{' '}
+                      — every field here has a control there, and saving writes a new version.
                     </p>
                   </>
                 ) : (

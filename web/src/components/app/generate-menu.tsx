@@ -27,6 +27,14 @@ const PATHS: { from: string; icon: IconName; label: string; hint: string }[] = [
   },
 ];
 
+/** The one way in that has no model in it, which is why it sits under a rule of its own. */
+const BY_HAND = {
+  href: '/dashboard/test-plans/new',
+  icon: 'pencil',
+  label: 'Write it yourself',
+  hint: 'Build the steps by hand, with nothing drafted for you',
+} as const;
+
 export function GenerateMenu() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -98,6 +106,23 @@ export function GenerateMenu() {
               </span>
             </Link>
           ))}
+
+          <span aria-hidden className="my-1.5 block h-px bg-rule-soft" />
+
+          <Link
+            href={BY_HAND.href}
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex gap-2.5 rounded-md p-2 transition-colors duration-150 hover:bg-app-hover"
+          >
+            <Icon name={BY_HAND.icon} size={15} className="mt-0.5 text-ink-subtle" />
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-ink">{BY_HAND.label}</span>
+              <span className="block text-[11.5px] leading-snug text-ink-subtle">
+                {BY_HAND.hint}
+              </span>
+            </span>
+          </Link>
         </div>
       )}
     </div>
