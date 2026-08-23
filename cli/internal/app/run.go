@@ -17,6 +17,7 @@ import (
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/plan"
 	"github.com/gritqa/cli/internal/run"
+	"github.com/gritqa/cli/internal/sandbox"
 	"github.com/gritqa/cli/internal/term"
 )
 
@@ -45,7 +46,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		defer store.Close()
 	}
 
-	var st *staged
+	var st *sandbox.Stack
 	var base string
 	if cfg.Run.Sandboxed() {
 		// A configured base_url is ignored here, and saying nothing about it is how
@@ -55,14 +56,14 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 				"run.base_url is %s, and a sandboxed run does not use it — this runs against "+
 					"GritQA's own copy on a loopback port", strings.TrimRight(cfg.Run.BaseURL, "/"))})
 		}
-		if st, err = stage(ctx, w, cfg, store, snap); err != nil {
+		if st, err = stage(ctx, w, cfg, store); err != nil {
 			return err
 		}
-		defer st.close(context.WithoutCancel(ctx))
-		if err := st.reset(ctx, w); err != nil {
+		defer st.Down(context.WithoutCancel(ctx))
+		if err := reset(ctx, w, st); err != nil {
 			return err
 		}
-		base = st.base
+		base = st.BaseURL()
 	} else {
 		if base, err = baseURL(w, cfg, p); err != nil {
 			return err
@@ -110,9 +111,9 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		},
 	}
 	if st != nil {
-		engine.State = st.box
-		engine.SandboxDB = st.box.DB()
-		engine.ShellExec = st.box.ShellExec
+		engine.State = st
+		engine.SandboxDB = st.DB()
+		engine.ShellExec = st.ShellExec
 	}
 	if judge != nil {
 		o := cfg.Run.RepairOpts()
@@ -180,10 +181,10 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 // secrets are the values that must not reach a transcript, a recorded run or a
 // prompt. The sandbox password is generated rather than the user's, and it still
 // belongs on this list: a run that echoes it has taught the habit of echoing one.
-func secrets(vars config.Variables, st *staged) []string {
+func secrets(vars config.Variables, st *sandbox.Stack) []string {
 	out := vars.Secrets()
 	if st != nil {
-		out = append(out, st.box.Secrets()...)
+		out = append(out, st.Secrets()...)
 	}
 	return out
 }

@@ -23,9 +23,10 @@ import (
 type Backend interface {
 	// Index reads the project, and reports what changed since the last pass.
 	Index(ctx context.Context) (*index.Snapshot, index.Delta, error)
-	// Sandbox is the sandbox as it stands, or nil when none is up. It never starts
-	// one, so a query cannot boot Docker as a side effect of being asked.
-	Sandbox() *sandbox.Sandbox
+	// Sandbox is the running copy of the project as it stands, or nil when none is
+	// up. It never starts one, so a query cannot boot Docker as a side effect of
+	// being asked.
+	Sandbox() *sandbox.Stack
 	// StartSandbox brings the run's own database, app and baseline up, and reports
 	// what came up. Slow the first time, a no-op after that.
 	StartSandbox(ctx context.Context) (Boot, error)

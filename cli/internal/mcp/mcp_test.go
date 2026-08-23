@@ -42,7 +42,7 @@ func (s *stub) Index(context.Context) (*index.Snapshot, index.Delta, error) {
 	}, index.Delta{Changed: []string{"api/user.php"}}, nil
 }
 
-func (s *stub) Sandbox() *sandbox.Sandbox { return nil }
+func (s *stub) Sandbox() *sandbox.Stack { return nil }
 
 func (s *stub) StartSandbox(context.Context) (Boot, error) {
 	return Boot{}, errNoDocker

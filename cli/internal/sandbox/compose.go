@@ -145,6 +145,16 @@ func LocateCompose(root, mount string, configured []string) []string {
 	return nil
 }
 
+// Names are the services the compose file declares, which is what an error about
+// the wrong one names so the reader can see the alternatives.
+func (c *Compose) Names() []string {
+	out := make([]string, 0, len(c.Services))
+	for _, s := range c.Services {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
 // ReadCompose resolves the files through docker compose config and reports what
 // they declare.
 func ReadCompose(ctx context.Context, files []string) (*Compose, error) {

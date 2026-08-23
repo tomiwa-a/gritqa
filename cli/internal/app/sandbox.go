@@ -3,9 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"io/fs"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -16,240 +13,113 @@ import (
 	"github.com/gritqa/cli/internal/term"
 )
 
-// staged is a run's own world: a database GritQA created and an API process it
-// started against it. The user's server and their real data are untouched.
-type staged struct {
-	box  *sandbox.Sandbox
-	app  *sandbox.App
-	base string
-}
-
-// stage brings the sandbox up, works out how the project boots, migrates and
-// seeds it with the project's own tooling, records a baseline, and starts the API
-// pointed at it.
-func stage(ctx context.Context, w *term.Writer, cfg *config.Config, store *index.Store, snap *index.Snapshot) (*staged, error) {
-	opts := cfg.Run.SandboxOpts()
-	root := cfg.Root()
-
-	recipe, err := environment(w, cfg, store, snap)
+// stage brings up a copy of the developer's project on their own compose file,
+// runs whatever the environment says brings the schema up, and takes the baseline
+// a run is measured against. It is a copy in the strict sense — its own project
+// name, its own volumes, its own ports — so whatever they have running is untouched.
+func stage(ctx context.Context, w *term.Writer, cfg *config.Config, store *index.Store) (*sandbox.Stack, error) {
+	c, err := composeFor(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
+	env, err := environment(cfg, store, c)
+	if err != nil {
+		return nil, err
+	}
+	if env.Stale(c) {
+		w.Write(term.Line{Kind: term.Info, Text: "this was worked out from an earlier version of " +
+			"your compose file — most edits move none of it, and nothing here has checked which"})
+	}
 
-	box, err := sandbox.Up(ctx, sandbox.Options{
-		Image:      opts.Image,
-		Database:   opts.Database,
-		Project:    cfg.Project,
-		Tables:     opts.Tables,
-		OnProgress: func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
+	st, err := sandbox.Launch(ctx, sandbox.LaunchOptions{
+		Compose:     c,
+		Environment: env,
+		Name:        cfg.Project,
+		Tables:      cfg.Run.SandboxOpts().Tables,
+		OnProgress:  func(s string) { w.Write(term.Line{Kind: term.Info, Text: s}) },
 	})
 	if err != nil {
 		return nil, err
 	}
-	st := &staged{box: box}
+	w.Write(term.Line{Kind: term.OK, Text: fmt.Sprintf(
+		"a copy of your project is up as %s — %s, and your own stack is untouched",
+		st.Project(), env.Describe())})
 
-	if !opts.OnHost() {
-		image, err := box.Build(ctx, recipe)
-		if err != nil {
-			st.close(context.WithoutCancel(ctx))
-			return nil, err
-		}
-		box.Use(recipe, image)
-	}
-
-	// Before the baseline, or it would count the user's own tree instead of the
-	// directories GritQA owns.
-	if err := box.MakeWritable(); err != nil {
-		st.close(context.WithoutCancel(ctx))
+	if err := st.Schema(ctx); err != nil {
+		st.Down(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	for _, d := range opts.Watch {
-		box.Watch(filepath.Join(root, d))
-	}
-
-	w.Write(term.Line{
-		Kind: term.OK,
-		Text: fmt.Sprintf("%s is up as %s, and it holds nothing of yours", box.Image(), box.Name()),
-	})
-
-	steps, err := box.Prepare(ctx, root, prepareCommands(cfg.Run), cfg.Run.Env)
-	if err != nil {
-		st.close(context.WithoutCancel(ctx))
+	if err := st.Baseline(ctx); err != nil {
+		st.Down(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	for _, s := range steps {
-		w.Write(term.Line{Kind: term.OK, Text: s.Label, Meta: term.Dur(s.Elapsed)})
-	}
-
-	if err := box.Baseline(ctx); err != nil {
-		st.close(context.WithoutCancel(ctx))
-		return nil, err
-	}
-	w.Write(term.Line{
-		Kind: term.Info,
-		Text: fmt.Sprintf("baseline taken — %s, %s",
-			term.Count(len(box.Tables()), "table", "tables"), size(box.BaselineBytes())),
-	})
-
-	app, err := box.StartApp(ctx, sandbox.AppOptions{
-		Root:  root,
-		Start: cfg.Run.Start,
-		Port:  cfg.Run.Port,
-		Env:   cfg.Run.Env,
-		Ready: cfg.Run.Ready,
-	})
-	if err != nil {
-		st.close(context.WithoutCancel(ctx))
-		return nil, err
-	}
-	st.app, st.base = app, app.BaseURL
-
-	w.Write(term.Line{
-		Kind: term.OK,
-		Text: fmt.Sprintf("your API is answering on %s — %s, and your own server is untouched",
-			app.BaseURL, app.How),
-	})
 	return st, nil
 }
 
-// environment works out how this project boots. Only the language is decided here
-// and it comes from file extensions; everything else has an author — the user's
-// config, their own Dockerfile, a recipe the agent worked out, or the built-in
-// table, in that order.
-func environment(w *term.Writer, cfg *config.Config, store *index.Store, snap *index.Snapshot) (sandbox.Recipe, error) {
+// composeFor reads the developer's own compose files. Nothing is interpreted:
+// which service is the app and which holds the data are questions about their
+// declaration, not answers this can derive from it.
+func composeFor(ctx context.Context, cfg *config.Config) (*sandbox.Compose, error) {
 	opts := cfg.Run.SandboxOpts()
-	base, file := runtimeSetting(cfg.Root(), opts.Runtime)
-	in := sandbox.RecipeInput{
-		Root:     cfg.Root(),
-		Language: dominant(snap),
-		Config: sandbox.Recipe{
-			Base:     base,
-			File:     file,
-			Install:  opts.Install,
-			Serve:    cfg.Run.Start,
-			Mount:    opts.Mount,
-			Workdir:  opts.Workdir,
-			Docroot:  opts.Docroot,
-			Writable: opts.Writable,
-		},
+	files := sandbox.LocateCompose(cfg.Root(), sandbox.MountRoot(cfg.Root(), opts.Mount), opts.Compose)
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no compose file found at %s or above it — GritQA boots a project "+
+			"the way its own compose file says to, so it needs one; name it under "+
+			"run.sandbox.compose in %s if it lives somewhere else", cfg.Root(), config.Name)
+	}
+	return sandbox.ReadCompose(ctx, files)
+}
+
+// environment is what someone worked out about this project's compose file: the
+// block a human wrote in their config, or one that was proposed and approved.
+// There is no fallback, and that is the point — deciding for itself which service
+// is the app is the class of thing GritQA stopped doing.
+func environment(cfg *config.Config, store *index.Store, c *sandbox.Compose) (sandbox.Environment, error) {
+	if e := cfg.Run.SandboxOpts().Environment; e != nil {
+		out := fromConfig(*e)
+		return out, out.Check(c)
 	}
 	if store != nil {
-		body, err := store.Recipe()
-		if err == nil {
-			in.Cached, _ = sandbox.DecodeRecipe(body)
+		body, err := store.Environment()
+		if err != nil {
+			return sandbox.Environment{}, err
+		}
+		e, err := sandbox.DecodeEnvironment(body)
+		if err != nil {
+			return sandbox.Environment{}, err
+		}
+		if e != nil {
+			return *e, e.Check(c)
 		}
 	}
-
-	r, err := sandbox.RecipeFor(in, opts.RecipeMode())
-	if err != nil || opts.OnHost() {
-		return r, err
-	}
-	if store != nil {
-		if body, err := r.Encode(); err == nil {
-			store.SaveRecipe(r.Fingerprint, r.Author, body)
-		}
-	}
-	if native, deps := nativeDeps(r); native > 0 {
-		w.Write(term.Line{
-			Kind: term.Info,
-			Text: fmt.Sprintf("%s holds %s compiled for this machine, which Linux will not load — "+
-				"set run.sandbox.install if the API cannot start", deps,
-				term.Count(native, "library", "libraries")),
-		})
-	}
-	return r, nil
+	return sandbox.Environment{}, fmt.Errorf("nothing here knows how this project boots — which "+
+		"of %s answers HTTP, which one holds the data, what brings its schema up. Ask the agent to "+
+		"read the project and propose an answer with derive_environment, or write "+
+		"run.sandbox.environment in %s yourself", strings.Join(c.Names(), ", "), config.Name)
 }
 
-// runtimeSetting reads run.sandbox.runtime. auto and host name no image; a path
-// whose name says Dockerfile is one; anything else is an image reference, slashes
-// and all — ghcr.io/acme/api:3 is not a path.
-func runtimeSetting(root, setting string) (base, file string) {
-	setting = strings.TrimSpace(setting)
-	if setting == "" || strings.EqualFold(setting, "auto") || strings.EqualFold(setting, "host") {
-		return "", ""
+func fromConfig(e config.Environment) sandbox.Environment {
+	out := sandbox.Environment{
+		App: e.App, Port: e.Port, Database: e.Database, DBPort: e.DBPort,
+		Driver: e.Driver, Writable: e.Writable, Author: sandbox.AuthorConfig,
+		Login: sandbox.Login{User: e.Login.User, Password: e.Login.Password, Name: e.Login.Name},
 	}
-	if strings.Contains(strings.ToLower(filepath.Base(setting)), "dockerfile") {
-		if filepath.IsAbs(setting) {
-			return "", setting
-		}
-		return "", filepath.Join(root, setting)
+	for _, s := range e.Schema {
+		out.Schema = append(out.Schema, sandbox.SchemaStep{Service: s.Service, Run: s.Run})
 	}
-	return setting, ""
+	return out
 }
 
-// dominant is the project's main language by source bytes. It is the one thing
-// about a project worth deciding without a model, and it exists only to break the
-// table's single tie — a package.json is JavaScript or TypeScript.
-func dominant(snap *index.Snapshot) string {
-	if snap == nil {
-		return ""
-	}
-	bytes := map[string]int64{}
-	for _, f := range snap.Files {
-		if f.Language != "" {
-			bytes[f.Language] += f.Size
-		}
-	}
-	best, top := "", int64(0)
-	for l, n := range bytes {
-		if n > top {
-			best, top = l, n
-		}
-	}
-	return best
-}
-
-// nativeDeps counts compiled objects in a dependency directory that will be
-// mounted rather than built. They are the one thing that silently will not load
-// under Linux, and detecting the ABI properly is more than this owes the user.
-func nativeDeps(r sandbox.Recipe) (int, string) {
-	if r.Install != "" || r.Deps == "" || runtime.GOOS == "linux" {
-		return 0, ""
-	}
-	dir := filepath.Join(r.Mount, r.Installdir, r.Deps)
-	n := 0
-	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		switch filepath.Ext(d.Name()) {
-		case ".so", ".dylib", ".node":
-			n++
-		}
-		return nil
-	})
-	return n, r.Deps
-}
-
-// reset returns the database to its post-seed baseline. Always, before the walk:
-// the read tools reach this same database, and a plan that passes on a row
-// research created is worse than one that fails.
-func (s *staged) reset(ctx context.Context, w *term.Writer) error {
+// reset returns the copy to what the project's own schema steps produce. Always,
+// before the walk: the read tools reach this same copy, and a plan that passes on
+// a row research left behind is worse than one that fails.
+func reset(ctx context.Context, w *term.Writer, st *sandbox.Stack) error {
 	started := time.Now()
-	if err := s.box.Reset(ctx); err != nil {
+	if err := st.Reset(ctx); err != nil {
 		return err
 	}
-	w.Write(term.Line{Kind: term.Info, Text: "reset to the baseline", Meta: term.Dur(time.Since(started))})
+	w.Write(term.Line{Kind: term.Info, Text: "back at the baseline", Meta: term.Dur(time.Since(started))})
 	return nil
-}
-
-func (s *staged) close(ctx context.Context) {
-	if s == nil {
-		return
-	}
-	if s.app != nil {
-		s.app.Stop(ctx)
-	}
-	if s.box != nil {
-		s.box.Down(ctx)
-	}
-}
-
-func prepareCommands(r *config.Run) []sandbox.Command {
-	return []sandbox.Command{
-		{Label: "migrated the sandbox", Line: r.Migrate},
-		{Label: "seeded the sandbox", Line: r.Seed},
-	}
 }
 
 // moved renders a step's state delta for the right-hand margin: what changed, in

@@ -249,7 +249,7 @@ func (a *attached) execute(ctx context.Context, job *cloud.Job) {
 	}
 
 	record(a.w, a.history(ctx), execution(payload.PlanPublicID, pre.base, started, res))
-	a.summary(res, pre.box != nil)
+	a.summary(res, pre.stack != nil)
 	a.settle(ctx, job, cloud.Reported(a.id.InstanceID, p, pre.base, res, pre.container))
 }
 

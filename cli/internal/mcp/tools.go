@@ -416,13 +416,13 @@ func (s *Server) startSandbox(ctx context.Context, _ *sdk.CallToolRequest, _ emp
 // live is the sandbox as it stands. Nothing boots one on the way to answering a
 // question: start_sandbox is how Docker starts, so a research turn never pays for
 // a container it did not ask for.
-func (s *Server) live() (*sandbox.Sandbox, error) {
-	box := s.back.Sandbox()
-	if box == nil {
-		return nil, errors.New("no sandbox is running — start_sandbox brings GritQA's own " +
-			"database and a copy of the app up, and takes about a minute the first time")
+func (s *Server) live() (*sandbox.Stack, error) {
+	st := s.back.Sandbox()
+	if st == nil {
+		return nil, errors.New("no sandbox is running — start_sandbox brings up a copy of the " +
+			"project on its own compose file, and takes about a minute the first time")
 	}
-	return box, nil
+	return st, nil
 }
 
 // db
@@ -448,16 +448,21 @@ func (s *Server) db(ctx context.Context, _ *sdk.CallToolRequest, in dbIn) (*sdk.
 		limit = maxRows
 	}
 
-	box, err := s.live()
+	st, err := s.live()
 	if err != nil {
 		return nil, dbOut{}, err
+	}
+	if st.DB() == nil {
+		return nil, dbOut{}, errors.New("this build has no client for what this project's " +
+			"datastore speaks, so there is no connection here to query it over — its own image " +
+			"ships one, which a shell step reaches")
 	}
 
 	// The real guard, because readOnly parses a verb and MySQL parses SQL: a
 	// READ ONLY transaction refuses every write the server can see, including the
 	// ones hiding behind a CTE. Rolled back either way, so nothing is held open
 	// long enough to freeze another connection's watermark.
-	tx, err := box.DB().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := st.DB().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, dbOut{}, err
 	}
@@ -816,32 +821,31 @@ type emptyIn struct{}
 
 type baselineOut struct {
 	Tables int    `json:"tables"`
-	Bytes  int64  `json:"bytes"`
 	Note   string `json:"note,omitempty"`
 }
 
 func (s *Server) snapshot(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, baselineOut, error) {
-	box, err := s.live()
+	st, err := s.live()
 	if err != nil {
 		return nil, baselineOut{}, err
 	}
-	if err := box.Baseline(ctx); err != nil {
+	if err := st.Baseline(ctx); err != nil {
 		return nil, baselineOut{}, err
 	}
-	return nil, baselineOut{Tables: len(box.Tables()), Bytes: box.BaselineBytes()}, nil
+	return nil, baselineOut{Tables: len(st.Tables())}, nil
 }
 
 func (s *Server) restore(ctx context.Context, _ *sdk.CallToolRequest, _ emptyIn) (*sdk.CallToolResult, baselineOut, error) {
-	box, err := s.live()
+	st, err := s.live()
 	if err != nil {
 		return nil, baselineOut{}, err
 	}
-	if err := box.Reset(ctx); err != nil {
+	if err := st.Reset(ctx); err != nil {
 		return nil, baselineOut{}, err
 	}
 	return nil, baselineOut{
-		Tables: len(box.Tables()), Bytes: box.BaselineBytes(),
-		Note: "back at the baseline — everything written since is gone",
+		Tables: len(st.Tables()),
+		Note:   "back at the baseline — everything written since is gone",
 	}, nil
 }
 

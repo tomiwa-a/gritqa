@@ -98,6 +98,12 @@ type Sandbox struct {
 	// letting the app write to.
 	Writable []string `yaml:"writable,omitempty"`
 
+	// Environment is what someone worked out about the project's compose file, and
+	// the only thing that lets a run boot: GritQA does not decide which service is
+	// the app. The agent proposes one through derive_environment, and this is where
+	// a human accepts it.
+	Environment *Environment `yaml:"environment,omitempty"`
+
 	// Runtime is auto, host, an image reference, or a path to a Dockerfile. host
 	// is the escape hatch: GritQA runs run.start on this machine instead.
 	Runtime string `yaml:"runtime,omitempty"`
@@ -115,6 +121,36 @@ type Sandbox struct {
 	Install string `yaml:"install,omitempty"`
 }
 
+// Environment mirrors sandbox.Environment in YAML. It is a separate declaration
+// because the wire format is JSON and this one is hand-written, and because a
+// config package that imported the sandbox would invert the dependency.
+type Environment struct {
+	App      string       `yaml:"app"`
+	Port     int          `yaml:"port"`
+	Database string       `yaml:"database,omitempty"`
+	DBPort   int          `yaml:"db_port,omitempty"`
+	Driver   string       `yaml:"driver,omitempty"`
+	Login    Login        `yaml:"login,omitempty"`
+	Schema   []SchemaStep `yaml:"schema,omitempty"`
+	Writable []string     `yaml:"writable,omitempty"`
+}
+
+// Login names how to connect by naming keys rather than values: a $KEY is read
+// from the database service's own environment once the copy is up, so a password
+// out of the developer's .env never has to be copied in here.
+type Login struct {
+	User     string `yaml:"user,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	Name     string `yaml:"name,omitempty"`
+}
+
+// SchemaStep is one step of bringing the schema up. An empty run means the
+// service's own declared command.
+type SchemaStep struct {
+	Service string   `yaml:"service"`
+	Run     []string `yaml:"run,omitempty"`
+}
+
 // RecipeMode is what to do with a cached recipe: reuse it regardless, re-derive
 // always, or refresh when the environment's own files changed.
 func (s Sandbox) RecipeMode() string {
@@ -130,11 +166,9 @@ func (s Sandbox) OnHost() bool {
 	return strings.EqualFold(strings.TrimSpace(s.Runtime), "host")
 }
 
-// Sandboxed is true when a run should bring its own database up. Nil-safe,
-// because run: is itself optional.
-func (r *Run) Sandboxed() bool {
-	return r != nil && r.Sandbox != nil && strings.TrimSpace(r.Sandbox.Image) != ""
-}
+// Sandboxed is true when a run should bring up its own copy of the project.
+// Nil-safe, because run: is itself optional.
+func (r *Run) Sandboxed() bool { return r != nil && r.Sandbox != nil }
 
 // SandboxOpts returns the sandbox settings, zeroed when there are none.
 func (r *Run) SandboxOpts() Sandbox {

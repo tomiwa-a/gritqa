@@ -75,7 +75,7 @@ func (e Environment) Check(c *Compose) error {
 	app, ok := c.Service(e.App)
 	if !ok {
 		return fmt.Errorf("%q is not a service in %s — it declares %s",
-			e.App, strings.Join(c.Files, ", "), strings.Join(serviceNames(c), ", "))
+			e.App, strings.Join(c.Files, ", "), strings.Join(c.Names(), ", "))
 	}
 	if e.Port < 1 || e.Port > 65535 {
 		return fmt.Errorf("%d is not a port %s could be serving on", e.Port, app.Name)
@@ -105,7 +105,7 @@ func (e Environment) Check(c *Compose) error {
 	db, ok := c.Service(e.Database)
 	if !ok {
 		return fmt.Errorf("%q is not a service in %s — it declares %s",
-			e.Database, strings.Join(c.Files, ", "), strings.Join(serviceNames(c), ", "))
+			e.Database, strings.Join(c.Files, ", "), strings.Join(c.Names(), ", "))
 	}
 	if e.DBPort < 1 || e.DBPort > 65535 {
 		return fmt.Errorf("%d is not a port %s could be listening on", e.DBPort, db.Name)
@@ -211,12 +211,4 @@ func DecodeEnvironment(s string) (*Environment, error) {
 		return nil, err
 	}
 	return &e, nil
-}
-
-func serviceNames(c *Compose) []string {
-	out := make([]string, 0, len(c.Services))
-	for _, s := range c.Services {
-		out = append(out, s.Name)
-	}
-	return out
 }

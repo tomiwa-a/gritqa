@@ -29,29 +29,29 @@ type session struct {
 	mu    sync.Mutex
 	store *index.Store
 	snap  *index.Snapshot
-	st    *staged
+	st    *sandbox.Stack
 }
 
 func newSession(cfg *config.Config, opts Options, w *term.Writer) *session {
 	return &session{cfg: cfg, opts: opts, w: w}
 }
 
-// staged brings the sandbox up for whatever asked for one — start_sandbox, or a
-// run — so a resident process costs nothing for a caller that only reads. Callers
+// staged brings the copy up for whatever asked for one — start_sandbox, or a run
+// — so a resident process costs nothing for a caller that only reads. Callers
 // hold mu.
-func (s *session) staged(ctx context.Context) (*staged, error) {
+func (s *session) staged(ctx context.Context) (*sandbox.Stack, error) {
 	if s.st != nil {
 		return s.st, nil
 	}
 	if !s.cfg.Run.Sandboxed() {
-		return nil, errors.New("this project has no run.sandbox, so there is no database to " +
-			"reach and nowhere safe to run a plan — set run.sandbox.image in " + config.Name)
+		return nil, errors.New("this project has no run.sandbox, so nothing brings a copy of it " +
+			"up and there is nowhere safe to run a plan — add run.sandbox in " + config.Name)
 	}
-	store, snap, err := s.cached(ctx)
+	store, _, err := s.cached(ctx)
 	if err != nil {
 		return nil, err
 	}
-	st, err := stage(ctx, s.w, s.cfg, store, snap)
+	st, err := stage(ctx, s.w, s.cfg, store)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *session) close(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.st.close(ctx)
+	s.st.Down(ctx)
 	s.st = nil
 	if s.store != nil {
 		s.store.Close()
@@ -102,7 +102,7 @@ func (s *session) close(ctx context.Context) {
 type prepared struct {
 	base      string
 	container string
-	box       *sandbox.Sandbox
+	stack     *sandbox.Stack
 	vars      map[string]string
 	secrets   []string
 }
@@ -135,13 +135,13 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 	if err != nil {
 		return prepared{}, err
 	}
-	if err := st.reset(ctx, s.w); err != nil {
+	if err := reset(ctx, s.w, st); err != nil {
 		return prepared{}, err
 	}
 	return prepared{
-		base:      st.base,
-		container: st.app.Container(),
-		box:       st.box,
+		base:      st.BaseURL(),
+		container: st.Project(),
+		stack:     st,
 		vars:      vars.Values,
 		secrets:   secrets(vars, st),
 	}, nil
@@ -168,9 +168,9 @@ func unset(p *plan.Plan, missing []string) []string {
 	return out
 }
 
-// engine builds the walk. State is assigned only when there is a sandbox to
-// observe: a nil *Sandbox in that interface field would be a non-nil State that
-// takes a reading from nothing.
+// engine builds the walk. State is assigned only when there is a copy to observe:
+// a nil *Stack in that interface field would be a non-nil State that takes a
+// reading from nothing.
 func (p prepared) engine(onStep func(run.StepResult)) *run.Engine {
 	e := &run.Engine{
 		BaseURL:   p.base,
@@ -178,10 +178,10 @@ func (p prepared) engine(onStep func(run.StepResult)) *run.Engine {
 		Secrets:   p.secrets,
 		OnStep:    onStep,
 	}
-	if p.box != nil {
-		e.State = p.box
-		e.SandboxDB = p.box.DB()
-		e.ShellExec = p.box.ShellExec
+	if p.stack != nil {
+		e.State = p.stack
+		e.SandboxDB = p.stack.DB()
+		e.ShellExec = p.stack.ShellExec
 	}
 	return e
 }

@@ -351,6 +351,12 @@ func (s *Stack) Exec(ctx context.Context, service, command string) (stdout, stde
 	return stdout, stderr, 1, fmt.Errorf("docker compose run: %w", runErr)
 }
 
+// ShellExec is Exec in the shape run.Engine takes it. A shell step names no
+// service because the app's own image is where the project's toolchain is.
+func (s *Stack) ShellExec(ctx context.Context, command string) (string, string, int, error) {
+	return s.Exec(ctx, s.env.App, command)
+}
+
 // Down removes everything the copy created, volumes included. Safe to call twice,
 // because a signal handler and a deferred close both reach it.
 func (s *Stack) Down(ctx context.Context) error {

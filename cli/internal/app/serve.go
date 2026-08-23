@@ -68,15 +68,7 @@ func (b *serve) Compose(ctx context.Context) (*sandbox.Compose, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	opts := b.cfg.Run.SandboxOpts()
-	files := sandbox.LocateCompose(b.cfg.Root(), sandbox.MountRoot(b.cfg.Root(), opts.Mount), opts.Compose)
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no compose file found at %s or above it — "+
-			"GritQA boots a project the way its own compose file says to, so it needs one; "+
-			"name it under run.sandbox.compose in %s if it lives somewhere else",
-			b.cfg.Root(), config.Name)
-	}
-	return sandbox.ReadCompose(ctx, files)
+	return composeFor(ctx, b.cfg)
 }
 
 // Environment is what has been worked out about the project's compose file, and
@@ -121,14 +113,11 @@ func (b *serve) Propose(_ context.Context, e sandbox.Environment) error {
 
 // Sandbox answers with what is up and starts nothing. A tool that reads should
 // not leave a container behind on a machine whose owner never asked for one.
-func (b *serve) Sandbox() *sandbox.Sandbox {
+func (b *serve) Sandbox() *sandbox.Stack {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.st == nil {
-		return nil
-	}
-	return b.st.box
+	return b.st
 }
 
 func (b *serve) StartSandbox(ctx context.Context) (mcp.Boot, error) {
@@ -141,8 +130,8 @@ func (b *serve) StartSandbox(ctx context.Context) (mcp.Boot, error) {
 		return mcp.Boot{}, err
 	}
 	return mcp.Boot{
-		Database: st.box.Env()["DB_NAME"], BaseURL: st.base,
-		Tables: st.box.Tables(), Already: already,
+		Database: st.Database(), BaseURL: st.BaseURL(),
+		Tables: st.Tables(), Already: already,
 	}, nil
 }
 
@@ -165,21 +154,22 @@ func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) 
 		b.mu.Unlock()
 		return nil, err
 	}
-	if err := st.reset(ctx, b.w); err != nil {
+	if err := reset(ctx, b.w, st); err != nil {
 		b.mu.Unlock()
 		return nil, err
 	}
 	b.mu.Unlock()
 
 	engine := &run.Engine{
-		BaseURL:   st.base,
+		BaseURL:   st.BaseURL(),
 		Variables: vars.Values,
 		Secrets:   secrets(vars, st),
-		State:     st.box,
-		SandboxDB: st.box.DB(),
-		ShellExec: st.box.ShellExec,
+		State:     st,
+		SandboxDB: st.DB(),
+		ShellExec: st.ShellExec,
 	}
-	b.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("running %s against %s", p.Name, st.base)})
+	b.w.Write(term.Line{Kind: term.Info,
+		Text: fmt.Sprintf("running %s against %s", p.Name, st.BaseURL())})
 	return engine.Run(ctx, p)
 }
 
@@ -190,7 +180,7 @@ func (b *serve) Teardown(ctx context.Context) error {
 	if b.st == nil {
 		return nil
 	}
-	b.st.close(ctx)
+	err := b.st.Down(ctx)
 	b.st = nil
-	return nil
+	return err
 }
