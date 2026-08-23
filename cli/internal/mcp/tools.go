@@ -590,9 +590,9 @@ type environmentIn struct {
 	App  string `json:"app" jsonschema:"the compose service that answers HTTP"`
 	Port int    `json:"port" jsonschema:"the port inside that service's container that serves it"`
 
-	Database string     `json:"database,omitempty" jsonschema:"the compose service holding the data; omit if the project has none"`
+	Database string     `json:"database,omitempty" jsonschema:"the compose service holding the data a run should be measured against; omit if the project has none"`
 	DBPort   int        `json:"db_port,omitempty" jsonschema:"the port it listens on inside its container"`
-	Driver   string     `json:"driver,omitempty" jsonschema:"what it speaks: mysql or postgres"`
+	Driver   string     `json:"driver,omitempty" jsonschema:"what it speaks, whatever that is: mysql, postgres, mongodb, redis, kafka. Name it even for a store GritQA has no client for — the project still boots, and the record is what says what the run was measured against"`
 	Login    *loginIn   `json:"login,omitempty" jsonschema:"how to connect to it"`
 	Schema   []schemaIn `json:"schema,omitempty" jsonschema:"how the schema and its data come up, in order; omit if nothing does"`
 
@@ -672,10 +672,16 @@ func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, 
 		return nil, envOut{}, err
 	}
 	s.log("the agent worked out an environment: " + proposed.Describe())
+	note := "Recorded as a proposal, and not in effect: no run boots on it until a human " +
+		"approves it. Nothing was started."
+	if proposed.Database != "" && !proposed.Watched() {
+		note += fmt.Sprintf(" This build has no %s client, so a run will bring %s up and take no "+
+			"readings of its own from it — the ledger will say so rather than imply the data was "+
+			"watched. Query it with the client %s's own image ships.",
+			proposed.Driver, proposed.Database, proposed.Database)
+	}
 	return nil, envOut{
-		Environment: &proposed, Compose: got.Fingerprint, Proposed: true,
-		Note: "Recorded as a proposal, and not in effect: no run boots on it until a human " +
-			"approves it. Nothing was started.",
+		Environment: &proposed, Compose: got.Fingerprint, Proposed: true, Note: note,
 	}, nil
 }
 

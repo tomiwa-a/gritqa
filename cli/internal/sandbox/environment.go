@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -20,10 +19,11 @@ type Environment struct {
 	App  string `json:"app"`
 	Port int    `json:"port"`
 
-	// Database is the service holding the data GritQA watches, empty when there is
-	// none. Driver is what it speaks -- GritQA opens a connection with it to take
-	// watermarks and to serve db(sql), so a database it cannot speak to is visible
-	// rather than silently unread.
+	// Database is the service holding the data a run should be measured against,
+	// empty when there is none. Driver names what it speaks. Booting the project
+	// needs neither: the compose file says how to start a datastore whatever it is.
+	// They are here so a run can be measured, and a driver this build has no client
+	// for costs the ledger rather than the boot.
 	Database string `json:"database,omitempty"`
 	DBPort   int    `json:"db_port,omitempty"`
 	Driver   string `json:"driver,omitempty"`
@@ -63,9 +63,11 @@ type SchemaStep struct {
 	Run     []string `json:"run,omitempty"`
 }
 
-// Check is shape, not judgement: that the services named exist, that the paths are
-// container paths, and that GritQA can actually speak the driver named. Whether
-// the right service was picked is not checkable here and is not checked.
+// Check is shape, not judgement: that the services named exist and that the paths
+// are container paths. Whether the right service was picked is not checkable here
+// and is not checked, and neither is whether GritQA can speak to what was named --
+// a project brings up whatever its compose file declares, and what GritQA can read
+// afterwards is a separate, smaller question.
 func (e Environment) Check(c *Compose) error {
 	if c == nil {
 		return fmt.Errorf("there is no compose file to read this against")
@@ -108,10 +110,10 @@ func (e Environment) Check(c *Compose) error {
 	if e.DBPort < 1 || e.DBPort > 65535 {
 		return fmt.Errorf("%d is not a port %s could be listening on", e.DBPort, db.Name)
 	}
-	if !Linked(e.Driver) {
-		return fmt.Errorf("GritQA has no %s driver in this build, so it could not read that "+
-			"database even once it is up — it speaks %s. Leave the database out and it will run "+
-			"the app without watching any data", e.Driver, strings.Join(Drivers(), " and "))
+	if e.Driver == "" {
+		return fmt.Errorf("%s is named as the datastore and nothing says what it speaks — "+
+			"name it even if it is something GritQA has no client for, because the record is "+
+			"what says what a run was measured against", db.Name)
 	}
 	for what, ref := range map[string]string{"user": e.Login.User,
 		"password": e.Login.Password, "name": e.Login.Name} {
@@ -165,11 +167,19 @@ func (e Environment) Resolve(c *Compose) (Creds, error) {
 	return out, nil
 }
 
+// Watched reports whether GritQA can take its own readings from the datastore.
+// False is an ordinary outcome, not a failure: the project still boots, and the
+// datastore is still queried through the client its own image ships.
+func (e Environment) Watched() bool { return e.Database != "" && Linked(e.Driver) }
+
 // Describe is the one line a transcript prints about how a run was brought up.
 func (e Environment) Describe() string {
 	what := fmt.Sprintf("%s on %d", e.App, e.Port)
-	if e.Database != "" {
+	switch {
+	case e.Watched():
 		what += fmt.Sprintf(", %s over %s", e.Database, e.Driver)
+	case e.Database != "":
+		what += fmt.Sprintf(", %s over %s and read through its own client", e.Database, e.Driver)
 	}
 	switch e.Author {
 	case AuthorAgent:
@@ -201,32 +211,6 @@ func DecodeEnvironment(s string) (*Environment, error) {
 		return nil, err
 	}
 	return &e, nil
-}
-
-// Linked reports whether this build can both speak that protocol and address it:
-// a driver registered with database/sql, and a DSN shape in image.go. Asked of
-// database/sql rather than of a table, so linking a driver is most of what it
-// takes to support one.
-func Linked(driver string) bool {
-	for _, d := range Drivers() {
-		if d == driver {
-			return true
-		}
-	}
-	return false
-}
-
-// Drivers is what GritQA can reach a database over, in this build.
-func Drivers() []string {
-	var out []string
-	for _, want := range []Driver{MySQL, Postgres} {
-		for _, got := range sql.Drivers() {
-			if got == string(want) {
-				out = append(out, got)
-			}
-		}
-	}
-	return out
 }
 
 func serviceNames(c *Compose) []string {

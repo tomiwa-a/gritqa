@@ -88,9 +88,10 @@ func Up(ctx context.Context, opts Options) (*Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !img.Supported {
-		return nil, fmt.Errorf("GritQA recognises %s but this build has no %s driver linked in — "+
-			"use one of %s for now", img.Ref, img.Driver, strings.Join(Names(), ", "))
+	if !img.Supported() {
+		return nil, fmt.Errorf("this build has no %s client compiled into it, so it could create "+
+			"%s and then not be able to read it — it speaks %s",
+			img.Driver, img.Ref, strings.Join(Drivers(), " and "))
 	}
 	creds, err := newCreds(img, opts.Database)
 	if err != nil {
@@ -224,7 +225,7 @@ func firstPort(out string, container int) (int, error) {
 // dialling, and re-checks that the container is still up so a crash during init
 // is reported as itself rather than as a timeout.
 func (s *Sandbox) await(ctx context.Context, limit time.Duration) error {
-	db, err := sql.Open(string(s.img.Driver), s.img.DSN(s.host, s.port, s.creds))
+	db, err := sql.Open(string(s.img.Driver), s.img.Driver.DSN(s.host, s.port, s.creds))
 	if err != nil {
 		return err
 	}
@@ -402,7 +403,7 @@ func (s *Sandbox) ShellExec(ctx context.Context, command string) (stdout, stderr
 
 // DSN is the connection string. It carries the generated password, so it is for
 // handing to a driver and never for printing.
-func (s *Sandbox) DSN() string { return s.img.DSN(s.host, s.port, s.creds) }
+func (s *Sandbox) DSN() string { return s.img.Driver.DSN(s.host, s.port, s.creds) }
 
 // Env is what a migration or the app process needs to reach the sandbox. The
 // DB_* names are what a PHP or Rails project reads; DATABASE_URL is what a Go or

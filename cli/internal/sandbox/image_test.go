@@ -21,9 +21,9 @@ func TestLookupResolvesByFamily(t *testing.T) {
 		{ref: "mysql:8.0.36", wantRef: "mysql:8.0.36", driver: MySQL, port: 3306, supported: true},
 		{ref: "mariadb:10.11", wantRef: "mariadb:10.11", driver: MySQL, port: 3306, supported: true},
 
-		// Recognised, and honestly reported as not yet drivable.
-		{ref: "postgres:16-alpine", wantRef: "postgres:16-alpine", driver: Postgres, port: 5432},
-		{ref: "postgres:15", wantRef: "postgres:15", driver: Postgres, port: 5432},
+		// Supported because a driver is linked in, not because a column says so.
+		{ref: "postgres:16-alpine", wantRef: "postgres:16-alpine", driver: Postgres, port: 5432, supported: true},
+		{ref: "postgres:15", wantRef: "postgres:15", driver: Postgres, port: 5432, supported: true},
 
 		{ref: "mongo:7", wantErr: true},
 		{ref: "", wantErr: true},
@@ -46,9 +46,9 @@ func TestLookupResolvesByFamily(t *testing.T) {
 		if got.Ref != c.wantRef {
 			t.Errorf("Lookup(%q).Ref = %q, want %q", c.ref, got.Ref, c.wantRef)
 		}
-		if got.Driver != c.driver || got.Port != c.port || got.Supported != c.supported {
+		if got.Driver != c.driver || got.Port != c.port || got.Supported() != c.supported {
 			t.Errorf("Lookup(%q) = driver %s port %d supported %v, want %s %d %v",
-				c.ref, got.Driver, got.Port, got.Supported, c.driver, c.port, c.supported)
+				c.ref, got.Driver, got.Port, got.Supported(), c.driver, c.port, c.supported)
 		}
 	}
 }
@@ -79,7 +79,7 @@ func TestDSN(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := img.DSN("127.0.0.1", 54321, c); got != tc.want {
+		if got := img.Driver.DSN("127.0.0.1", 54321, c); got != tc.want {
 			t.Errorf("%s DSN = %q, want %q", tc.ref, got, tc.want)
 		}
 	}
@@ -92,7 +92,7 @@ func TestMySQLDSNAllowsMultipleStatements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsn := img.DSN("127.0.0.1", 3306, Creds{User: "root", Password: "p", Database: "d"})
+	dsn := img.Driver.DSN("127.0.0.1", 3306, Creds{User: "root", Password: "p", Database: "d"})
 	if !strings.Contains(dsn, "multiStatements=true") {
 		t.Errorf("DSN = %q, want multiStatements=true", dsn)
 	}

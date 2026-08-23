@@ -460,8 +460,8 @@ func TestDeriveEnvironmentChecksShapeAndNotJudgement(t *testing.T) {
 			map[string]any{"app": "web", "port": 3000, "writable": []string{"uploads"}}, "container"},
 		{"a schema step in no service", map[string]any{"app": "web", "port": 3000,
 			"schema": []map[string]any{{"service": "runner"}}}, "runner"},
-		{"a database GritQA cannot speak to", map[string]any{"app": "web", "port": 3000,
-			"database": "cache", "db_port": 6379, "driver": "redis"}, "driver"},
+		{"a database with nothing saying what it speaks", map[string]any{"app": "web",
+			"port": 3000, "database": "cache", "db_port": 6379}, "speaks"},
 		{"a login key the service does not declare", map[string]any{"app": "web", "port": 3000,
 			"database": "store", "db_port": 5432, "driver": "mysql",
 			"login": map[string]any{"user": "root", "password": "$MYSQL_ROOT_PASSWORD"}},
@@ -481,6 +481,27 @@ func TestDeriveEnvironmentChecksShapeAndNotJudgement(t *testing.T) {
 	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": ok})
 	if !got.Proposed {
 		t.Fatal("a well-shaped answer was not recorded")
+	}
+}
+
+// A datastore this build has no client for costs the ledger, not the boot. GritQA
+// takes the environment and says what it will not be able to watch.
+func TestDeriveEnvironmentTakesADatastoreItCannotRead(t *testing.T) {
+	cs, back := connect(t, Read)
+	back.compose = fixture(back.root)
+
+	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": map[string]any{
+		"app": "web", "port": 3000, "database": "cache", "db_port": 6379, "driver": "redis"}})
+	if !got.Proposed || back.proposed == nil {
+		t.Fatal("a project whose datastore GritQA cannot speak to was refused")
+	}
+	if back.proposed.Watched() {
+		t.Error("redis is not something this build connects to")
+	}
+	for _, want := range []string{"no redis client", "take no readings", "own image ships"} {
+		if !strings.Contains(got.Note, want) {
+			t.Errorf("the note does not say %q: %q", want, got.Note)
+		}
 	}
 }
 

@@ -5,24 +5,16 @@ import (
 	"strings"
 )
 
-// Driver is the wire protocol a database image speaks, which decides both the
-// sql.Open driver name and the DSN shape.
-type Driver string
-
-const (
-	MySQL    Driver = "mysql"
-	Postgres Driver = "postgres"
-)
-
-// Image is one row of the table. Supported is false for an image GritQA can
-// name but whose driver is not linked into this build — the same distinction
-// lang.Framework draws with Static, and for the same reason: "I know what this
-// is and cannot do it yet" beats a confusing failure.
+// Image is one row of the table GritQA needed while it created the database
+// itself: which variable the entrypoint reads for the superuser password, which
+// one makes a schema on first boot, which port it listens on.
+//
+// A project's own compose file answers every one of those, so the compose path
+// reads none of this. It is here only for Up, and it goes when Up does.
 type Image struct {
-	Ref       string
-	Driver    Driver
-	Port      int
-	Supported bool
+	Ref    string
+	Driver Driver
+	Port   int
 	// Password names the env var the image's entrypoint reads for the superuser
 	// password; Database names the one that creates a schema on first boot.
 	Password string
@@ -31,11 +23,11 @@ type Image struct {
 }
 
 var images = []Image{
-	{Ref: "mysql:8", Driver: MySQL, Port: 3306, Supported: true,
+	{Ref: "mysql:8", Driver: MySQL, Port: 3306,
 		Password: "MYSQL_ROOT_PASSWORD", Database: "MYSQL_DATABASE", User: "root"},
-	{Ref: "mysql:8.4", Driver: MySQL, Port: 3306, Supported: true,
+	{Ref: "mysql:8.4", Driver: MySQL, Port: 3306,
 		Password: "MYSQL_ROOT_PASSWORD", Database: "MYSQL_DATABASE", User: "root"},
-	{Ref: "mariadb:11", Driver: MySQL, Port: 3306, Supported: true,
+	{Ref: "mariadb:11", Driver: MySQL, Port: 3306,
 		Password: "MARIADB_ROOT_PASSWORD", Database: "MARIADB_DATABASE", User: "root"},
 	{Ref: "postgres:16-alpine", Driver: Postgres, Port: 5432,
 		Password: "POSTGRES_PASSWORD", Database: "POSTGRES_DB", User: "postgres"},
@@ -73,26 +65,7 @@ func family(ref string) string {
 	return ref
 }
 
-// DSN is what sql.Open takes. multiStatements is on because Restore feeds a
-// dump back through this connection.
-func (i Image) DSN(host string, port int, c Creds) string {
-	switch i.Driver {
-	case MySQL:
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true&timeout=5s",
-			c.User, c.Password, host, port, c.Database)
-	case Postgres:
-		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-			c.User, c.Password, host, port, c.Database)
-	}
-	return ""
-}
-
-// Names returns every image in the table, for an error message that lists what
-// is on offer.
-func Names() []string {
-	out := make([]string, 0, len(images))
-	for _, i := range images {
-		out = append(out, i.Ref)
-	}
-	return out
-}
+// Supported asks the build rather than the table: an image GritQA can name but
+// whose driver is not linked in is one it cannot read, and linking a driver is
+// most of what it takes to change that.
+func (i Image) Supported() bool { return Linked(string(i.Driver)) }
