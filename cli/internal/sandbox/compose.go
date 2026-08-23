@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,22 @@ type Compose struct {
 	// Fingerprint covers the resolved document and every Dockerfile it builds
 	// from. It moves when the environment changes and not when source does.
 	Fingerprint string `json:"fingerprint"`
+
+	// raw is the resolved document as compose printed it, kept for the two things
+	// the reported shape deliberately cannot carry: booting a copy of the whole
+	// declaration, including every key nothing above parses, and reading back a
+	// credential the report masked.
+	raw []byte
+}
+
+// resolved re-reads the document with nothing masked. For connecting, not for
+// reporting: the values in it are the developer's own.
+func (c *Compose) resolved() (*Compose, error) {
+	if len(c.raw) == 0 {
+		return nil, errors.New("this compose file was described rather than read, " +
+			"so the document it came from is not here")
+	}
+	return parseCompose(c.raw)
 }
 
 // Service is one service, with the fields that bear on bringing it up.
@@ -161,6 +178,7 @@ func ReadCompose(ctx context.Context, files []string) (*Compose, error) {
 		return nil, err
 	}
 	c.Fingerprint = fp
+	c.raw = resolved
 	return c, nil
 }
 

@@ -132,7 +132,11 @@ func (e Environment) Check(c *Compose) error {
 // password it comes back with is the developer's, not one GritQA generated, and
 // Creds.scrub is what keeps it out of everything reported.
 func (e Environment) Resolve(c *Compose) (Creds, error) {
-	db, ok := c.Service(e.Database)
+	full, err := c.resolved()
+	if err != nil {
+		return Creds{}, err
+	}
+	db, ok := full.Service(e.Database)
 	if !ok {
 		return Creds{}, fmt.Errorf("%q is no longer a service in this compose file", e.Database)
 	}
