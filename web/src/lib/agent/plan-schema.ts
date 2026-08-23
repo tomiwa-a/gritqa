@@ -19,7 +19,25 @@ import { unloadable } from '@/lib/plan';
  * branch for a value the agent can now produce.
  */
 
-const method = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+/**
+ * Three of the closed sets a step is built out of, exported because a hand editor needs the
+ * same lists the schema is built from. Read rather than restated: a dropdown offering an
+ * operator this file does not accept would be a form that writes plans the runner
+ * refuses.
+ */
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export const OPERATORS = [
+  'equals',
+  'notEquals',
+  'contains',
+  'notContains',
+  'exists',
+  'lt',
+  'gt',
+] as const;
+export const SOURCES = ['body', 'header', 'result', 'stdout'] as const;
+
+const method = z.enum(METHODS);
 
 export const endpointSchema = z.object({
   method,
@@ -54,7 +72,7 @@ export const assertionSchema = z.object({
     'exitCode',
     'stdoutContains',
   ]),
-  operator: z.enum(['equals', 'notEquals', 'contains', 'notContains', 'exists', 'lt', 'gt']),
+  operator: z.enum(OPERATORS),
   target: z
     .string()
     .min(1)
@@ -74,7 +92,7 @@ export const assertionSchema = z.object({
  * one exit code -- so the schema's `min(1)` on `target` is satisfied by the name of
  * the thing itself, the way `status` already is.
  */
-const ASSERTIONS_BY_KIND = {
+export const ASSERTIONS_BY_KIND = {
   http: ['status', 'bodyField', 'header', 'responseTime'],
   sql: ['rowCount', 'valueEquals'],
   shell: ['exitCode', 'stdoutContains'],
@@ -87,7 +105,7 @@ export const extractionSchema = z.object({
    * `result` and `stdout` are what let a fixture feed the request after it: an insert
    * hands over a real booking id instead of the draft inventing one.
    */
-  source: z.enum(['body', 'header', 'result', 'stdout']),
+  source: z.enum(SOURCES),
 });
 
 /**
