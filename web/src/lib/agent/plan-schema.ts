@@ -449,52 +449,68 @@ export class PlanShapeError extends Error {
 function stepFromWire(step: z.infer<typeof wireStepSchema>): z.infer<typeof stepSchema> {
   const { kind, request, action, ...common } = step;
 
-  const wrong = (what: string) =>
-    new PlanShapeError(`plan-schema: step ${step.id} says kind "${kind}" and ${what}`);
+  /* `verify` when the draft did not say, because the two readings fail in different
+     directions and this is the one whose failure is visible. A write read as a
+     `verify` still executes -- the statement goes through `Query` instead of `Exec`
+     and only its row count goes unreported. A read left as `setup` goes through
+     `Exec`, which reports zero rows affected for a SELECT, and every count assertion
+     on it compares against 0. Neither is silent, and this one does not touch the
+     approval confirm's reading of what writes. */
+  const built: PlanStepSpec =
+    kind === 'http'
+      ? {
+          ...common,
+          kind,
+          request: request && {
+            method: request.method,
+            url: request.url,
+            headers: optionalRecord(request.headers),
+            query: optionalRecord(request.query),
+            body: body(request.body, step.id),
+          },
+        }
+      : kind === 'sql'
+        ? {
+            ...common,
+            kind,
+            action: { statement: action?.statement, target: action?.target ?? 'verify' },
+          }
+        : { ...common, kind, action: { command: action?.command } };
+
+  const bad = stepInconsistency(built);
+  if (bad) throw new PlanShapeError(`plan-schema: step ${step.id} says kind "${kind}" and ${bad}`);
+  return built;
+}
+
+/**
+ * Whether a step's payload is the one its `kind` claims, and whether it checks
+ * something that kind has.
+ *
+ * These were the wire path's rules, written inside `stepFromWire` -- which made them
+ * true of a plan the agent wrote and of nothing else. A step somebody builds by hand
+ * has to satisfy the same ones or the runner refuses the whole plan on it
+ * (`load.go`: *"is a sql step with no action"*), so they live here once and the wire
+ * path is one of the callers rather than the owner.
+ *
+ * Returns the reason, phrased as the rest of a sentence about the step, so a caller
+ * can put whichever subject it has in front of it.
+ */
+export function stepInconsistency(step: PlanStepSpec): string | null {
+  const kind = step.kind ?? 'http';
 
   const allowed: readonly PlanAssertion['type'][] = ASSERTIONS_BY_KIND[kind];
-  for (const assertion of common.assertions) {
+  for (const assertion of step.assertions) {
     if (!allowed.includes(assertion.type)) {
-      throw wrong(
+      return (
         `asserts on ${assertion.type}, which is not something a ${kind} step has — ` +
-          `${allowed.join(', ')} are`,
+        `${allowed.join(', ')} are`
       );
     }
   }
 
-  if (kind === 'http') {
-    if (!request) throw wrong('sends no request');
-    return {
-      ...common,
-      kind,
-      request: {
-        method: request.method,
-        url: request.url,
-        headers: optionalRecord(request.headers),
-        query: optionalRecord(request.query),
-        body: body(request.body, step.id),
-      },
-    };
-  }
-
-  if (kind === 'sql') {
-    if (!action?.statement) throw wrong('has no statement to run');
-    /* `verify` when the draft did not say, because the two readings fail in different
-       directions and this is the one whose failure is visible. A write read as a
-       `verify` still executes -- the statement goes through `Query` instead of `Exec`
-       and only its row count goes unreported. A read left as `setup` goes through
-       `Exec`, which reports zero rows affected for a SELECT, and every count assertion
-       on it compares against 0. Neither is silent, and this one does not touch the
-       approval confirm's reading of what writes. */
-    return {
-      ...common,
-      kind,
-      action: { statement: action.statement, target: action.target ?? 'verify' },
-    };
-  }
-
-  if (!action?.command) throw wrong('has no command to run');
-  return { ...common, kind, action: { command: action.command } };
+  if (kind === 'http') return step.request?.url ? null : 'sends no request';
+  if (kind === 'sql') return step.action?.statement ? null : 'has no statement to run';
+  return step.action?.command ? null : 'has no command to run';
 }
 
 /**
