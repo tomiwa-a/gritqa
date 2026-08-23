@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
+	"github.com/gritqa/cli/internal/run"
 	// Linked, not used directly: a database GritQA can reach is one whose driver is
 	// registered, and a project's compose file decides which that is, not GritQA.
 	_ "github.com/lib/pq"
@@ -61,10 +63,9 @@ type Sandbox struct {
 	recipe   Recipe
 	image    string
 	volumes  []volume
-	units    []unit
+	watcher  *Watcher
 	only     []string
 	baseline *Snapshot
-	watch    []string
 	log      func(string)
 }
 
@@ -132,7 +133,8 @@ func Up(ctx context.Context, opts Options) (*Sandbox, error) {
 		return nil, err
 	}
 	s.only = opts.Tables
-	if s.units, err = s.discover(ctx, s.only); err != nil {
+	s.watcher = NewWatcher(s.db, s.img.Driver, s.creds)
+	if err := s.watcher.Discover(ctx, s.only); err != nil {
 		s.cleanup(context.WithoutCancel(ctx))
 		return nil, err
 	}
@@ -539,4 +541,13 @@ func lastLine(s string) string {
 		}
 	}
 	return "no output"
+}
+
+// The ledger's readings, which the construct path holds on behalf of its caller.
+func (s *Sandbox) Watcher() *Watcher                          { return s.watcher }
+func (s *Sandbox) Watch(dirs ...string)                       { s.watcher.Watch(dirs...) }
+func (s *Sandbox) Tables() []string                           { return s.watcher.Tables() }
+func (s *Sandbox) Mark(ctx context.Context) (run.Mark, error) { return s.watcher.Mark(ctx) }
+func (s *Sandbox) Watermark(ctx context.Context) (*Watermark, error) {
+	return s.watcher.Watermark(ctx)
 }

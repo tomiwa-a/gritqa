@@ -29,11 +29,9 @@ func (s *Sandbox) Baseline(ctx context.Context) error {
 	// The baseline is what the ledger measures against, so this is the point that
 	// decides what it watches. Discovering at Up instead would watch an empty
 	// database and report that nothing ever moved.
-	units, err := s.discover(ctx, s.only)
-	if err != nil {
+	if err := s.watcher.Discover(ctx, s.only); err != nil {
 		return err
 	}
-	s.units = units
 
 	snap, err := s.Take(ctx)
 	if err != nil {
@@ -142,10 +140,8 @@ func (s *Sandbox) reconnect(ctx context.Context) error {
 	}
 	s.db = db
 
-	units, err := s.discover(ctx, s.only)
-	if err != nil {
-		return err
-	}
-	s.units = units
-	return nil
+	w := NewWatcher(db, s.img.Driver, s.creds)
+	w.Watch(s.watcher.Watching()...)
+	s.watcher = w
+	return s.watcher.Discover(ctx, s.only)
 }

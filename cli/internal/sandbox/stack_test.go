@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"os/exec"
@@ -196,4 +197,118 @@ func dockerLines(t *testing.T, args ...string) string {
 		t.Fatalf("docker %v: %v", args, err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// The reset needs no protocol knowledge: it clears the copy's volumes and lets the
+// project's own schema steps rebuild it. So it holds for a datastore this build
+// cannot read, which a dump-and-restore never could.
+func TestResetRebuildsFromTheProjectsOwnSteps(t *testing.T) {
+	ctx := live(t)
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "compose.yml"), `
+services:
+  web:
+    image: alpine:latest
+    command: ["sh", "-c", "mkdir -p /data/uploads; while true; do { printf 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n'; echo -n hi; } | nc -l -p 8080; done"]
+    volumes:
+      - shared:/data
+  store:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: reset-fixture
+      POSTGRES_DB: shop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shop"]
+      interval: 2s
+      retries: 30
+  migrate:
+    image: postgres:16
+    profiles: [tools]
+    environment:
+      PGPASSWORD: reset-fixture
+    command: ["psql", "-h", "store", "-U", "postgres", "-d", "shop", "-c",
+              "CREATE TABLE rooms (id serial primary key); INSERT INTO rooms DEFAULT VALUES"]
+    depends_on:
+      store:
+        condition: service_healthy
+volumes:
+  pgdata:
+  shared:
+`)
+
+	c, err := ReadCompose(ctx, []string{filepath.Join(dir, "compose.yml")})
+	if err != nil {
+		t.Fatalf("ReadCompose: %v", err)
+	}
+	e := Environment{
+		App: "web", Port: 8080,
+		Database: "store", DBPort: 5432, Driver: "postgres",
+		Login:    Login{User: "postgres", Password: "reset-fixture", Name: "$POSTGRES_DB"},
+		Schema:   []SchemaStep{{Service: "migrate"}},
+		Writable: []string{"/data/uploads"},
+		Author:   AuthorAgent,
+	}
+
+	st, err := Launch(ctx, LaunchOptions{Compose: c, Environment: e, Name: "reset",
+		OnProgress: func(string) {}})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	defer st.Down(context.Background())
+
+	if err := st.Schema(ctx); err != nil {
+		t.Fatalf("Schema: %v", err)
+	}
+	if err := st.Baseline(ctx); err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	// Postgres discovery has to find the table and pick its serial key, or the
+	// ledger would report a delta of zero for every insert.
+	if got := st.Tables(); len(got) != 1 || got[0] != "rooms" {
+		t.Fatalf("the ledger watches %v, want just rooms", got)
+	}
+
+	before, err := st.Watcher().Watermark(ctx)
+	if err != nil {
+		t.Fatalf("Watermark: %v", err)
+	}
+
+	// Research writes: two rows and a file, exactly what would make a later run
+	// pass for the wrong reason.
+	if _, err := st.DB().ExecContext(ctx,
+		"INSERT INTO rooms DEFAULT VALUES; INSERT INTO rooms DEFAULT VALUES"); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if _, _, code, _ := st.Exec(ctx, "web", "echo x > /data/uploads/left-behind.txt"); code != 0 {
+		t.Fatalf("could not write into the volume, exit %d", code)
+	}
+
+	dirty, err := st.Watcher().Watermark(ctx)
+	if err != nil {
+		t.Fatalf("Watermark: %v", err)
+	}
+	moved := dirty.Diff(before)
+	if len(moved) != 2 {
+		t.Fatalf("the ledger missed the writes: %+v", moved)
+	}
+
+	if err := st.Reset(ctx); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	after, err := st.Watcher().Watermark(ctx)
+	if err != nil {
+		t.Fatalf("Watermark after reset: %v", err)
+	}
+	if got := after.Diff(before); len(got) != 0 {
+		t.Errorf("the reset did not return to the baseline: %+v", got)
+	}
+	out, _, _, err := st.Exec(ctx, "web", "ls /data/uploads")
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if strings.Contains(out, "left-behind.txt") {
+		t.Errorf("the reset left a research upload behind: %q", out)
+	}
 }

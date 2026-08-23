@@ -21,29 +21,75 @@ const (
 	Postgres Driver = "postgres"
 )
 
-// address is why Drivers is not simply sql.Drivers(): a driver registered by some
-// other package is still unreachable if nothing here knows how to address it.
-// Adding a protocol is this map plus its import, and nothing else.
-var address = map[Driver]func(host string, port int, c Creds) string{
-	// multiStatements is load-bearing: Restore feeds a whole dump back through
-	// this connection.
-	MySQL: func(host string, port int, c Creds) string {
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true&timeout=5s",
-			c.User, c.Password, host, port, c.Database)
+// client is everything this build knows about talking to one protocol: how to
+// address it, and how to ask it what it holds. It is why Drivers is not simply
+// sql.Drivers() -- a driver registered by some other package is still unreachable
+// if nothing here can address it. Adding a protocol is one entry plus its import.
+type client struct {
+	dsn func(host string, port int, c Creds) string
+	// schema is the namespace to read table names from, which is the database for
+	// MySQL and a schema within it for Postgres.
+	schema func(c Creds) string
+	// tables and columns each take the schema as their one argument.
+	tables, columns string
+	// ident quotes an identifier; text casts an expression to a string, because a
+	// high-water mark is compared as text whatever its column type.
+	ident, text func(string) string
+}
+
+var clients = map[Driver]client{
+	MySQL: {
+		// multiStatements is load-bearing: Restore feeds a whole dump back through
+		// this connection.
+		dsn: func(host string, port int, c Creds) string {
+			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true&timeout=5s",
+				c.User, c.Password, host, port, c.Database)
+		},
+		schema: func(c Creds) string { return c.Database },
+		tables: `SELECT TABLE_NAME FROM information_schema.TABLES
+		 WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME`,
+		columns: `SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE,
+		 EXTRA LIKE '%auto_increment%', COLUMN_KEY = 'PRI'
+		 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?
+		 ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+		ident: func(s string) string { return "`" + s + "`" },
+		text:  func(e string) string { return "CAST(" + e + " AS CHAR)" },
 	},
-	Postgres: func(host string, port int, c Creds) string {
-		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-			c.User, c.Password, host, port, c.Database)
+	Postgres: {
+		dsn: func(host string, port int, c Creds) string {
+			return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+				c.User, c.Password, host, port, c.Database)
+		},
+		schema: func(Creds) string { return "public" },
+		tables: `SELECT table_name FROM information_schema.tables
+		 WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name`,
+		// A serial column is a default of nextval, and an identity column says so
+		// outright; both are the same thing to a watermark.
+		columns: `SELECT c.table_name, c.column_name, c.data_type,
+		   c.is_identity = 'YES' OR COALESCE(c.column_default, '') LIKE 'nextval%',
+		   COALESCE(k.is_pk, false)
+		 FROM information_schema.columns c
+		 LEFT JOIN (
+		   SELECT ccu.table_name, ccu.column_name, true AS is_pk
+		   FROM information_schema.table_constraints tc
+		   JOIN information_schema.constraint_column_usage ccu
+		     ON ccu.constraint_name = tc.constraint_name
+		    AND ccu.table_schema = tc.table_schema
+		   WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = $1
+		 ) k ON k.table_name = c.table_name AND k.column_name = c.column_name
+		 WHERE c.table_schema = $1 ORDER BY c.table_name, c.ordinal_position`,
+		ident: func(s string) string { return `"` + s + `"` },
+		text:  func(e string) string { return "CAST(" + e + " AS TEXT)" },
 	},
 }
 
 // DSN is what sql.Open takes, and empty for a protocol this build cannot address.
 func (d Driver) DSN(host string, port int, c Creds) string {
-	f, ok := address[d]
+	cl, ok := clients[d]
 	if !ok {
 		return ""
 	}
-	return f(host, port, c)
+	return cl.dsn(host, port, c)
 }
 
 // Linked reports whether this build can open its own connection to that protocol.
@@ -63,7 +109,7 @@ func Linked(driver string) bool {
 func Drivers() []string {
 	var out []string
 	for _, got := range sql.Drivers() {
-		if _, ok := address[Driver(got)]; ok {
+		if _, ok := clients[Driver(got)]; ok {
 			out = append(out, got)
 		}
 	}

@@ -23,7 +23,8 @@ func testbox(t *testing.T) *Sandbox {
 	return &Sandbox{
 		img: img, creds: c, name: "gritqa-test-0001",
 		host: loopback, port: 54321, dir: t.TempDir(),
-		log: func(string) {},
+		watcher: NewWatcher(nil, img.Driver, c),
+		log:     func(string) {},
 	}
 }
 
@@ -202,8 +203,9 @@ func TestWritableDirectoriesAreNotTheUsersTree(t *testing.T) {
 		t.Errorf("uploads is not a volume GritQA owns: %v", args)
 	}
 	// And the ledger counts that volume, so it keeps reporting uploads honestly.
-	if len(s.watch) != 1 || s.watch[0] != filepath.Join(s.dir, "writable", "uploads") {
-		t.Errorf("the ledger watches %v", s.watch)
+	if got := s.watcher.Watching(); len(got) != 1 ||
+		got[0] != filepath.Join(s.dir, "writable", "uploads") {
+		t.Errorf("the ledger watches %v", got)
 	}
 }
 

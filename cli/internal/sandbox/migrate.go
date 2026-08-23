@@ -47,11 +47,10 @@ func (s *Sandbox) Prepare(ctx context.Context, root string, cmds []Command, extr
 
 	// The schema only exists now, so what the ledger watches is worked out here
 	// rather than at Up, where the database was empty.
-	units, err := s.discover(ctx, s.only)
-	if err != nil {
+	if err := s.watcher.Discover(ctx, s.only); err != nil {
 		return out, err
 	}
-	s.units = units
+	units := s.watcher.units
 
 	if len(units) == 0 {
 		return out, fmt.Errorf("%s reported success and the sandbox is still empty, so it migrated "+

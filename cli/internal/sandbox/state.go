@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -13,8 +14,46 @@ import (
 	"github.com/gritqa/cli/internal/run"
 )
 
+// Watcher takes the readings a run is measured against. It holds a connection and
+// nothing else: which datastore, how it was brought up and who owns it are not its
+// business, so both the compose path and the construct path use the same one.
+//
+// A watcher with no connection is not an error: it reports what it can see on
+// disk, which is what a datastore this build has no client for leaves it with, and
+// a run's ledger then says the data went unwatched instead of implying otherwise.
+type Watcher struct {
+	db     *sql.DB
+	c      client
+	schema string
+	units  []unit
+	watch  []string
+	files  Files
+}
+
+// Files counts what a directory holds. The construct path walks the host tree; the
+// compose path asks the container, because there the directory is a volume and the
+// host has no view of it. Either way the ledger keeps reporting uploads.
+type Files func(ctx context.Context, dir string) (n int64, newest time.Time, err error)
+
+func NewWatcher(db *sql.DB, driver Driver, creds Creds) *Watcher {
+	w := &Watcher{}
+	c, ok := clients[driver]
+	if !ok || db == nil {
+		return w
+	}
+	w.db, w.c, w.schema = db, c, c.schema(creds)
+	return w
+}
+
+// Reads reports whether this watcher queries a datastore at all, as against
+// counting files and nothing else.
+func (w *Watcher) Reads() bool { return w.db != nil }
+
+// Counting replaces the host walk, for a watcher whose directories are volumes.
+func (w *Watcher) Counting(f Files) { w.files = f }
+
 // unit is one thing worth watching and how to watch it, worked out once from the
-// schema GritQA itself migrated.
+// schema as it stands after the schema steps have run.
 type unit struct {
 	table string
 	key   string // high-water column, empty when the table can only be counted
@@ -41,8 +80,20 @@ type Row struct {
 
 // discover works out what to watch. Views are skipped; a table named in
 // Options.Tables wins over the schema's own list.
-func (s *Sandbox) discover(ctx context.Context, only []string) ([]unit, error) {
-	tables, err := s.baseTables(ctx)
+func (w *Watcher) Discover(ctx context.Context, only []string) error {
+	if !w.Reads() {
+		return nil
+	}
+	units, err := w.discover(ctx, only)
+	if err != nil {
+		return err
+	}
+	w.units = units
+	return nil
+}
+
+func (w *Watcher) discover(ctx context.Context, only []string) ([]unit, error) {
+	tables, err := w.baseTables(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +111,7 @@ func (s *Sandbox) discover(ctx context.Context, only []string) ([]unit, error) {
 		tables = kept
 	}
 
-	keys, err := s.keys(ctx)
+	keys, err := w.keys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +123,8 @@ func (s *Sandbox) discover(ctx context.Context, only []string) ([]unit, error) {
 	return out, nil
 }
 
-func (s *Sandbox) baseTables(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT TABLE_NAME FROM information_schema.TABLES
-		 WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME`,
-		s.creds.Database)
+func (w *Watcher) baseTables(ctx context.Context) ([]string, error) {
+	rows, err := w.db.QueryContext(ctx, w.c.tables, w.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -97,11 +145,8 @@ func (s *Sandbox) baseTables(ctx context.Context) ([]string, error) {
 
 // keys picks each table's high-water column: an auto-increment first, then a
 // single integer primary key, then a timestamp. Anything else is count-only.
-func (s *Sandbox) keys(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, EXTRA, COLUMN_KEY
-		 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?
-		 ORDER BY TABLE_NAME, ORDINAL_POSITION`, s.creds.Database)
+func (w *Watcher) keys(ctx context.Context) (map[string]string, error) {
+	rows, err := w.db.QueryContext(ctx, w.c.columns, w.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +158,15 @@ func (s *Sandbox) keys(ctx context.Context) (map[string]string, error) {
 	}
 	best := map[string]pick{}
 	for rows.Next() {
-		var table, col, dtype, extra, ckey string
-		if err := rows.Scan(&table, &col, &dtype, &extra, &ckey); err != nil {
+		var table, col, dtype string
+		var auto, primary bool
+		if err := rows.Scan(&table, &col, &dtype, &auto, &primary); err != nil {
 			return nil, err
 		}
 		if !safeIdent(col) {
 			continue
 		}
-		r := rank(col, dtype, extra, ckey)
+		r := rank(col, dtype, auto, primary)
 		if r == 0 {
 			continue
 		}
@@ -139,11 +185,11 @@ func (s *Sandbox) keys(ctx context.Context) (map[string]string, error) {
 	return out, nil
 }
 
-func rank(col, dtype, extra, ckey string) int {
+func rank(col, dtype string, auto, primary bool) int {
 	switch {
-	case strings.Contains(strings.ToLower(extra), "auto_increment"):
+	case auto:
 		return 3
-	case ckey == "PRI" && integerType(dtype):
+	case primary && integerType(dtype):
 		return 2
 	case temporalType(dtype) && (col == "created_at" || col == "updated_at" || strings.HasSuffix(col, "_at")):
 		return 1
@@ -168,23 +214,21 @@ func temporalType(t string) bool {
 }
 
 // Mark satisfies run.State.
-func (s *Sandbox) Mark(ctx context.Context) (run.Mark, error) {
-	return s.Watermark(ctx)
-}
+func (w *Watcher) Mark(ctx context.Context) (run.Mark, error) { return w.Watermark(ctx) }
 
 // Watermark reads every unit in one round trip. COUNT(*) rather than
 // information_schema.TABLE_ROWS, which is an estimate and would report a delta
 // of zero for a handful of inserts.
-func (s *Sandbox) Watermark(ctx context.Context) (*Watermark, error) {
+func (w *Watcher) Watermark(ctx context.Context) (*Watermark, error) {
 	out := &Watermark{At: time.Now()}
-	if len(s.units) > 0 {
-		rows, err := s.db.QueryContext(ctx, countQuery(s.units))
+	if len(w.units) > 0 {
+		rows, err := w.db.QueryContext(ctx, w.countQuery())
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
 
-		byName := make(map[string]*Row, len(s.units))
+		byName := make(map[string]*Row, len(w.units))
 		for rows.Next() {
 			var name string
 			var n int64
@@ -198,7 +242,7 @@ func (s *Sandbox) Watermark(ctx context.Context) (*Watermark, error) {
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		for _, u := range s.units {
+		for _, u := range w.units {
 			r, ok := byName[u.table]
 			if !ok {
 				continue
@@ -208,7 +252,7 @@ func (s *Sandbox) Watermark(ctx context.Context) (*Watermark, error) {
 		}
 	}
 
-	files, err := s.watchFiles()
+	files, err := w.watchFiles(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -216,9 +260,9 @@ func (s *Sandbox) Watermark(ctx context.Context) (*Watermark, error) {
 	return out, nil
 }
 
-func countQuery(units []unit) string {
+func (w *Watcher) countQuery() string {
 	var b strings.Builder
-	for i, u := range units {
+	for i, u := range w.units {
 		if i > 0 {
 			b.WriteString(" UNION ALL ")
 		}
@@ -228,9 +272,9 @@ func countQuery(units []unit) string {
 		if u.key == "" {
 			b.WriteString("NULL")
 		} else {
-			b.WriteString("CAST(MAX(`" + u.key + "`) AS CHAR)")
+			b.WriteString(w.c.text("MAX(" + w.c.ident(u.key) + ")"))
 		}
-		b.WriteString(" AS hi FROM `" + u.table + "`")
+		b.WriteString(" AS hi FROM " + w.c.ident(u.table))
 	}
 	return b.String()
 }
@@ -239,36 +283,48 @@ func countQuery(units []unit) string {
 // The sandbox isolates the database, not the filesystem: a run rooted at the real
 // project still writes uploads into the user's tree, and this reports that rather
 // than pretending it did not happen.
-func (s *Sandbox) Watch(dirs ...string) { s.watch = append(s.watch, dirs...) }
+func (w *Watcher) Watch(dirs ...string) { w.watch = append(w.watch, dirs...) }
 
-func (s *Sandbox) watchFiles() ([]Row, error) {
-	out := make([]Row, 0, len(s.watch))
-	for _, dir := range s.watch {
-		var n int64
-		var newest time.Time
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				return nil
-			}
-			n++
-			if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
-				newest = info.ModTime()
-			}
-			return nil
-		})
-		if err != nil && !os.IsNotExist(err) {
+// Watching is what the ledger will report on, for a transcript.
+func (w *Watcher) Watching() []string { return w.watch }
+
+func (w *Watcher) watchFiles(ctx context.Context) ([]Row, error) {
+	count := w.files
+	if count == nil {
+		count = hostFiles
+	}
+	out := make([]Row, 0, len(w.watch))
+	for _, dir := range w.watch {
+		n, newest, err := count(ctx, dir)
+		if err != nil {
 			return nil, err
 		}
-		r := Row{Name: "files:" + filepath.Base(dir), Rows: n}
+		r := Row{Name: "files:" + path.Base(filepath.ToSlash(dir)), Rows: n, CountOnly: newest.IsZero()}
 		if !newest.IsZero() {
 			r.High = newest.UTC().Format(time.RFC3339)
 		}
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func hostFiles(_ context.Context, dir string) (int64, time.Time, error) {
+	var n int64
+	var newest time.Time
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		n++
+		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return 0, time.Time{}, err
+	}
+	return n, newest, nil
 }
 
 // Diff satisfies run.Mark. A unit absent from the earlier reading is compared
@@ -313,9 +369,9 @@ func abs(n int64) int64 {
 }
 
 // Tables is the schema as GritQA knows it, for the describe_schema tool M5 adds.
-func (s *Sandbox) Tables() []string {
-	out := make([]string, 0, len(s.units))
-	for _, u := range s.units {
+func (w *Watcher) Tables() []string {
+	out := make([]string, 0, len(w.units))
+	for _, u := range w.units {
 		out = append(out, u.table)
 	}
 	return out

@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gritqa/cli/internal/run"
 )
 
 // Stack is a running copy of the developer's project, brought up on their own
@@ -35,6 +37,9 @@ type Stack struct {
 	appPort int
 	dbPort  int
 	db      *sql.DB
+	ready   time.Duration
+	watcher *Watcher
+	tables  []string
 	log     func(string)
 }
 
@@ -45,7 +50,9 @@ type LaunchOptions struct {
 	// can account for. The compose fingerprint is appended.
 	Name string
 	// Ready bounds the wait for the app's port and the database to answer.
-	Ready      time.Duration
+	Ready time.Duration
+	// Tables limits what the ledger watches. Empty watches every base table.
+	Tables     []string
 	OnProgress func(string)
 }
 
@@ -94,6 +101,7 @@ func Launch(ctx context.Context, opts LaunchOptions) (*Stack, error) {
 		boot:    bootProfiles(c, e),
 		env:     e,
 		creds:   creds,
+		tables:  opts.Tables,
 		log:     opts.OnProgress,
 	}
 	if s.log == nil {
@@ -106,11 +114,11 @@ func Launch(ctx context.Context, opts LaunchOptions) (*Stack, error) {
 		s.log("not joining " + d + ", because it belongs to something you are already running")
 	}
 
-	ready := opts.Ready
-	if ready <= 0 {
-		ready = defaultReady
+	s.ready = opts.Ready
+	if s.ready <= 0 {
+		s.ready = defaultReady
 	}
-	if err := s.up(ctx, ready); err != nil {
+	if err := s.up(ctx, s.ready); err != nil {
 		s.Down(context.WithoutCancel(ctx))
 		return nil, err
 	}
@@ -231,6 +239,88 @@ func (s *Stack) Schema(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Baseline works out what the ledger will watch, and is called after the schema
+// steps rather than at boot: discovering against an empty datastore would watch
+// nothing and then report that nothing ever moved.
+//
+// A store this build has no client for still gets a watcher -- it counts the
+// directories the app writes to and nothing else, which is honestly less than a
+// full reading and more than none.
+func (s *Stack) Baseline(ctx context.Context) error {
+	s.watcher = NewWatcher(s.db, Driver(s.env.Driver), s.creds)
+	s.watcher.Counting(s.countFiles)
+	s.watcher.Watch(s.env.Writable...)
+	if err := s.watcher.Discover(ctx, s.tables); err != nil {
+		return err
+	}
+	switch {
+	case !s.watcher.Reads():
+		s.log(fmt.Sprintf("watching %s and taking no readings from %s",
+			plural(len(s.env.Writable), "directory", "directories"), s.env.Database))
+	default:
+		s.log(fmt.Sprintf("baseline taken — %s", plural(len(s.watcher.Tables()), "table", "tables")))
+	}
+	return nil
+}
+
+// Reset returns the copy to what the project's own schema steps produce. It clears
+// the volumes and boots again rather than restoring a dump, so it needs to know
+// nothing about the protocol and holds for a datastore GritQA cannot even read.
+//
+// Always before a run: the read tools reach this same copy, and a plan that passes
+// on a row research left behind is worse than one that fails.
+func (s *Stack) Reset(ctx context.Context) error {
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
+	}
+	if out, err := s.compose(ctx, "down", "-v", "--remove-orphans"); err != nil {
+		return fmt.Errorf("could not clear the copy:\n%s", out)
+	}
+	if err := s.up(ctx, s.ready); err != nil {
+		return err
+	}
+	if err := s.Schema(ctx); err != nil {
+		return err
+	}
+	return s.Baseline(ctx)
+}
+
+// countFiles asks the app's own container, because a writable path is a volume
+// there and the host has no view of it. The count is what the ledger needs -- an
+// upload landed -- and a modification time is not worth an image-dependent find.
+func (s *Stack) countFiles(ctx context.Context, dir string) (int64, time.Time, error) {
+	out, _, _, err := s.Exec(ctx, s.env.App, "find "+dir+" -type f 2>/dev/null | wc -l")
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("could not count files in %s: %q", dir, out)
+	}
+	return n, time.Time{}, nil
+}
+
+// Watcher is the ledger's reader, and nil until Baseline has run.
+func (s *Stack) Watcher() *Watcher { return s.watcher }
+
+// Mark satisfies run.State, so a walk against the copy reports what it moved.
+func (s *Stack) Mark(ctx context.Context) (run.Mark, error) { return s.watcher.Mark(ctx) }
+
+func (s *Stack) Tables() []string {
+	if s.watcher == nil {
+		return nil
+	}
+	return s.watcher.Tables()
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // Exec runs one line inside a throwaway container off a service's own image, on

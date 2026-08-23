@@ -103,7 +103,8 @@ func TestDiffAgainstNothing(t *testing.T) {
 }
 
 func TestCountQuery(t *testing.T) {
-	got := countQuery([]unit{{table: "guests", key: "id"}, {table: "sessions"}})
+	w := &Watcher{c: clients[MySQL], units: []unit{{table: "guests", key: "id"}, {table: "sessions"}}}
+	got := w.countQuery()
 	want := "SELECT 'guests' AS u, COUNT(*) AS n, CAST(MAX(`id`) AS CHAR) AS hi FROM `guests`" +
 		" UNION ALL " +
 		"SELECT 'sessions' AS u, COUNT(*) AS n, NULL AS hi FROM `sessions`"
@@ -114,21 +115,22 @@ func TestCountQuery(t *testing.T) {
 
 func TestRank(t *testing.T) {
 	cases := []struct {
-		col, dtype, extra, key string
-		want                   int
+		col, dtype    string
+		auto, primary bool
+		want          int
 	}{
-		{"id", "bigint", "auto_increment", "PRI", 3},
-		{"id", "int", "", "PRI", 2},
-		{"created_at", "datetime", "", "", 1},
-		{"deleted_at", "timestamp", "", "", 1},
-		{"id", "char", "", "PRI", 0},   // a UUID key is count-only
-		{"name", "varchar", "", "", 0}, // and so is anything unordered
-		{"price", "decimal", "", "", 0},
+		{"id", "bigint", true, true, 3},
+		{"id", "int", false, true, 2},
+		{"created_at", "datetime", false, false, 1},
+		{"deleted_at", "timestamp", false, false, 1},
+		{"id", "char", false, true, 0},       // a UUID key is count-only
+		{"name", "varchar", false, false, 0}, // and so is anything unordered
+		{"price", "decimal", false, false, 0},
 	}
 	for _, c := range cases {
-		if got := rank(c.col, c.dtype, c.extra, c.key); got != c.want {
-			t.Errorf("rank(%q, %q, %q, %q) = %d, want %d",
-				c.col, c.dtype, c.extra, c.key, got, c.want)
+		if got := rank(c.col, c.dtype, c.auto, c.primary); got != c.want {
+			t.Errorf("rank(%q, %q, auto %v, pk %v) = %d, want %d",
+				c.col, c.dtype, c.auto, c.primary, got, c.want)
 		}
 	}
 }
