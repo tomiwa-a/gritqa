@@ -2,6 +2,7 @@ import { generateObject, generateText, isStepCount } from 'ai';
 import { resolveModel } from './model';
 import { openResearch } from './research';
 import {
+  PlanShapeError,
   draftFromWire,
   revisionFromWire,
   wireDraftSchema,
@@ -38,6 +39,37 @@ import type { TestPlanDetail, TestingRule } from '@/lib/model';
  * the honest answer to that is a plan built on what it did manage to read.
  */
 const RESEARCH_STEPS = 12;
+
+/**
+ * Pass two, with one correction turn.
+ *
+ * A reply can satisfy the schema and still not be a plan: `stepFromWire` refuses a
+ * payload that contradicts its own `kind`, and `loadable` refuses one the runner could
+ * not interpolate. Both used to throw straight out of a call that had already spent
+ * minutes researching, and take the research down with them -- so the refusal that
+ * exists to be loud was also the most expensive way to fail. Quoting the mistake back
+ * and asking once costs a reshape, which is what pass two is for. The CLI has done
+ * exactly this since M2 (`draft/prompt.go`'s `correction`); this is the same turn on
+ * the other side of the seam.
+ *
+ * Only a shape error earns the second call. A model or transport failure would spend
+ * the same minutes to fail the same way.
+ */
+async function shaped<T>(attempt: (correction: string) => Promise<T>): Promise<T> {
+  try {
+    return await attempt('');
+  } catch (error) {
+    if (!(error instanceof PlanShapeError)) throw error;
+    console.warn(`draft: ${error.message} -- asking for a correction`);
+    return attempt(
+      [
+        '',
+        `Your last answer did not load: ${error.message}`,
+        'Send the whole plan again with that fixed, and change nothing else about it.',
+      ].join('\n'),
+    );
+  }
+}
 
 /**
  * The rules of the house, and they are rules about the *product* rather than
@@ -227,27 +259,31 @@ export async function refinePlan(input: {
     /* Pass two. The tools are deliberately absent: this is a shaping call, and a
        model that can still reach for a file here will keep researching instead of
        committing to an answer. */
-    const shaped = await generateObject({
-      model,
-      schema: wireRevisionSchema,
-      system: context,
-      prompt: [
-        `The developer asked: "${input.instruction}"`,
-        '',
-        'What you found when you looked:',
-        investigation.text,
-        '',
-        `Write the plan as it should now read, in full, as version ${input.detail.version + 1}.`,
-        'Carry over every step the instruction does not touch, unchanged and with the',
-        'same ids, so that what you return is the whole plan and not a fragment of it.',
-        '',
-        'Then account for the difference: `summary` is what you changed and why,',
-        'addressed to the developer who asked, and `changes` is the same thing per',
-        'step so the diff can be read without prose.',
-      ].join('\n'),
+    const revision = await shaped(async (correction) => {
+      const out = await generateObject({
+        model,
+        schema: wireRevisionSchema,
+        system: context,
+        prompt: [
+          `The developer asked: "${input.instruction}"`,
+          '',
+          'What you found when you looked:',
+          investigation.text,
+          '',
+          `Write the plan as it should now read, in full, as version ${input.detail.version + 1}.`,
+          'Carry over every step the instruction does not touch, unchanged and with the',
+          'same ids, so that what you return is the whole plan and not a fragment of it.',
+          '',
+          'Then account for the difference: `summary` is what you changed and why,',
+          'addressed to the developer who asked, and `changes` is the same thing per',
+          'step so the diff can be read without prose.',
+          correction,
+        ].join('\n'),
+      });
+      return revisionFromWire(out.object);
     });
 
-    return { ...revisionFromWire(shaped.object), findings: investigation.text, modelLabel: label };
+    return { ...revision, findings: investigation.text, modelLabel: label };
   } finally {
     /* Always. An open session holds the project's SQLite handle and possibly a
        sandbox on the developer's machine, and a thrown error is exactly when
@@ -335,39 +371,43 @@ export async function draftPlan(input: {
       stopWhen: isStepCount(RESEARCH_STEPS),
     });
 
-    const shaped = await generateObject({
-      model,
-      schema: wireDraftSchema,
-      system: context,
-      prompt: [
-        `The developer asked for: "${input.brief}"`,
-        '',
-        'What you found when you looked:',
-        investigation.text,
-        '',
-        `The plan will run against ${input.baseUrl}, so every step's url is relative to that.`,
-        input.name
-          ? `The developer named it "${input.name}". Keep that name.`
-          : 'Name it yourself, after what it proves.',
-        '',
-        'Now write the plan: the steps in the order they have to happen, each one',
-        'depending on the steps whose output it needs, with the values a later step reads',
-        "declared in the earlier step's `extract`. Assert what the brief is actually about,",
-        'and abort rather than continue where a failure makes everything after it noise.',
-        '',
-        'Write out what each request actually sends. A step whose body, headers or query',
-        'you leave empty is a step that will be called empty: a sign-up with no fields, an',
-        'authenticated route with no credential on it. Put the values a run is given in',
-        '`variables` and refer to them as {{name}} instead of writing a literal, and where',
-        'you are checking a value the plan itself supplied, assert against that {{name}} or',
-        'against what an earlier step extracted rather than against a copy of it.',
-        '',
-        'Only steps you can justify from what you read. A plan of four real requests is',
-        'worth more than one of nine where five were guessed at.',
-      ].join('\n'),
+    const draft = await shaped(async (correction) => {
+      const out = await generateObject({
+        model,
+        schema: wireDraftSchema,
+        system: context,
+        prompt: [
+          `The developer asked for: "${input.brief}"`,
+          '',
+          'What you found when you looked:',
+          investigation.text,
+          '',
+          `The plan will run against ${input.baseUrl}, so every step's url is relative to that.`,
+          input.name
+            ? `The developer named it "${input.name}". Keep that name.`
+            : 'Name it yourself, after what it proves.',
+          '',
+          'Now write the plan: the steps in the order they have to happen, each one',
+          'depending on the steps whose output it needs, with the values a later step reads',
+          "declared in the earlier step's `extract`. Assert what the brief is actually about,",
+          'and abort rather than continue where a failure makes everything after it noise.',
+          '',
+          'Write out what each request actually sends. A step whose body, headers or query',
+          'you leave empty is a step that will be called empty: a sign-up with no fields, an',
+          'authenticated route with no credential on it. Put the values a run is given in',
+          '`variables` and refer to them as {{name}} instead of writing a literal, and where',
+          'you are checking a value the plan itself supplied, assert against that {{name}} or',
+          'against what an earlier step extracted rather than against a copy of it.',
+          '',
+          'Only steps you can justify from what you read. A plan of four real requests is',
+          'worth more than one of nine where five were guessed at.',
+          correction,
+        ].join('\n'),
+      });
+      return draftFromWire(out.object);
     });
 
-    return { ...draftFromWire(shaped.object), findings: investigation.text, modelLabel: label };
+    return { ...draft, findings: investigation.text, modelLabel: label };
   } finally {
     await research.close().catch(() => {});
   }

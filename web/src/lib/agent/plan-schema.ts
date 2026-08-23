@@ -365,8 +365,14 @@ const wireStepSchema = stepSchema.omit({ kind: true, request: true, action: true
      action and an action step has no request, and there is no empty value for a URL.
      `kind` is what pays for that: a step whose payload does not match what it says it
      is fails loudly in `stepFromWire` rather than arriving as a blank request. */
-  request: wireRequestSchema.optional(),
-  action: wireActionSchema.optional(),
+  request: wireRequestSchema
+    .optional()
+    .describe('Required on every http step, and left out entirely on a sql or shell one.'),
+  action: wireActionSchema
+    .optional()
+    .describe(
+      'Required on every sql and shell step -- a sql step without a statement or a shell step without a command is refused, not defaulted -- and left out entirely on an http one.',
+    ),
 });
 
 const wireVariables = entries(
@@ -416,6 +422,20 @@ function body(json: string, stepId: string): Record<string, unknown> | undefined
 }
 
 /**
+ * A reply that matched the schema and still could not become a plan.
+ *
+ * Named so a caller can tell it from a model or a transport failure, because the two
+ * want opposite handling: this one is worth one more turn with the mistake quoted
+ * back, and a timeout is worth the same wait again for the same outcome.
+ */
+export class PlanShapeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlanShapeError';
+  }
+}
+
+/**
  * A drafted step in the shape the dashboard stores and the runner reads.
  *
  * Loud rather than lenient about a payload that does not match what the step says it
@@ -430,7 +450,7 @@ function stepFromWire(step: z.infer<typeof wireStepSchema>): z.infer<typeof step
   const { kind, request, action, ...common } = step;
 
   const wrong = (what: string) =>
-    new Error(`plan-schema: step ${step.id} says kind "${kind}" and ${what}`);
+    new PlanShapeError(`plan-schema: step ${step.id} says kind "${kind}" and ${what}`);
 
   const allowed: readonly PlanAssertion['type'][] = ASSERTIONS_BY_KIND[kind];
   for (const assertion of common.assertions) {
@@ -490,7 +510,7 @@ function loadable<T extends { variables: Record<string, string>; steps: PlanStep
   plan: T,
 ): T {
   const bad = unloadable(plan);
-  if (bad) throw new Error(`plan-schema: ${bad}`);
+  if (bad) throw new PlanShapeError(`plan-schema: ${bad}`);
   return plan;
 }
 
