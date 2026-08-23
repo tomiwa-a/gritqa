@@ -83,6 +83,95 @@ func TestAllowedIgnoresHowANumberWasSpelt(t *testing.T) {
 	}
 }
 
+func sqlStep(target plan.Target) plan.Step {
+	return plan.Step{
+		ID: "q1", Name: "the booking landed", DependsOn: []string{},
+		Kind: plan.SQLStep,
+		Action: &plan.Action{
+			Statement: "SELECT count(*) AS n FROM bookings WHERE guest_id = '{{guestId}}'",
+			Target:    target,
+		},
+		Extract:    []plan.Extraction{{Name: "n", Path: "row.n", Source: plan.FromResult}},
+		Assertions: []plan.Assertion{{Type: plan.RowCount, Operator: plan.Equals, Target: "rowCount", Expected: float64(1)}},
+		OnFailure:  plan.Abort,
+	}
+}
+
+func shellStep() plan.Step {
+	return plan.Step{
+		ID: "c1", Name: "the queue drained", DependsOn: []string{},
+		Kind:       plan.ShellStep,
+		Action:     &plan.Action{Command: "php artisan queue:work --once"},
+		Assertions: []plan.Assertion{{Type: plan.ExitCode, Operator: plan.Equals, Target: "exitCode", Expected: float64(0)}},
+		OnFailure:  plan.Abort,
+	}
+}
+
+// The same guarantee, for the kinds whose evidence is not a response. Freezing
+// expected is worth nothing on a verify step if the query it is read against can be
+// rewritten: WHERE 1=1 satisfies rowCount 1 without proving the booking exists, and
+// `true` exits 0 without running anything. A setup statement is the other case — it
+// is how the plan builds state, and a repair that breaks one fails the steps that
+// needed it rather than passing this one.
+func TestAllowedFreezesTheEvidenceANonHTTPStepIsGradedOn(t *testing.T) {
+	cases := []struct {
+		what   string
+		before plan.Step
+		edit   func(*plan.Step)
+		ok     bool
+	}{
+		{"a verify extraction path", sqlStep(plan.Verify),
+			func(s *plan.Step) { s.Extract[0].Path = "rows[0].n" }, true},
+		{"a mistyped column in a setup statement", sqlStep(plan.Setup),
+			func(s *plan.Step) { s.Action.Statement = "INSERT INTO bookings (guest_id) VALUES ('g_1')" }, true},
+
+		{"a rewritten verify statement", sqlStep(plan.Verify),
+			func(s *plan.Step) { s.Action.Statement = "SELECT 1 AS n" }, false},
+		{"a verify turned into a setup", sqlStep(plan.Verify),
+			func(s *plan.Step) { s.Action.Target = plan.Setup }, false},
+		{"a rewritten command", shellStep(),
+			func(s *plan.Step) { s.Action.Command = "true" }, false},
+		{"a dropped action", shellStep(),
+			func(s *plan.Step) { s.Action = nil }, false},
+		{"a sql step turned into a request", sqlStep(plan.Verify),
+			func(s *plan.Step) { s.Kind = plan.HTTPStep }, false},
+		{"a request turned into a shell step", step("s1"),
+			func(s *plan.Step) {
+				s.Kind = plan.ShellStep
+				s.Action = &plan.Action{Command: "true"}
+			}, false},
+	}
+
+	for _, c := range cases {
+		after := c.before
+		// The action is a pointer, so the copy shares it until the edit gets its own.
+		if c.before.Action != nil {
+			a := *c.before.Action
+			after.Action = &a
+		}
+		after.Extract = append([]plan.Extraction(nil), c.before.Extract...)
+		c.edit(&after)
+		err := Allowed(c.before, after)
+		if c.ok && err != nil {
+			t.Errorf("%s should be allowed: %v", c.what, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s should have been refused", c.what)
+		}
+	}
+}
+
+// A plan written before there was more than one kind carries no kind at all, so the
+// absent one and "http" have to read as the same step or every fix to an old plan is
+// refused as a restructuring.
+func TestAllowedTreatsAnAbsentKindAsHTTP(t *testing.T) {
+	after := step("s1")
+	after.Kind = plan.HTTPStep
+	if err := Allowed(step("s1"), after); err != nil {
+		t.Fatalf("an absent kind and http are the same step: %v", err)
+	}
+}
+
 // scripted answers one fix per call, in order.
 type scripted struct {
 	fixes []*Fix

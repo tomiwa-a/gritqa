@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -85,6 +86,11 @@ func Allowed(before, after plan.Step) error {
 		return errChanged("onFailure")
 	case !reflect.DeepEqual(after.Retry, before.Retry):
 		return errChanged("retry")
+	case kindOf(after) != kindOf(before):
+		return errChanged("kind")
+	}
+	if err := allowedAction(before, after); err != nil {
+		return err
 	}
 
 	if len(after.Assertions) != len(before.Assertions) {
@@ -103,6 +109,34 @@ func Allowed(before, after plan.Step) error {
 			return fmt.Errorf("assertion %d moved expected from %v to %v — that is a claim about "+
 				"what the code should do, and yours to make", i+1, b.Expected, a.Expected)
 		}
+	}
+	return nil
+}
+
+// allowedAction freezes what a step runs when its assertions are read against
+// that rather than against a response. rowCount 1 over a rewritten query is a
+// different claim, and exitCode 0 from a rewritten command proves nothing that was
+// asked for, so both are frozen for the reason expected is. A setup statement is
+// the means and not the claim — a repair that breaks one fails the steps that
+// needed the state, not this one — so a mistyped column there is still fixable, and
+// so is an extraction path on any kind.
+func allowedAction(before, after plan.Step) error {
+	a, b := after.Action, before.Action
+	if a == nil && b == nil {
+		return nil
+	}
+	if a == nil || b == nil {
+		return errChanged("what the step runs")
+	}
+	if a.Target != b.Target {
+		return errChanged("target")
+	}
+	if b.Target != plan.Verify && kindOf(before) != plan.ShellStep {
+		return nil
+	}
+	if a.Statement != b.Statement || a.Command != b.Command {
+		return errors.New("it rewrote what the step runs, and the assertions are read against " +
+			"that — a different query or command is a different claim, and yours to make")
 	}
 	return nil
 }
