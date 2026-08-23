@@ -121,6 +121,22 @@ type SchemaStep struct {
 	Run     []string `yaml:"run,omitempty"`
 }
 
+// EnvironmentBlock renders an environment as the block that puts it in effect.
+// A proposal is recorded as JSON and approved by hand in YAML, so whoever
+// approves one would otherwise be guessing at the shape.
+func EnvironmentBlock(e Environment) string {
+	var b strings.Builder
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2)
+	if enc.Encode(map[string]any{
+		"run": map[string]any{"sandbox": map[string]any{"environment": e}},
+	}) != nil {
+		return ""
+	}
+	enc.Close()
+	return b.String()
+}
+
 // The keys a run used to read. GritQA brought its own database up once and had to
 // be told which image, which schema commands, which writable paths; every one of
 // those is now the developer's compose file's answer. Ignoring them in silence

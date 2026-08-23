@@ -115,6 +115,20 @@ func fromConfig(e config.Environment) sandbox.Environment {
 	return out
 }
 
+// toConfig is fromConfig backwards, for rendering a proposal as the block that
+// approves it.
+func toConfig(e sandbox.Environment) config.Environment {
+	out := config.Environment{
+		App: e.App, Port: e.Port, Database: e.Database, DBPort: e.DBPort,
+		Driver: e.Driver, Writable: e.Writable,
+		Login: config.Login{User: e.Login.User, Password: e.Login.Password, Name: e.Login.Name},
+	}
+	for _, s := range e.Schema {
+		out.Schema = append(out.Schema, config.SchemaStep{Service: s.Service, Run: s.Run})
+	}
+	return out
+}
+
 // reset returns the copy to what the project's own schema steps produce. Always,
 // before the walk: the read tools reach this same copy, and a plan that passes on
 // a row research left behind is worse than one that fails.

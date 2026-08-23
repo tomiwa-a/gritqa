@@ -89,26 +89,33 @@ func (b *serve) Environment(ctx context.Context) (*sandbox.Environment, error) {
 	return sandbox.DecodeEnvironment(body)
 }
 
-func (b *serve) Propose(_ context.Context, e sandbox.Environment) error {
+// Propose records a proposal and returns the block that approves it, which is
+// also what it prints: the person who has to accept this reads a terminal, and
+// nothing else here tells them what to write.
+func (b *serve) Propose(_ context.Context, e sandbox.Environment) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.store == nil {
-		return errors.New("the local cache is not open, so there is nowhere to record a proposal")
+		return "", errors.New("the local cache is not open, so there is nowhere to record a proposal")
 	}
 	body, err := e.Encode()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := b.store.SaveEnvironmentProposal(e.Fingerprint, e.Author, body); err != nil {
-		return err
+		return "", err
 	}
+	accept := config.EnvironmentBlock(toConfig(e))
 	b.w.Write(term.Line{
 		Kind: term.Info,
-		Text: fmt.Sprintf("the agent worked out how this project boots — %s. Accept it in %s, "+
-			"and until then no run boots on it", e.Describe(), config.Name),
+		Text: fmt.Sprintf("the agent worked out how this project boots — %s. No run boots on it "+
+			"until this is in %s:", e.Describe(), config.Name),
 	})
-	return nil
+	for _, line := range strings.Split(strings.TrimRight(accept, "\n"), "\n") {
+		b.w.Write(term.Line{Kind: term.Out, Text: line})
+	}
+	return accept, nil
 }
 
 // Sandbox answers with what is up and starts nothing. A tool that reads should

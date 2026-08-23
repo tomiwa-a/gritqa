@@ -14,6 +14,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/index/routes"
 	"github.com/gritqa/cli/internal/plan"
@@ -57,10 +58,14 @@ func (s *stub) Compose(context.Context) (*sandbox.Compose, error) {
 
 func (s *stub) Environment(context.Context) (*sandbox.Environment, error) { return s.env, nil }
 
-func (s *stub) Propose(_ context.Context, e sandbox.Environment) error {
+func (s *stub) Propose(_ context.Context, e sandbox.Environment) (string, error) {
 	s.proposed = &e
-	return nil
+	return acceptBlock, nil
 }
+
+// What the real backend renders for a human to paste. It is asserted here because
+// a proposal recorded and never shown is a proposal nobody can approve.
+const acceptBlock = "run:\n  sandbox:\n    environment:\n      app: web\n"
 
 func (s *stub) RunPlan(_ context.Context, p *plan.Plan) (*run.Result, error) {
 	s.ran = p.Name
@@ -481,6 +486,14 @@ func TestDeriveEnvironmentChecksShapeAndNotJudgement(t *testing.T) {
 	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": ok})
 	if !got.Proposed {
 		t.Fatal("a well-shaped answer was not recorded")
+	}
+	// The agent records JSON; the human approves YAML. Handing back the block is
+	// what stops them guessing at its shape.
+	if got.Accept != acceptBlock {
+		t.Errorf("Accept = %q, want the block that approves the proposal", got.Accept)
+	}
+	if !strings.Contains(got.Note, config.Name) {
+		t.Errorf("the note does not say where the block goes: %q", got.Note)
 	}
 }
 

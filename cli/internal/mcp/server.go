@@ -36,8 +36,9 @@ type Backend interface {
 	// nil when nobody has: GritQA does not answer this for itself.
 	Environment(ctx context.Context) (*sandbox.Environment, error)
 	// Propose records an environment the agent worked out. It is pending until a
-	// human approves it, and no run boots on it before then.
-	Propose(ctx context.Context, e sandbox.Environment) error
+	// human approves it, and what comes back is the block that approves it: the
+	// agent is talking to someone who would otherwise have to guess the shape.
+	Propose(ctx context.Context, e sandbox.Environment) (accept string, err error)
 	// RunPlan executes an approved plan, with repair and the state ledger wired
 	// exactly as --plan wires them.
 	RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error)

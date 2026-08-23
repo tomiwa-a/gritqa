@@ -14,6 +14,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/plan"
 	"github.com/gritqa/cli/internal/run"
@@ -638,7 +639,10 @@ type envOut struct {
 	Compose     string               `json:"compose_fingerprint,omitempty"`
 	Stale       bool                 `json:"describes_an_older_compose_file,omitempty"`
 	Proposed    bool                 `json:"recorded_as_proposal,omitempty"`
-	Note        string               `json:"note"`
+	// Accept is the config block that puts a proposal in effect. Nothing acts on
+	// it here: it is what to show the human who has to approve it.
+	Accept string `json:"accept_by_adding_to_config,omitempty"`
+	Note   string `json:"note"`
 }
 
 func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, in envIn) (*sdk.CallToolResult, envOut, error) {
@@ -673,12 +677,14 @@ func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, 
 	if err := proposed.Check(got); err != nil {
 		return nil, envOut{}, err
 	}
-	if err := s.back.Propose(ctx, proposed); err != nil {
+	accept, err := s.back.Propose(ctx, proposed)
+	if err != nil {
 		return nil, envOut{}, err
 	}
 	s.log("the agent worked out an environment: " + proposed.Describe())
 	note := "Recorded as a proposal, and not in effect: no run boots on it until a human " +
-		"approves it. Nothing was started."
+		"approves it by adding accept_by_adding_to_config to " + config.Name +
+		" — show them that block. Nothing was started."
 	if proposed.Database != "" && !proposed.Watched() {
 		note += fmt.Sprintf(" This build has no %s client, so a run will bring %s up and take no "+
 			"readings of its own from it — the ledger will say so rather than imply the data was "+
@@ -686,7 +692,8 @@ func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, 
 			proposed.Driver, proposed.Database, proposed.Database)
 	}
 	return nil, envOut{
-		Environment: &proposed, Compose: got.Fingerprint, Proposed: true, Note: note,
+		Environment: &proposed, Compose: got.Fingerprint, Proposed: true,
+		Accept: accept, Note: note,
 	}, nil
 }
 
