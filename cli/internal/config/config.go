@@ -28,7 +28,8 @@ type Config struct {
 	Endpoints *Endpoints `yaml:"endpoints,omitempty"`
 	Run       *Run       `yaml:"run,omitempty"`
 
-	root string `yaml:"-"`
+	root    string   `yaml:"-"`
+	retired []string `yaml:"-"`
 }
 
 // Endpoints overrides how GritQA discovers the project's endpoints, for the
@@ -54,15 +55,11 @@ func (c *Config) EndpointOpts() Endpoints {
 
 // Run describes how to bring the user's API up for a test run.
 type Run struct {
-	// Start launches the API. Empty means the user starts it themselves and
-	// GritQA just calls BaseURL.
-	Start   string            `yaml:"start"`
-	Port    int               `yaml:"port"`
-	BaseURL string            `yaml:"base_url,omitempty"`
-	Ready   string            `yaml:"ready,omitempty"` // "GET /health"
-	Migrate string            `yaml:"migrate,omitempty"`
-	Seed    string            `yaml:"seed,omitempty"`
-	Env     map[string]string `yaml:"env,omitempty"`
+	// Port and BaseURL say where the API is when a run goes against one already
+	// running. With run.sandbox set, compose decides both.
+	Port    int    `yaml:"port,omitempty"`
+	BaseURL string `yaml:"base_url,omitempty"`
+	Ready   string `yaml:"ready,omitempty"` // "GET /health"
 	// Variables are values a plan reads as {{name}}. A value of $NAME or ${NAME}
 	// is read from the environment at run time, so an admin password is named
 	// here and kept out of a file that gets committed.
@@ -72,53 +69,26 @@ type Run struct {
 	Sandbox   *Sandbox          `yaml:"sandbox,omitempty"`
 }
 
-// Sandbox is the throwaway database GritQA creates for a run. With it set, a run
-// never touches the user's own database and needs no credential from them: GritQA
-// generates the password because it owns the instance.
+// Sandbox turns a run into a copy of the project brought up on its own compose
+// file. Nothing here describes how it boots: that is what the compose file says,
+// and Environment is who read it.
 type Sandbox struct {
 	// Compose names the project's compose files, relative to the project root.
 	// Empty means compose's own lookup order, tried at the project root and then
 	// at the mount.
 	Compose []string `yaml:"compose,omitempty"`
-	// Image is "mysql:8" shaped. Set it and the sandbox is on.
-	Image string `yaml:"image"`
-	// Database names the schema created inside it, "gritqa" when unset.
-	Database string `yaml:"database,omitempty"`
-	// Docroot holds the front controller, relative to the project root. It is what
-	// $DOCROOT is set to for the serve command.
-	Docroot string `yaml:"docroot,omitempty"`
+	// Mount is the directory that holds the project, relative to the project root.
+	// It defaults to the git root, because a compose file usually sits there while
+	// .gritqa sits in a subdirectory.
+	Mount string `yaml:"mount,omitempty"`
 	// Tables limits what the state ledger watches. Empty watches every table.
 	Tables []string `yaml:"tables,omitempty"`
-	// Watch names directories to count files in, relative to the project root.
-	Watch []string `yaml:"watch,omitempty"`
-	// Writable are directories the app may write to. The source is mounted
-	// read-only, so each of these becomes a volume GritQA owns instead. Separate
-	// from Watch on purpose: a cache directory has to be writable and is noise in
-	// a ledger, and a directory worth watching is not automatically one worth
-	// letting the app write to.
-	Writable []string `yaml:"writable,omitempty"`
 
 	// Environment is what someone worked out about the project's compose file, and
 	// the only thing that lets a run boot: GritQA does not decide which service is
 	// the app. The agent proposes one through derive_environment, and this is where
 	// a human accepts it.
 	Environment *Environment `yaml:"environment,omitempty"`
-
-	// Runtime is auto, host, an image reference, or a path to a Dockerfile. host
-	// is the escape hatch: GritQA runs run.start on this machine instead.
-	Runtime string `yaml:"runtime,omitempty"`
-	// Recipe is refresh, reuse or always — what a changed fingerprint means.
-	Recipe string `yaml:"recipe,omitempty"`
-	// Mount is the directory the container sees as the project, relative to the
-	// project root. It defaults to the git root, because a migration calling
-	// ../vendor/bin/phinx has to still resolve.
-	Mount string `yaml:"mount,omitempty"`
-	// Workdir is where commands run, relative to Mount. It defaults to wherever
-	// the project root sits inside the mount.
-	Workdir string `yaml:"workdir,omitempty"`
-	// Install builds the dependencies into the image instead of mounting the
-	// host's, which is what a native extension compiled for macOS needs.
-	Install string `yaml:"install,omitempty"`
 }
 
 // Environment mirrors sandbox.Environment in YAML. It is a separate declaration
@@ -151,20 +121,17 @@ type SchemaStep struct {
 	Run     []string `yaml:"run,omitempty"`
 }
 
-// RecipeMode is what to do with a cached recipe: reuse it regardless, re-derive
-// always, or refresh when the environment's own files changed.
-func (s Sandbox) RecipeMode() string {
-	switch mode := strings.ToLower(strings.TrimSpace(s.Recipe)); mode {
-	case "reuse", "always":
-		return mode
-	}
-	return "refresh"
+// The keys a run used to read. GritQA brought its own database up once and had to
+// be told which image, which schema commands, which writable paths; every one of
+// those is now the developer's compose file's answer. Ignoring them in silence
+// would leave someone believing image: still chose something.
+var retired = map[string][]string{
+	"run":         {"start", "migrate", "seed", "env"},
+	"run.sandbox": {"image", "database", "docroot", "watch", "writable", "runtime", "recipe", "workdir", "install"},
 }
 
-// OnHost is runtime: host — no container for the app, and run.start is required.
-func (s Sandbox) OnHost() bool {
-	return strings.EqualFold(strings.TrimSpace(s.Runtime), "host")
-}
+// Retired names the keys in this file that nothing reads any more.
+func (c *Config) Retired() []string { return c.retired }
 
 // Sandboxed is true when a run should bring up its own copy of the project.
 // Nil-safe, because run: is itself optional.
@@ -302,7 +269,39 @@ func Load(root string) (*Config, error) {
 		return nil, fmt.Errorf("%s has no project name", filepath.Join(Dir, Name))
 	}
 	c.root = root
+	c.retired = retiredIn(b)
 	return &c, nil
+}
+
+// retiredIn re-reads the file as a bare map, because a key nothing decodes into
+// leaves no trace in the struct.
+func retiredIn(b []byte) []string {
+	var raw struct {
+		Run map[string]yaml.Node `yaml:"run"`
+	}
+	if yaml.Unmarshal(b, &raw) != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range retired["run"] {
+		if _, ok := raw.Run[k]; ok {
+			out = append(out, "run."+k)
+		}
+	}
+	node, ok := raw.Run["sandbox"]
+	if !ok {
+		return out
+	}
+	var box map[string]yaml.Node
+	if node.Decode(&box) != nil {
+		return out
+	}
+	for _, k := range retired["run.sandbox"] {
+		if _, ok := box[k]; ok {
+			out = append(out, "run.sandbox."+k)
+		}
+	}
+	return out
 }
 
 // New builds the config first run writes: project name from the directory,

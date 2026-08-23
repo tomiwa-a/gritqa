@@ -259,3 +259,12 @@ func sameJSON(a, b any) bool {
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
 }
+
+func contains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}

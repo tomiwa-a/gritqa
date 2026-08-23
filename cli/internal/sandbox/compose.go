@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -102,6 +104,47 @@ type Need struct {
 	Service   string `json:"service"`
 	Condition string `json:"condition,omitempty"`
 	Required  bool   `json:"required"`
+}
+
+func fileSum(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", nil
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// MountRoot is the directory that holds the project: the git root by default,
+// because that is where a compose file and a project's manifests sit even when
+// .gritqa is in a subdirectory of it.
+func MountRoot(root, configured string) string {
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			return filepath.Clean(configured)
+		}
+		return filepath.Clean(filepath.Join(root, configured))
+	}
+	for dir := filepath.Clean(root); ; {
+		if exists(filepath.Join(dir, ".git")) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Clean(root)
+		}
+		dir = parent
+	}
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // composeFiles is compose's own default lookup order.

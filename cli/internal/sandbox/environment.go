@@ -172,6 +172,13 @@ func (e Environment) Resolve(c *Compose) (Creds, error) {
 // datastore is still queried through the client its own image ships.
 func (e Environment) Watched() bool { return e.Database != "" && Linked(e.Driver) }
 
+// The two authors an environment can have. There is no third: GritQA does not
+// work one out for itself, which is the whole point of the seam.
+const (
+	AuthorConfig = "config"
+	AuthorAgent  = "agent"
+)
+
 // Describe is the one line a transcript prints about how a run was brought up.
 func (e Environment) Describe() string {
 	what := fmt.Sprintf("%s on %d", e.App, e.Port)

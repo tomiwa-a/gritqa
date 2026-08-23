@@ -106,6 +106,32 @@ volumes:
 	}
 	t.Cleanup(func() { st.Down(t.Context()) })
 
+	// The generated document carries the developer's password, because compose
+	// resolved ${PW} to write it. It is 0600 in GritQA's own directory, never in
+	// their tree, and it does not outlive the run.
+	const pw = "fixture-only-password"
+	generated, stackDir := st.files[0], st.dir
+	doc, err := os.ReadFile(generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(doc), pw) {
+		t.Error("the generated document carries no credential, so this asserts nothing")
+	}
+	if filepath.Dir(generated) != stackDir || strings.HasPrefix(generated, dir) {
+		t.Errorf("the generated document is at %s", generated)
+	}
+	info, err := os.Stat(generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("the generated document is %o, want 600", mode)
+	}
+	if got := st.Secrets(); len(got) != 1 || got[0] != pw {
+		t.Errorf("Secrets() = %v, want the value a step's report is masked against", got)
+	}
+
 	// Nothing of the original's is reused, starting with the ports it declares.
 	if st.appPort == 8099 || st.dbPort == 5439 {
 		t.Errorf("the copy took the original's ports: app %d db %d", st.appPort, st.dbPort)
@@ -177,6 +203,9 @@ volumes:
 	}
 	if out := volumes(t, st.project); out != "" {
 		t.Errorf("teardown left volumes: %s", out)
+	}
+	if _, err := os.Stat(stackDir); !os.IsNotExist(err) {
+		t.Errorf("the generated document outlived the run: %v", err)
 	}
 }
 

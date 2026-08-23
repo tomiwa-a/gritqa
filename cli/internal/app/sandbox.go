@@ -18,6 +18,11 @@ import (
 // a run is measured against. It is a copy in the strict sense — its own project
 // name, its own volumes, its own ports — so whatever they have running is untouched.
 func stage(ctx context.Context, w *term.Writer, cfg *config.Config, store *index.Store) (*sandbox.Stack, error) {
+	if got := cfg.Retired(); len(got) > 0 {
+		w.Write(term.Line{Kind: term.Info, Text: strings.Join(got, ", ") + " no longer mean " +
+			"anything: a run boots your compose file, so the image, the schema commands and the " +
+			"writable paths are whatever it and run.sandbox.environment say"})
+	}
 	c, err := composeFor(ctx, cfg)
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,11 +93,17 @@ func TestLoadRoundTripsRunBlock(t *testing.T) {
 	root := t.TempDir()
 	cfg := New(root, "main")
 	cfg.Run = &Run{
-		Start:   "go run ./cmd/api",
-		Port:    8080,
-		Ready:   "GET /health",
-		Migrate: "go run ./cmd/migrate up",
-		Env:     map[string]string{"DATABASE_URL": "$GRITQA_DATABASE_URL"},
+		Port:      8080,
+		Ready:     "GET /health",
+		Variables: map[string]string{"adminPassword": "$GRITQA_ADMIN_PASSWORD"},
+		Sandbox: &Sandbox{
+			Compose: []string{"compose.yaml"},
+			Environment: &Environment{
+				App: "web", Port: 80, Database: "db", DBPort: 3306, Driver: "mysql",
+				Login:  Login{User: "$DB_USER", Password: "$DB_PASSWORD", Name: "$DB_NAME"},
+				Schema: []SchemaStep{{Service: "migrate"}, {Service: "web", Run: []string{"sh", "-c", "seed"}}},
+			},
+		},
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -106,17 +113,48 @@ func TestLoadRoundTripsRunBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Run == nil {
+	if got.Run == nil || !got.Run.Sandboxed() {
 		t.Fatal("run block was lost")
 	}
-	if got.Run.Start != cfg.Run.Start || got.Run.Port != 8080 {
+	if got.Run.Port != 8080 || got.Run.Variables["adminPassword"] != "$GRITQA_ADMIN_PASSWORD" {
 		t.Errorf("got %+v", got.Run)
 	}
-	if got.Run.Env["DATABASE_URL"] != "$GRITQA_DATABASE_URL" {
-		t.Errorf("env lost: %+v", got.Run.Env)
+	e := got.Run.SandboxOpts().Environment
+	if e == nil || e.App != "web" || e.Login.Password != "$DB_PASSWORD" {
+		t.Fatalf("the environment did not survive: %+v", e)
 	}
-	if got.Run.Seed != "" {
-		t.Errorf("empty seed should stay empty, got %q", got.Run.Seed)
+	// A credential is named, never carried: it is read out of the database service's
+	// own environment once the copy is up.
+	if len(e.Schema) != 2 || e.Schema[1].Run[2] != "seed" {
+		t.Errorf("the schema steps did not survive: %+v", e.Schema)
+	}
+	if len(got.Retired()) != 0 {
+		t.Errorf("a config of only live keys reports %v as retired", got.Retired())
+	}
+}
+
+// A retired key decodes into nothing, so without this it would go on sitting in
+// someone's file looking like it still chose the image.
+func TestRetiredKeysAreNamed(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, Dir, Name), `project: hotel-api
+run:
+  port: 8080
+  migrate: phinx migrate
+  sandbox:
+    image: mysql:8
+    tables: [guests]
+`)
+	got, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"run.migrate", "run.sandbox.image"}
+	if fmt.Sprint(got.Retired()) != fmt.Sprint(want) {
+		t.Errorf("Retired() = %v, want %v", got.Retired(), want)
+	}
+	if got.Run.Port != 8080 || len(got.Run.SandboxOpts().Tables) != 1 {
+		t.Error("the live keys beside them stopped being read")
 	}
 }
 
