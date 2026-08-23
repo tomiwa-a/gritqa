@@ -121,11 +121,77 @@ func Reported(instanceID string, p *plan.Plan, base string, res *run.Result, con
 		Moved:       units(res.Moved),
 		StateNote:   cut(res.StateErr, maxMessage),
 	}
-	if dropped > 0 {
-		rep.ErrorMessage = fmt.Sprintf("this run had %d steps and %d of them are not reported here",
-			len(steps), dropped)
+
+	var notes []string
+	if r := why(steps); r != "" {
+		notes = append(notes, r)
 	}
+	if dropped > 0 {
+		notes = append(notes, fmt.Sprintf("this run had %d steps and %d of them are not reported here",
+			len(steps), dropped))
+	}
+	rep.ErrorMessage = cut(strings.Join(notes, " — "), maxMessage)
 	return rep
+}
+
+// why is the reason a run did not pass, read off the first step that did not. The
+// step rows carry the same thing, but they are what fit() may have dropped, and a
+// run whose error_message is empty reads on the dashboard as a failure with no
+// cause -- which is what sent the user here to ask why.
+func why(steps []Step) string {
+	first, others := "", 0
+	for _, s := range steps {
+		r := reason(s)
+		if r == "" {
+			continue
+		}
+		if first == "" {
+			first = s.StepName + ": " + r
+			continue
+		}
+		others++
+	}
+	if others > 0 {
+		return fmt.Sprintf("%s (and %d more steps did not pass)", first, others)
+	}
+	return first
+}
+
+func reason(s Step) string {
+	switch s.Status {
+	case string(run.StepError), string(run.StepSkipped):
+		return s.ErrorMessage
+	case string(run.StepFailed):
+		var out []string
+		for _, c := range s.Assertions {
+			if !c.Passed {
+				out = append(out, unmet(c))
+			}
+		}
+		if len(out) == 0 {
+			return s.ErrorMessage
+		}
+		return strings.Join(out, "; ")
+	}
+	return ""
+}
+
+// unmet says what one assertion wanted and what it got. Deliberately the wire's
+// own words -- type, operator, expected -- rather than the operator prose the
+// terminal prints: that map is presentation and lives with the renderer.
+func unmet(c Check) string {
+	target := c.Target
+	if target == "" {
+		target = c.Type
+	}
+	if c.Operator == string(plan.Exists) {
+		return "expected " + target + " to be there, and it was not"
+	}
+	got := c.Actual
+	if got == "" {
+		got = "nothing"
+	}
+	return fmt.Sprintf("expected %s %s %s, got %s", target, c.Operator, c.Expected, got)
 }
 
 func step(i int, s run.StepResult, declared plan.Step, base string) Step {

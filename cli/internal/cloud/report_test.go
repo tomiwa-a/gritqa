@@ -41,6 +41,54 @@ func TestReportedKeepsThePlansURL(t *testing.T) {
 	}
 }
 
+// A failed run with a blank error_message is a run the dashboard cannot explain,
+// which is how a real one reached the user: the step row held "Unknown column
+// 'name'" and the execution row held nothing.
+func TestReportedSaysWhyARunDidNotPass(t *testing.T) {
+	res := &run.Result{Plan: "p", Status: run.RunFailed, Steps: []run.StepResult{
+		{ID: "one", Name: "seed the roles", Kind: plan.SQLStep, Status: run.StepError,
+			Err: "Error 1054: Unknown column 'name' in 'field list'"},
+		{ID: "two", Name: "sign in", Status: run.StepSkipped, Err: "one did not pass"},
+	}}
+
+	rep := Reported("machine", nil, "http://x", res, "")
+	if !strings.Contains(rep.ErrorMessage, "Unknown column") {
+		t.Fatalf("errorMessage = %q, want the reason the first step gave", rep.ErrorMessage)
+	}
+	if !strings.Contains(rep.ErrorMessage, "1 more") {
+		t.Fatalf("errorMessage = %q, want the steps that never ran counted", rep.ErrorMessage)
+	}
+}
+
+// A failing assertion is the other half: nothing errored, the response was simply
+// not what the plan claimed.
+func TestReportedSaysWhichAssertionWentUnmet(t *testing.T) {
+	res := &run.Result{Plan: "p", Status: run.RunFailed, Steps: []run.StepResult{{
+		ID: "one", Name: "book a room", Status: run.StepFailed, Code: 500,
+		Checks: []run.Check{
+			{Type: plan.Status, Operator: plan.Equals, Target: "status", Expected: "201", Actual: "500", Passed: false, Found: true},
+			{Type: plan.BodyField, Operator: plan.Exists, Target: "data.id", Passed: false},
+		},
+	}}}
+
+	rep := Reported("machine", nil, "http://x", res, "")
+	for _, want := range []string{"book a room", "expected status equals 201, got 500", "data.id"} {
+		if !strings.Contains(rep.ErrorMessage, want) {
+			t.Fatalf("errorMessage = %q, want %q in it", rep.ErrorMessage, want)
+		}
+	}
+}
+
+// And a run that passed says nothing, or every green run carries a reason it failed.
+func TestReportedLeavesAPassedRunWithNoReason(t *testing.T) {
+	res := &run.Result{Plan: "p", Status: run.RunPassed, Steps: []run.StepResult{
+		{ID: "one", Name: "book a room", Status: run.StepPassed, Code: 201},
+	}}
+	if rep := Reported("machine", nil, "http://x", res, ""); rep.ErrorMessage != "" {
+		t.Fatalf("errorMessage = %q, want empty", rep.ErrorMessage)
+	}
+}
+
 // The route refuses a failed run with no failing step, so trimming to its ceiling
 // has to keep one.
 func TestFitKeepsAFailingStep(t *testing.T) {

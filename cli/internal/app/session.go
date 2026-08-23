@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gritqa/cli/internal/agent"
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/index"
 	"github.com/gritqa/cli/internal/plan"
@@ -105,6 +106,14 @@ type prepared struct {
 	stack     *sandbox.Stack
 	vars      map[string]string
 	secrets   []string
+
+	// judge is the repair half, nil when no model is reachable. A run that arrived
+	// over the wire gets one for the same reason --plan does: a person asked for
+	// this run and is not sitting at a prompt to fix a stale URL themselves. The
+	// MCP RunPlan tool deliberately has none -- there the caller is already a model.
+	judge   *agent.Local
+	handler func(plan.Step) run.Handler
+	repair  config.Repair
 }
 
 // prepare is runPlan's fork, for a plan that arrived over the wire rather than off
@@ -117,6 +126,23 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 			strings.Join(missing, ", "))
 	}
 
+	judge, err := repairer(s.w, s.cfg)
+	if err != nil {
+		return prepared{}, err
+	}
+	// Only when there is something to repair with: the lookup can cost an index
+	// pass, and a project with no model configured should not pay for one.
+	var handler func(plan.Step) run.Handler
+	if judge != nil {
+		handler = s.handlers(ctx)
+	}
+	ready := prepared{
+		vars:    vars.Values,
+		judge:   judge,
+		handler: handler,
+		repair:  s.cfg.Run.RepairOpts(),
+	}
+
 	if !s.cfg.Run.Sandboxed() {
 		base, err := baseURL(s.w, s.cfg, p)
 		if err != nil {
@@ -125,7 +151,8 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 		if err := probe(ctx, s.cfg, base); err != nil {
 			return prepared{}, err
 		}
-		return prepared{base: base, vars: vars.Values, secrets: secrets(vars, nil)}, nil
+		ready.base, ready.secrets = base, secrets(vars, nil)
+		return ready, nil
 	}
 
 	s.mu.Lock()
@@ -138,13 +165,24 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 	if err := reset(ctx, s.w, st); err != nil {
 		return prepared{}, err
 	}
-	return prepared{
-		base:      st.BaseURL(),
-		container: st.Project(),
-		stack:     st,
-		vars:      vars.Values,
-		secrets:   secrets(vars, st),
-	}, nil
+	ready.base, ready.container, ready.stack = st.BaseURL(), st.Project(), st
+	ready.secrets = secrets(vars, st)
+	return ready, nil
+}
+
+// handlers is the source the repairer reads to see what serves a failing step. It
+// takes mu itself, so it runs before prepare reaches for it -- the sandboxed branch
+// holds mu, and this mutex is not reentrant. A snapshot it cannot get is not worth
+// failing a run over: the repairer works without one, on the response alone.
+func (s *session) handlers(ctx context.Context) func(plan.Step) run.Handler {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, snap, err := s.cached(ctx)
+	if err != nil {
+		return nil
+	}
+	return handlers(s.cfg.Root(), snap)
 }
 
 // unset narrows the missing set to what this plan actually reads. Refusing on all of
@@ -171,7 +209,7 @@ func unset(p *plan.Plan, missing []string) []string {
 // engine builds the walk. State is assigned only when there is a copy to observe:
 // a nil *Stack in that interface field would be a non-nil State that takes a
 // reading from nothing.
-func (p prepared) engine(onStep func(run.StepResult)) *run.Engine {
+func (p prepared) engine(onStep func(run.StepResult), onRepair func(run.Attempt)) *run.Engine {
 	e := &run.Engine{
 		BaseURL:   p.base,
 		Variables: p.vars,
@@ -182,6 +220,11 @@ func (p prepared) engine(onStep func(run.StepResult)) *run.Engine {
 		e.State = p.stack
 		e.SandboxDB = p.stack.DB()
 		e.ShellExec = p.stack.ShellExec
+	}
+	if p.judge != nil {
+		e.Repairer, e.Attempts, e.Budget = p.judge, p.repair.Attempts, p.repair.Budget
+		e.Handler = p.handler
+		e.OnRepair = onRepair
 	}
 	return e
 }

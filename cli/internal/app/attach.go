@@ -223,6 +223,9 @@ func (a *attached) execute(ctx context.Context, job *cloud.Job) {
 
 	done := 0
 	started := time.Now()
+	// Buffered rather than printed as it happens, exactly as --plan does it: the
+	// tree line for a step has to come first, and repair settles before it is written.
+	var pending []run.Attempt
 	res, err := pre.engine(func(s run.StepResult) {
 		live.Send(done, s)
 		done++
@@ -233,6 +236,12 @@ func (a *attached) execute(ctx context.Context, job *cloud.Job) {
 			Status: tone(s.Status),
 			Last:   done == len(p.Steps),
 		})
+		for _, at := range pending {
+			a.w.Write(term.Line{Kind: term.Info, Text: "  " + repairNote(at)})
+		}
+		pending = pending[:0]
+	}, func(at run.Attempt) {
+		pending = append(pending, at)
 	}).Run(walk, p)
 	stop()
 	live.Close()
