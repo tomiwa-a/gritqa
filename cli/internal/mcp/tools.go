@@ -32,7 +32,11 @@ var surface = []struct {
 		sdk.AddTool(m, &sdk.Tool{Name: "get_index",
 			Description: "What GritQA knows about this project: file count by language, the " +
 				"HTTP endpoints it found and where each is registered, and what changed since " +
-				"the last pass. Start here."}, s.getIndex)
+				"the last pass. Start here.\n\n" +
+				"plan_variables are the names the developer configured for a plan to reference " +
+				"as {{name}} — a login, an admin password, whatever a guarded endpoint needs. " +
+				"The values are resolved when the plan runs and are never shown to you. Use " +
+				"these names; a credential you invent instead will fail every guarded step."}, s.getIndex)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "read_file",
@@ -148,6 +152,7 @@ type indexOut struct {
 	Endpoints  []endpointOut  `json:"endpoints"`
 	Omitted    int            `json:"endpoints_omitted,omitempty"`
 	Unresolved int            `json:"registrations_unresolved,omitempty"`
+	Variables  []string       `json:"plan_variables,omitempty"`
 	Changed    []string       `json:"changed_since_last_pass,omitempty"`
 	First      bool           `json:"first_pass,omitempty"`
 	Note       string         `json:"note,omitempty"`
@@ -199,6 +204,7 @@ func (s *Server) getIndex(ctx context.Context, _ *sdk.CallToolRequest, _ indexIn
 			Handler: r.Handler, Guarded: len(r.Middleware) > 0,
 		})
 	}
+	out.Variables = s.vars
 	out.Changed = changed(delta)
 	return nil, out, nil
 }

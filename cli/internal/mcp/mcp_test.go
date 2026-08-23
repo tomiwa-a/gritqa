@@ -89,7 +89,8 @@ func connect(t *testing.T, scope Scope) (*sdk.ClientSession, *stub) {
 	write(t, filepath.Join(root, "api", "user.php"), "<?php\n// findMe token\nfunction show() {}\n")
 
 	back := &stub{root: root}
-	srv, err := New(Options{Project: "p", Root: root, Backend: back, Execute: scope == Execute})
+	srv, err := New(Options{Project: "p", Root: root, Backend: back,
+		Variables: []string{"adminEmail", "adminPassword"}, Execute: scope == Execute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +230,11 @@ func TestGetIndexReportsWhatWasFoundAndWhatChanged(t *testing.T) {
 	}
 	if len(got.Changed) != 1 || got.Changed[0] != "changed api/user.php" {
 		t.Errorf("changed = %v", got.Changed)
+	}
+	// The names the developer configured, so a plan references their admin instead
+	// of an invented one. Values stay behind: config resolves them at run time.
+	if len(got.Variables) != 2 || got.Variables[1] != "adminPassword" {
+		t.Errorf("plan_variables = %v", got.Variables)
 	}
 }
 

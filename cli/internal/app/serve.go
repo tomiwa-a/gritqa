@@ -37,7 +37,10 @@ func runServer(ctx context.Context, opts Options) error {
 		Project: cfg.Project,
 		Root:    cfg.Root(),
 		Backend: b,
-		Execute: opts.Execute,
+		// Names, never values: the agent has to reference the developer's admin
+		// login rather than invent one, and must not learn what it is.
+		Variables: cfg.Run.VariableNames(),
+		Execute:   opts.Execute,
 		// Asked for by hand, so the address and its bearer are what the person
 		// running it needs to configure a client.
 		Printed: true,

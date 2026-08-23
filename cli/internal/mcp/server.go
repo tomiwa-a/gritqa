@@ -58,6 +58,10 @@ type Options struct {
 	Project string
 	Root    string
 	Backend Backend
+	// Variables are the names run.variables declares, never their values. A plan
+	// references one as {{name}} and the run resolves it; an agent that cannot see
+	// the names invents a login instead.
+	Variables []string
 	// Execute mints an execute-scoped token as well as a read one. Off by
 	// default: a local AI host gets the read set unless the user asked otherwise.
 	Execute bool
@@ -73,6 +77,7 @@ type Server struct {
 	project string
 	root    string
 	back    Backend
+	vars    []string
 	log     func(string)
 	keys    keyring
 	// stdio is the scope a spawned server serves, since a subprocess carries no
@@ -116,7 +121,8 @@ func New(opts Options) (*Server, error) {
 	}
 	return &Server{
 		project: opts.Project, root: opts.Root, back: opts.Backend,
-		log: log, keys: keys, stdio: stdio, printed: opts.Printed,
+		vars: opts.Variables,
+		log:  log, keys: keys, stdio: stdio, printed: opts.Printed,
 		ready: make(chan struct{}),
 	}, nil
 }

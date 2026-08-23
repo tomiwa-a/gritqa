@@ -135,10 +135,11 @@ const bindWithin = 10 * time.Second
 // advertises the address only while one is live.
 func startMCP(ctx context.Context, w *term.Writer, s *session) (*mcp.Server, string) {
 	srv, err := mcp.New(mcp.Options{
-		Project: s.cfg.Project,
-		Root:    s.cfg.Root(),
-		Backend: &serve{session: s},
-		Execute: s.opts.Execute,
+		Project:   s.cfg.Project,
+		Root:      s.cfg.Root(),
+		Backend:   &serve{session: s},
+		Variables: s.cfg.Run.VariableNames(),
+		Execute:   s.opts.Execute,
 		// The bearer goes to the dashboard in memory, so it has no reason to be on
 		// a screen. --serve, where a person copies it into a client, prints it.
 		Log: func(line string) { w.Write(term.Line{Kind: term.Info, Text: line}) },
