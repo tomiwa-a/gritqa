@@ -46,7 +46,7 @@ func Assert(as []plan.Assertion, res *Response, vars map[string]string) ([]Check
 		checks = append(checks, Check{
 			Type:     a.Type,
 			Operator: a.Operator,
-			Target:   a.Target,
+			Target:   readAt(a),
 			Passed:   passed,
 			Found:    found,
 			Expected: normalise(expected),
@@ -65,6 +65,29 @@ func allPassed(checks []Check) bool {
 	return true
 }
 
+// channels are the assertion types that name what they read. Repair freezes the
+// type and not the target, so a type reading through the target pins nothing: an
+// exitCode assertion redirected at lineCount still reports as exitCode, and a
+// command that exits 1 printing nothing then satisfies `exitCode equals 0`. Where
+// the name says the channel, the name decides it.
+//
+// bodyField, header and valueEquals stay free, because "which field" is the
+// mechanical detail decision 15 lets a fix correct.
+var channels = map[plan.AssertionType]string{
+	plan.ExitCode:       "exitCode",
+	plan.RowCount:       "rowCount",
+	plan.StdoutContains: "stdout",
+}
+
+// readAt is the path an assertion actually reads. Reported on the Check as well as
+// used for the lookup, so nothing can say one and mean the other.
+func readAt(a plan.Assertion) string {
+	if c, ok := channels[a.Type]; ok {
+		return c
+	}
+	return a.Target
+}
+
 func actualOf(a plan.Assertion, res *Response) (any, bool) {
 	switch a.Type {
 	case plan.Status:
@@ -74,14 +97,8 @@ func actualOf(a plan.Assertion, res *Response) (any, bool) {
 	case plan.HeaderField:
 		v := res.Headers.Get(a.Target)
 		return v, v != ""
-	case plan.RowCount, plan.ValueEquals:
-		// These resolve against the synthetic JSON in the response.
-		return Value(res.JSON, a.Target)
-	case plan.ExitCode, plan.StdoutContains:
-		return Value(res.JSON, a.Target)
-	default:
-		return Value(res.JSON, a.Target)
 	}
+	return Value(res.JSON, readAt(a))
 }
 
 // compare is the only place two values meet. Everything scalar is normalised to

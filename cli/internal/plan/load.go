@@ -301,8 +301,11 @@ func validateAssertions(as []Assertion, where string) error {
 		if !operators[a.Operator] {
 			return fmt.Errorf("%s uses the operator %q", where, a.Operator)
 		}
-		if (a.Type == BodyField || a.Type == HeaderField || a.Type == ValueEquals ||
-			a.Type == StdoutContains || a.Type == RowCount) && strings.TrimSpace(a.Target) == "" {
+		// Only the types that need to be told where to look. rowCount, exitCode and
+		// stdoutContains each name their own channel, so a target on one is
+		// decoration -- carried, ignored, and not required.
+		if (a.Type == BodyField || a.Type == HeaderField || a.Type == ValueEquals) &&
+			strings.TrimSpace(a.Target) == "" {
 			return fmt.Errorf("%s asserts on a %s with no target", where, a.Type)
 		}
 		if a.Operator != Exists && a.Expected == nil {

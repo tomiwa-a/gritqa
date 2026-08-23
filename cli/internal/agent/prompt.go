@@ -44,8 +44,9 @@ Rules:
   Those are claims about what the code should do, and they are the user's to
   make. A fix that touches one is refused and wastes the attempt.
 - So a failing status assertion is never test_wrong on its own: there is no
-  target to correct. If the status is the only thing wrong, that is code_wrong or
-  unsure.
+  target to correct. Same for rowCount, exitCode and stdoutContains, which read
+  their own channel whatever a target says. If one of those is the only thing
+  wrong, that is code_wrong or unsure.
 - {{name}} reads a variable an earlier step extracted or the plan seeded. There
   are no functions: {{randomInt 1 9}} would be sent as written. {{runId}} is
   seeded for you and is unique per run.

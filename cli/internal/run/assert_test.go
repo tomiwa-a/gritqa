@@ -143,3 +143,59 @@ func response(t *testing.T, code int, body string) *Response {
 	}
 	return res
 }
+
+// The other half of what repair freezes. The type is frozen and the target is not,
+// so a type that read through the target would leave the freeze worth nothing: a
+// command exiting 1 with no output has lineCount 0 sitting in the same synthetic
+// JSON, and pointing an `exitCode equals 0` at it would go green. It reads exitCode
+// wherever it is pointed, and the check says so rather than repeating the redirect.
+func TestAssertTypedChannelsIgnoreTheTarget(t *testing.T) {
+	shell := &Response{Status: 200, JSON: map[string]any{
+		"exitCode": 1, "stdout": "", "stderr": "boom", "lineCount": 0,
+	}}
+
+	cases := []struct {
+		what string
+		a    plan.Assertion
+	}{
+		{"exitCode redirected at lineCount",
+			plan.Assertion{Type: plan.ExitCode, Operator: plan.Equals, Target: "lineCount", Expected: float64(0)}},
+		{"stdoutContains redirected at stderr",
+			plan.Assertion{Type: plan.StdoutContains, Operator: plan.Contains, Target: "stderr", Expected: "boom"}},
+	}
+
+	for _, c := range cases {
+		checks, err := Assert([]plan.Assertion{c.a}, shell, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", c.what, err)
+		}
+		if checks[0].Passed {
+			t.Errorf("%s passed, so the target still decides what is read", c.what)
+		}
+		if want := channels[c.a.Type]; checks[0].Target != want {
+			t.Errorf("%s reported target %q, not the %q it read", c.what, checks[0].Target, want)
+		}
+	}
+}
+
+// And the same rule the other way: a rowCount written the way the wire format
+// documents it -- target "rows" -- reads the count and passes on a real row.
+func TestAssertRowCountReadsTheCountWhateverTheTargetSays(t *testing.T) {
+	res := &Response{Status: 200, JSON: map[string]any{
+		"rowCount": int64(1), "rows": []any{map[string]any{"n": "1"}},
+	}}
+	for _, target := range []string{"", "rows", "rowCount"} {
+		checks, err := Assert([]plan.Assertion{{
+			Type: plan.RowCount, Operator: plan.Equals, Target: target, Expected: float64(1),
+		}}, res, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !checks[0].Passed {
+			t.Errorf("target %q: one row should satisfy rowCount 1, got %q", target, checks[0].Actual)
+		}
+		if checks[0].Target != "rowCount" {
+			t.Errorf("target %q was reported as %q rather than what it read", target, checks[0].Target)
+		}
+	}
+}

@@ -148,11 +148,12 @@ func TestValidateRejects(t *testing.T) {
 			wrap(`{"id":"a","kind":"grpc","request":{"method":"GET","url":"/x"}}`),
 			"not one of http, sql, shell",
 		},
-		// New assertion types.
+		// New assertion types. rowCount, exitCode and stdoutContains are absent on
+		// purpose: each names its own channel, so none of them needs telling.
 		{
-			"rowCount with no target",
+			"valueEquals with no target",
 			wrap(`{"id":"a","request":{"method":"GET","url":"/x"},
-				"assertions":[{"type":"rowCount","operator":"equals","target":"","expected":1}]}`),
+				"assertions":[{"type":"valueEquals","operator":"equals","target":"","expected":1}]}`),
 			"no target",
 		},
 		// New extraction sources.
@@ -174,6 +175,21 @@ func TestValidateRejects(t *testing.T) {
 				t.Fatalf("err = %q, want it to mention %q", err, c.says)
 			}
 		})
+	}
+}
+
+// The types that name their own channel load without one, so a plan does not have
+// to repeat "rowCount" twice to say it once.
+func TestValidateAcceptsASelfNamingAssertionWithNoTarget(t *testing.T) {
+	for _, a := range []string{
+		`{"type":"rowCount","operator":"equals","expected":1}`,
+		`{"type":"exitCode","operator":"equals","expected":0}`,
+		`{"type":"stdoutContains","operator":"contains","expected":"done"}`,
+	} {
+		if _, err := Parse(wrap(`{"id":"a","request":{"method":"GET","url":"/x"},
+			"assertions":[` + a + `]}`)); err != nil {
+			t.Errorf("%s: %v", a, err)
+		}
 	}
 }
 
