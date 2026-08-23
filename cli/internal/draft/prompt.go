@@ -62,8 +62,11 @@ Rules:
   in variables. Dates are not unique, so write those as literals.
 - url is relative to baseUrl and starts with /.
 - Build every piece of state you need through the API: POST the order, extract
-  its id, then read it back. Never assume a row already exists, and never write
-  SQL.
+  its id, then read it back, and never assume a row already exists.
+- A plan can also carry sql and shell steps, and this is not where one gets
+  written: a statement needs the schema, you are shown source files, and a
+  column name from here would be invented. Those are drafted where the database
+  can be queried first.
 - onFailure abort stops the run; continue keeps independent steps going. Use
   abort for the steps everything else depends on.
 - Test what the code actually does, including the case it would get wrong. Do

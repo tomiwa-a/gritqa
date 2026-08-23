@@ -18,7 +18,7 @@ const bodyCap = 4000
 // confirmCap is tighter because a run of twelve steps sends twelve bodies.
 const confirmCap = 2000
 
-const repairSystem = `A step in an HTTP test plan failed. Decide whether the test was wrong or the
+const repairSystem = `A step in a test plan failed. Decide whether the test was wrong or the
 code was, and say which.
 
 Reply with one JSON object and nothing else:
@@ -40,30 +40,39 @@ Rules:
 - You may change request.url, request.headers, request.body, request.query,
   extract[] and an assertion's target.
 - You may NOT change an assertion's operator or expected, add or remove an
-  assertion, reorder them, or touch id, dependsOn, onFailure or retry. Those are
-  claims about what the code should do, and they are the user's to make. A fix
-  that touches one is refused and wastes the attempt.
+  assertion, reorder them, or touch id, kind, dependsOn, onFailure or retry.
+  Those are claims about what the code should do, and they are the user's to
+  make. A fix that touches one is refused and wastes the attempt.
 - So a failing status assertion is never test_wrong on its own: there is no
   target to correct. If the status is the only thing wrong, that is code_wrong or
   unsure.
 - {{name}} reads a variable an earlier step extracted or the plan seeded. There
   are no functions: {{randomInt 1 9}} would be sent as written. {{runId}} is
   seeded for you and is unique per run.
-- Never write SQL, and never suggest editing the API's source. The plan is the
-  only thing you may change.`
+- Some steps run a statement or a command instead of sending a request. A setup
+  statement is repairable: a wrong table or column name in one is exactly
+  test_wrong. A verify statement and a shell command are not, because the
+  assertions are read against them and a different query is a different claim.
+  On those, correct an extraction path or conclude code_wrong or unsure.
+- Never suggest editing the API's source. The plan is the only thing you may
+  change.`
 
-const confirmSystem = `Every step of an HTTP test plan passed. Say whether the run actually proved
+const confirmSystem = `Every step of a test plan passed. Say whether the run actually proved
 what the plan claims.
 
 Reply with one JSON object and nothing else:
 
 {"proved": true, "why": "one sentence", "gaps": ["what was not really tested"]}
 
-A run is not proof when the responses say it went through the motions: a
+A run is not proof when what came back says it went through the motions: a
 create that returned no id, a list that came back empty so the filter was never
 exercised, an authenticated call that succeeded in a shape suggesting auth was
-never checked, a delete followed by no read-back. Look at what the bodies
-actually contain, not just the status codes.
+never checked, a delete followed by no read-back. Look at what the bodies and
+the rows actually contain, not just the status codes and the exit codes.
+
+A step that queried the database is the strongest evidence a run has, so its
+absence is a gap worth naming: a write confirmed only by the response that
+performed it is the code's account of what it did, not a row.
 
 Be specific and be brief. proved true with an empty gaps list is a fine answer
 when the bodies really do show the work.`
