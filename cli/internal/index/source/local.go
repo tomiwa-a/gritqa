@@ -16,9 +16,15 @@ const extractSystem = `You read one source file and list the HTTP endpoints it s
 Reply with one JSON object and nothing else:
 
 {"endpoints": [
-  {"method": "POST", "path": "/index.php?controller=rooms&action=create", "line": 42,
-   "handler": "RoomController::createRoom", "middleware": ["AdminRequired"]}
+  {"method": "POST", "path": "/api/rooms", "line": 42,
+   "handler": "RoomController.create", "middleware": ["requireAdmin"]},
+  {"method": "GET", "path": "/index.php?controller=rooms&action=list", "line": 61,
+   "handler": "RoomController::list", "middleware": []}
 ]}
+
+Two, because the shape is whatever the file serves. The first is a project with
+a router; the second is one that routes on the query string, and copying that
+URL as it stands is the rule rather than an exception.
 
 Rules:
 - path is what a client actually types. Copy the URL this file serves, query
