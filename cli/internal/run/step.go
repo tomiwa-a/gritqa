@@ -75,6 +75,25 @@ func (e *Engine) step(ctx context.Context, s plan.Step, vars map[string]string) 
 		r = e.httpStep(ctx, s, vars)
 	}
 	r.Kind = kind
+	return e.hide(r)
+}
+
+// hide masks what a result carries out of this process. A step's report reaches
+// the dashboard, local history and a repair prompt, and a configured credential
+// reaches all three the moment it is interpolated -- into a URL, a statement, an
+// asserted value, or a response that echoes back what was sent. Done at the one
+// point every kind converges, so a kind added later cannot forget.
+func (e *Engine) hide(r StepResult) StepResult {
+	if len(e.Secrets) == 0 {
+		return r
+	}
+	r.URL, r.Err, r.Stdout = e.mask(r.URL), e.mask(r.Err), e.mask(r.Stdout)
+	if len(r.Body) > 0 {
+		r.Body = []byte(e.mask(string(r.Body)))
+	}
+	for i, c := range r.Checks {
+		r.Checks[i].Expected, r.Checks[i].Actual = e.mask(c.Expected), e.mask(c.Actual)
+	}
 	return r
 }
 
@@ -261,18 +280,20 @@ func unwrapURL(err error) error {
 
 // mask keeps a configured secret out of the URL a step reports. Longest first, so
 // a value that contains another is replaced whole.
-func (e *Engine) mask(url string) string {
+// mask hides every configured secret in a piece of text. Longest first, so a
+// value that contains another is not half-replaced.
+func (e *Engine) mask(text string) string {
 	if len(e.Secrets) == 0 {
-		return url
+		return text
 	}
 	if e.masks == nil {
 		e.masks = append([]string(nil), e.Secrets...)
 		sort.Slice(e.masks, func(i, j int) bool { return len(e.masks[i]) > len(e.masks[j]) })
 	}
 	for _, s := range e.masks {
-		url = strings.ReplaceAll(url, s, hidden)
+		text = strings.ReplaceAll(text, s, hidden)
 	}
-	return url
+	return text
 }
 
 const hidden = "•••"

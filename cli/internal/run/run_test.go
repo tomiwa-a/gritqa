@@ -638,6 +638,49 @@ func TestEngineMasksASecretInTheReportedURL(t *testing.T) {
 	}
 }
 
+// A response body goes the same three places a URL does, and an API that echoes
+// what it was sent -- a validation error naming the bad password, a login handing
+// back the user it just authenticated -- puts the credential in all three. So does
+// an assertion whose expected value was interpolated from one.
+func TestAnEchoedSecretDoesNotSurviveIntoTheReport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(422)
+		w.Write([]byte(`{"message":"s3cret is too short"}`))
+	}))
+	defer srv.Close()
+
+	p := parse(t, `{"id":"s1","request":{"method":"POST","url":"/login",
+		"body":{"password":"{{adminPassword}}"}},
+		"assertions":[
+			{"type":"bodyField","operator":"contains","target":"message","expected":"{{adminPassword}}"},
+			{"type":"status","operator":"equals","target":"status","expected":422}]}`)
+
+	e := &Engine{
+		BaseURL:   srv.URL,
+		Variables: map[string]string{"adminPassword": "s3cret"},
+		Secrets:   []string{"s3cret"},
+	}
+	res, err := e.Run(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := res.Steps[0]
+	if step.Status != StepPassed {
+		t.Fatalf("the step did not run against the real value: %+v", step)
+	}
+	if strings.Contains(string(step.Body), "s3cret") {
+		t.Errorf("the password survived into the response body: %s", step.Body)
+	}
+	if !strings.Contains(string(step.Body), "is too short") {
+		t.Errorf("masking took more than the value: %s", step.Body)
+	}
+	for _, c := range step.Checks {
+		if strings.Contains(c.Expected+c.Actual, "s3cret") {
+			t.Errorf("the password survived into a check: %+v", c)
+		}
+	}
+}
+
 // A shell step's stdout travels to the dashboard and into a repair prompt, so a
 // command that echoes a configured credential must not write it into either.
 func TestShellStepMasksASecretInWhatItPrinted(t *testing.T) {
