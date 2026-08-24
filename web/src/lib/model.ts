@@ -437,6 +437,35 @@ export type CoverageFile = {
   endpoints: EndpointCoverage[];
 };
 
+/**
+ * An endpoint's contract as observed, not as declared.
+ *
+ * Nothing in this product reads a request or response *shape* off the source: the
+ * index records where a route is registered, and an OpenAPI document, when there is
+ * one, is not kept. What is kept is every call a run actually made -- method, route
+ * pattern, url, body, status, body back -- so the shape of an endpoint is answerable
+ * from evidence the moment it has been exercised once, and unanswerable before that.
+ * Saying which of the two you are looking at is the whole point of the type.
+ */
+export type ObservedRoute = {
+  method: Method;
+  path: string;
+  /** The url as sent, values substituted, so it is replayable as written. */
+  url: string;
+  status: number | null;
+  /** How many steps in this project have called it. */
+  calls: number;
+  lastRunAt: Date | null;
+};
+
+export type ObservedCall = ObservedRoute & {
+  /** Pretty-printed and capped. Null when the call carried no body. */
+  request: string | null;
+  response: string | null;
+  /** Whether either body was cut to fit. */
+  clipped: boolean;
+};
+
 export type AuditTone = 'plan' | 'run' | 'rule' | 'project' | 'account';
 
 export type AuditEntry = {
