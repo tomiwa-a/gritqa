@@ -400,7 +400,13 @@ const entries = (what: string) =>
 
 const wireRequestSchema = z.object({
   method,
-  url: z.string().min(1),
+  /* No minimum, unlike the stored shape, and this is the dialect's convention rather
+     than a relaxed rule: a model taught that `body: ""` and `headers: []` mean "none"
+     writes a blank request for a step that sends none instead of leaving the key out.
+     `stepFromWire` discards it on a sql or shell step, and an http step with nothing
+     here is refused by `stepInconsistency` -- which says "sends no request" rather
+     than reporting a string that is too short. */
+  url: z.string(),
   headers: entries(
     'Everything this request must send as a header, including the credential an authenticated route needs -- Authorization: Bearer {{token}}, or whatever the code actually reads.',
   ),
@@ -417,16 +423,20 @@ const wireRequestSchema = z.object({
  *
  * Nothing here is a map or a nested object, so there is nothing for the dialect to
  * flatten into `{}` -- which is why this one crosses over unchanged where the request
- * above had to be taken apart. Optional on both sides for the same reason it is
- * optional in the stored shape: two of the three fields are meaningless for any given
- * step, and `kind` is what makes an omission checkable rather than silent.
+ * above had to be taken apart.
+ *
+ * The two payload fields are required with an empty value allowed, which is the rule
+ * the next schema down states and this one used to be an exception to. It was the
+ * wrong exception: asked to carry three sql steps over unchanged, the model returned
+ * all three with a `target` and no `statement` at all. An optional string is a field a
+ * model can drop without ever saying it dropped anything, and "no statement" is a
+ * claim worth making out loud even when it is obvious from `kind`.
  */
 const wireActionSchema = z.object({
   statement: z
     .string()
-    .optional()
     .describe(
-      'For a sql step: the statement, with {{variable}} references inside it. One statement, no trailing semicolon.',
+      'For a sql step: the statement, with {{variable}} references inside it. One statement, no trailing semicolon. An empty string on a step that runs no statement.',
     ),
   target: z
     .enum(['setup', 'verify'])
@@ -436,33 +446,45 @@ const wireActionSchema = z.object({
     ),
   command: z
     .string()
-    .optional()
     .describe(
-      "For a shell step: the command, run by `sh -c` inside GritQA's own container with the project mounted at /app.",
+      "For a shell step: the command, run by `sh -c` inside GritQA's own container with the project mounted at /app. An empty string on a step that runs no command.",
     ),
 });
 
-const wireStepSchema = stepSchema.omit({ kind: true, request: true, action: true }).extend({
-  kind: z
-    .enum(['http', 'sql', 'shell'])
-    .describe(
-      "What this step does: `http` sends a request, `sql` runs one statement against the run's own copy of the database, `shell` runs one command in the container. Say it for every step.",
-    ),
-  /* Optional, and the only pair in this schema that is. Everything else the dialect
-     mangles was made required-with-an-empty-value on purpose, because an optional
-     field is another thing a model can silently omit -- but a request step has no
-     action and an action step has no request, and there is no empty value for a URL.
-     `kind` is what pays for that: a step whose payload does not match what it says it
-     is fails loudly in `stepFromWire` rather than arriving as a blank request. */
-  request: wireRequestSchema
-    .optional()
-    .describe('Required on every http step, and left out entirely on a sql or shell one.'),
-  action: wireActionSchema
-    .optional()
-    .describe(
-      'Required on every sql and shell step -- a sql step without a statement or a shell step without a command is refused, not defaulted -- and left out entirely on an http one.',
-    ),
-});
+const wireStepSchema = stepSchema
+  .omit({ kind: true, request: true, action: true, retry: true })
+  .extend({
+    /* Zero attempts, which the stored shape spells as no `retry` at all. Same field,
+       same convention as the blank request above, and `stepFromWire` drops it -- the
+       runner refuses a plan that asks for fewer than one attempt
+       (`load.go`: *"asks for 0 attempts"*), so this cannot reach it either way. What
+       it stops is a plan being thrown out over the difference. */
+    retry: z
+      .object({ maxAttempts: z.number().int().min(0), delayMs: z.number().int().min(0) })
+      .optional()
+      .describe(
+        'Only for a step whose failure would be a timing artifact rather than a result -- something the code does asynchronously. Zero attempts, or left out, everywhere else. Never on a step whose failure is the finding.',
+      ),
+    kind: z
+      .enum(['http', 'sql', 'shell'])
+      .describe(
+        "What this step does: `http` sends a request, `sql` runs one statement against the run's own copy of the database, `shell` runs one command in the container. Say it for every step.",
+      ),
+    /* The one pair that is optional rather than required-with-an-empty-value, because
+       a request step has no action and an action step has no request. `kind` is what
+       pays for it: a step whose payload does not match what it says it is fails loudly
+       in `stepFromWire` rather than arriving as a blank request. Whichever one does not
+       belong may also arrive filled with empty values, which is the dialect answering
+       in its own convention, and it is discarded rather than refused. */
+    request: wireRequestSchema
+      .optional()
+      .describe('Required on every http step, and left out entirely on a sql or shell one.'),
+    action: wireActionSchema
+      .optional()
+      .describe(
+        'Required on every sql and shell step -- a sql step without a statement or a shell step without a command is refused, not defaulted -- and left out entirely on an http one.',
+      ),
+  });
 
 const wireVariables = entries(
   'Plan-level values the steps interpolate as {{name}} -- the credentials and fixtures a run is given. A credential is a name with a placeholder value the developer maps to their environment, never the literal secret.',
@@ -536,7 +558,10 @@ export class PlanShapeError extends Error {
  * reshape with the research already in hand and costs a fraction of a retry.
  */
 function stepFromWire(step: z.infer<typeof wireStepSchema>): z.infer<typeof stepSchema> {
-  const { kind, request, action, ...common } = step;
+  const { kind, request, action, retry, ...rest } = step;
+
+  /* Zero attempts is no retry, which the stored shape says by leaving the key out. */
+  const common = retry && retry.maxAttempts > 0 ? { ...rest, retry } : rest;
 
   /* `verify` when the draft did not say, because the two readings fail in different
      directions and this is the one whose failure is visible. A write read as a

@@ -1,4 +1,4 @@
-import { generateObject, generateText, isStepCount } from 'ai';
+import { NoObjectGeneratedError, generateObject, generateText, isStepCount } from 'ai';
 import { resolveModel } from './model';
 import { openResearch } from './research';
 import { verifyPlan } from './verify';
@@ -74,22 +74,70 @@ const RESEARCH_STEPS = 40;
  * exactly this since M2 (`draft/prompt.go`'s `correction`); this is the same turn on
  * the other side of the seam.
  *
- * Only a shape error earns the second call. A model or transport failure would spend
- * the same minutes to fail the same way.
+ * A schema rejection earns it too, and that was the gap worth closing: it is the
+ * likeliest way for a reply to be wrong, it arrives from inside `generateObject`
+ * rather than from this file, and it was the one failure the correction turn could not
+ * see -- so the cheapest mistake to fix was the only one that cost a whole research
+ * pass. A model or transport failure still does not, because it would spend the same
+ * minutes to fail the same way.
  */
 async function shaped<T>(attempt: (correction: string) => Promise<T>): Promise<T> {
   try {
     return await attempt('');
   } catch (error) {
-    if (!(error instanceof PlanShapeError)) throw error;
-    console.warn(`draft: ${error.message} -- asking for a correction`);
+    const complaint = error instanceof PlanShapeError ? error.message : rejection(error);
+    if (!complaint) throw error;
+
+    console.warn(`draft: ${complaint} -- asking for a correction`);
     return attempt(
       [
         '',
-        `Your last answer did not load: ${error.message}`,
+        'Your last answer did not load:',
+        complaint,
         'Send the whole plan again with that fixed, and change nothing else about it.',
       ].join('\n'),
     );
+  }
+}
+
+/**
+ * Why the schema turned the answer down, in terms the next turn can act on.
+ *
+ * Zod reports a path, and `steps.3.action.statement` asks a model to count nineteen
+ * array entries to find out which step it is being told about. It sent the ids itself,
+ * so the index resolves back into the name the rest of the conversation uses.
+ *
+ * Null for anything else, including a reply that was not JSON at all: there is nothing
+ * specific to quote back, and a bare "try again" is the retry this deliberately is not.
+ */
+function rejection(error: unknown): string | null {
+  if (!NoObjectGeneratedError.isInstance(error)) return null;
+
+  const issues = zodIssues(error.cause);
+  if (issues.length === 0) return null;
+
+  const ids = stepIds(error.text);
+  const where = (path: readonly PropertyKey[]) =>
+    path.map((key, i) => (path[i - 1] === 'steps' && ids[Number(key)]) || key).join('.');
+
+  return issues.map((issue) => `- ${where(issue.path)}: ${issue.message}`).join('\n');
+}
+
+/** The AI SDK wraps the ZodError twice, so follow the chain rather than assume a depth. */
+function zodIssues(cause: unknown): { path: readonly PropertyKey[]; message: string }[] {
+  for (let at: unknown = cause; at instanceof Error; at = at.cause) {
+    const { issues } = at as { issues?: unknown };
+    if (Array.isArray(issues)) return issues;
+  }
+  return [];
+}
+
+function stepIds(text: string | undefined): (string | undefined)[] {
+  try {
+    const { steps } = JSON.parse(text ?? '') as { steps?: { id?: string }[] };
+    return Array.isArray(steps) ? steps.map((step) => step?.id) : [];
+  } catch {
+    return [];
   }
 }
 
