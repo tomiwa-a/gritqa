@@ -268,3 +268,44 @@ func contains(args []string, want string) bool {
 	}
 	return false
 }
+
+// Compose scopes a stack by project name, which tears it down but cannot find it:
+// a label filter does not match a name by prefix. So a stack whose process was
+// killed before it could run `down` leaves containers, networks and volumes that
+// nothing knows to look for -- measured as an orphaned network from a project
+// called shop, a day old, while the check that was supposed to catch it reported
+// clean because nothing had ever carried the label it filtered on.
+func TestEverythingTheCopyCreatesCarriesTheMark(t *testing.T) {
+	_, doc := overlaid(t, Environment{
+		App: "app", Port: 8080, Database: "db", DBPort: 3306, Driver: "mysql",
+		Schema:   []SchemaStep{{Service: "seed"}},
+		Writable: []string{"/app/api/uploads"},
+	})
+
+	for _, name := range []string{"app", "db", "cache", "seed"} {
+		if labels := svc(t, doc, name)["labels"]; !sameJSON(labels, ours) {
+			t.Errorf("%s labels = %v, want the mark", name, labels)
+		}
+	}
+
+	vols := doc["volumes"].(map[string]any)
+	for name, entry := range vols {
+		got := entry.(map[string]any)["labels"]
+		if !sameJSON(got, ours) {
+			t.Errorf("volume %s labels = %v, want the mark", name, got)
+		}
+	}
+	if len(vols) < 2 {
+		t.Errorf("volumes = %v, want the declared one and the writable one", vols)
+	}
+
+	nets := doc["networks"].(map[string]any)
+	if got := nets["default"].(map[string]any)["labels"]; !sameJSON(got, ours) {
+		t.Errorf("default network labels = %v, want the mark", got)
+	}
+	// The developer's external network is detached rather than joined, so the copy
+	// creates its own under the project name -- which makes it the copy's to mark.
+	if got := nets["shared"].(map[string]any)["labels"]; !sameJSON(got, ours) {
+		t.Errorf("shared network labels = %v, want the mark on the copy's own", got)
+	}
+}

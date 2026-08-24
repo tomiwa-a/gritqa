@@ -76,6 +76,7 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		// A fixed name is the original's name, and two containers cannot have it.
 		delete(svc, "container_name")
 		svc["restart"] = "no"
+		svc["labels"] = ours
 
 		for _, p := range published(svc["ports"]) {
 			out.Dropped = append(out.Dropped, name+" "+p)
@@ -109,7 +110,7 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 			doc["volumes"] = vols
 		}
 		for _, v := range out.Shared {
-			vols[v] = map[string]any{}
+			vols[v] = map[string]any{"labels": ours}
 		}
 	}
 
@@ -121,9 +122,20 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 	return out, nil
 }
 
-// scope drops the identity compose resolved into its own output. Left in, a
-// volume called hotel_db-data stays hotel_db-data whatever project mounts it, and
-// the copy would be writing to the developer's data.
+// ours is how GritQA finds its own leftovers. Compose scopes everything by project
+// name, which is enough to tear a stack down but not to sweep for one: a filter
+// cannot match a name by prefix, so a stack whose process was killed before it
+// could run `down` leaves containers, networks and volumes nothing knows to look
+// for. Measured: a network from a project called shop, orphaned for a day, while
+// `docker ps -a --filter label=gritqa=1` reported clean with two GritQA containers
+// running -- the label the verification checked for was never set on anything.
+var ours = map[string]any{"gritqa": "1"}
+
+// scope drops the identity compose resolved into its own output, and marks what is
+// left. Left in, a volume called hotel_db-data stays hotel_db-data whatever project
+// mounts it, and the copy would be writing to the developer's data. Dropping
+// `external` is the moment an entry stops being something the developer is running
+// and becomes the copy's own, which is why the mark goes on here.
 func scope(block any, kind string) []string {
 	entries, _ := block.(map[string]any)
 	var detached []string
@@ -132,7 +144,7 @@ func scope(block any, kind string) []string {
 		if !ok {
 			// Declared with nothing under it, which is the common case and already
 			// project-scoped. A nil has to become an object so a later key can go in.
-			entries[name] = map[string]any{}
+			entries[name] = map[string]any{"labels": ours}
 			continue
 		}
 		if ext, ok := entry["external"]; ok && truthy(ext) {
@@ -140,6 +152,7 @@ func scope(block any, kind string) []string {
 		}
 		delete(entry, "external")
 		delete(entry, "name")
+		entry["labels"] = ours
 	}
 	return detached
 }
