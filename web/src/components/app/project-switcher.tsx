@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
+import { switchProjectAction } from '@/lib/actions/project';
 import { StatusDot } from '@/components/ui/badge';
 import type { ShellCurrentProject, ShellProject } from './shell-data';
 import { cn } from '@/lib/cn';
@@ -71,19 +73,15 @@ export function ProjectSwitcher({
         >
           <p className="px-2 pb-1.5 pt-1 text-[11px] font-medium text-ink-subtle">Projects</p>
 
+          {/*
+            A form per row rather than an onClick: the choice lives on the session
+            cookie, and only a server action can re-sign one. It also means the menu
+            still switches with JavaScript off.
+          */}
           {projects.map((p) => {
             const active = p.publicId === currentProject.publicId;
-            return (
-              <button
-                key={p.publicId}
-                type="button"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className={cn(
-                  'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
-                  'transition-colors duration-150 hover:bg-app-hover',
-                )}
-              >
+            const row = (
+              <>
                 <StatusDot tone={p.status === 'active' ? 'live' : 'draft'} label={p.status} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] text-ink">{p.name}</span>
@@ -92,21 +90,51 @@ export function ProjectSwitcher({
                   </span>
                 </span>
                 {active && <Icon name="check" size={14} className="text-pass" />}
-              </button>
+              </>
+            );
+            const shape = cn(
+              'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left',
+              'transition-colors duration-150 hover:bg-app-hover',
+            );
+
+            // The one you are already on submits nothing. Switching redirects to
+            // /dashboard, and doing that to someone who picked the project they were
+            // already looking at is a page they did not ask to leave.
+            if (active) {
+              return (
+                <button
+                  key={p.publicId}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className={shape}
+                >
+                  {row}
+                </button>
+              );
+            }
+            return (
+              <form key={p.publicId} action={switchProjectAction}>
+                <input type="hidden" name="project" value={p.publicId} />
+                <button type="submit" role="menuitem" className={shape}>
+                  {row}
+                </button>
+              </form>
             );
           })}
 
           <div className="my-1.5 h-px bg-rule" />
 
-          <button
-            type="button"
+          {/* Nothing in the browser inserts a project row -- the CLI does, on approval. */}
+          <Link
+            href="/dashboard/setup"
             role="menuitem"
             onClick={() => setOpen(false)}
             className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-ink-muted transition-colors duration-150 hover:bg-app-hover hover:text-ink"
           >
             <Icon name="plus" size={14} />
             Add a project
-          </button>
+          </Link>
         </div>
       )}
     </div>
