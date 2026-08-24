@@ -90,11 +90,17 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 				term.Count(snap.Uploaded, "file", "files")),
 		})
 	}
-	if snap.Unread > 0 {
+	if n := len(snap.Failed); n > 0 {
 		w.Write(term.Line{
 			Kind: term.Info,
 			Text: fmt.Sprintf("the model could not read %s, so any endpoints in %s are missing",
-				term.Count(snap.Unread, "file", "files"), plural(snap.Unread, "it", "them")),
+				term.Count(n, "file", "files"), plural(n, "it", "them")),
+		})
+		w.All(unread(snap.Failed)...)
+		w.Write(term.Line{
+			Kind: term.Info,
+			Text: "a file the model could not read is not cached, so the next run tries " +
+				plural(n, "it", "them") + " again",
 		})
 	}
 	if snap.Uncached > 0 {
@@ -186,6 +192,51 @@ func findings(snap *index.Snapshot) []term.Line {
 	return lines
 }
 
+// unread names what the model could not read, grouped by reason. Files that all
+// failed the same way are one thing to look at, and the reason is what says
+// whether to run it again or change something.
+func unread(failed []source.Failure) []term.Line {
+	order := make([]string, 0, len(failed))
+	by := map[string][]source.Failure{}
+	for _, f := range failed {
+		if _, seen := by[f.Reason]; !seen {
+			order = append(order, f.Reason)
+		}
+		by[f.Reason] = append(by[f.Reason], f)
+	}
+
+	lines := make([]term.Line, 0, len(order))
+	for _, reason := range order {
+		group := by[reason]
+		tries := group[0].Attempts
+		for _, f := range group[1:] {
+			tries = max(tries, f.Attempts)
+		}
+		lines = append(lines, term.Line{
+			Kind: term.Tree,
+			Text: fmt.Sprintf("%s — %s after %s: %s",
+				reason, term.Count(len(group), "file", "files"),
+				term.Count(tries, "try", "tries"), paths(group)),
+		})
+	}
+	lines[len(lines)-1].Last = true
+	return lines
+}
+
+// paths lists enough of a group to recognise it and says how much it left out.
+func paths(group []source.Failure) string {
+	const show = 4
+	names := make([]string, 0, show)
+	for _, f := range group[:min(show, len(group))] {
+		names = append(names, f.Path)
+	}
+	out := strings.Join(names, ", ")
+	if rest := len(group) - len(names); rest > 0 {
+		out += fmt.Sprintf(" and %d more", rest)
+	}
+	return out
+}
+
 const escapeHatch = "point me at an OpenAPI file with endpoints.spec, list them under " +
 	"endpoints.list, or let me read them with endpoints.ai"
 
@@ -204,6 +255,8 @@ func origin(snap *index.Snapshot) string {
 
 func summary(first bool, delta index.Delta, snap *index.Snapshot) string {
 	switch {
+	case first && len(snap.Failed) > 0:
+		return "mapped your project, but not all of it"
 	case first:
 		return "mapped your project"
 	case delta.Empty():

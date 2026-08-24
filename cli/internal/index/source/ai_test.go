@@ -7,8 +7,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/gritqa/cli/internal/model"
 )
 
 type fake struct {
@@ -17,12 +19,31 @@ type fake struct {
 	give   map[string][]routes.Route
 	fail   error
 	failOn map[string]error
+	// flaky fails a file that many times and then answers, which is the shape of
+	// the failure this source retries for.
+	flaky map[string]int
+	// turnAway answers a file with a quota that many times. Negative means always.
+	turnAway map[string]int
 }
 
 func (f *fake) Extract(_ context.Context, file File) ([]routes.Route, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, file.Path)
+	left := f.flaky[file.Path]
+	if left > 0 {
+		f.flaky[file.Path] = left - 1
+	}
+	quota := f.turnAway[file.Path]
+	if quota > 0 {
+		f.turnAway[file.Path] = quota - 1
+	}
 	f.mu.Unlock()
+	if quota != 0 {
+		return nil, model.Throttled(errors.New("the endpoint answered 429"), 0)
+	}
+	if left > 0 {
+		return nil, errors.New("the reply was not the endpoint list it was asked for")
+	}
 	if err := f.failOn[file.Path]; err != nil {
 		return nil, err
 	}
@@ -30,6 +51,15 @@ func (f *fake) Extract(_ context.Context, file File) ([]routes.Route, error) {
 		return nil, f.fail
 	}
 	return f.give[file.Path], nil
+}
+
+// quick takes the wait out of the retry. The policy under test is which failures
+// are tried again, not how long the pause between them is.
+func quick(t *testing.T) {
+	t.Helper()
+	wasBackoff, wasQuota := backoff, quotaPause
+	backoff, quotaPause = 0, 0
+	t.Cleanup(func() { backoff, quotaPause = wasBackoff, wasQuota })
 }
 
 // a cache that cannot be written, which the routes must survive.
@@ -143,13 +173,14 @@ func TestARefusedKeyEndsThePass(t *testing.T) {
 // Any other failure costs its own file and nothing more — the first file is
 // whichever one sorts first, not a file worth stopping for.
 func TestOneUnreadableFileDoesNotEndThePass(t *testing.T) {
+	quick(t)
 	ex := &fake{fail: errors.New("context deadline exceeded")}
 
 	if _, err := FromAI(context.Background(), ex, memo{}, five()); err != nil {
 		t.Fatal(err)
 	}
-	if len(ex.calls) != 5 {
-		t.Errorf("made %d calls, want all 5 tried", len(ex.calls))
+	if len(ex.calls) != 5*attempts {
+		t.Errorf("made %d calls, want all 5 tried %d times each", len(ex.calls), attempts)
 	}
 }
 
@@ -296,7 +327,8 @@ func TestEditingTheGatewayReReadsWhatItRoutesTo(t *testing.T) {
 
 // A file the model could not read has to be reported. Silently returning nothing
 // for it is the one failure this project exists to avoid.
-func TestAnUnreadFileIsCounted(t *testing.T) {
+func TestAnUnreadFileIsNamedWithItsReason(t *testing.T) {
+	quick(t)
 	files := five()
 	files[3].Path = "unreadable.rb"
 	ex := &fake{failOn: map[string]error{
@@ -307,11 +339,65 @@ func TestAnUnreadFileIsCounted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ex.calls) != 5 {
-		t.Errorf("made %d calls, want all 5 tried", len(ex.calls))
+	if len(ex.calls) != 4+attempts {
+		t.Errorf("made %d calls, want 4 read and 1 retried", len(ex.calls))
 	}
-	if res.Unread != 1 || res.Uploaded != 4 {
-		t.Errorf("uploaded %d, unread %d, want 4 and 1", res.Uploaded, res.Unread)
+	if res.Uploaded != 5 || len(res.Failed) != 1 {
+		t.Fatalf("uploaded %d, failed %d, want 5 and 1", res.Uploaded, len(res.Failed))
+	}
+	got := res.Failed[0]
+	if got.Path != "unreadable.rb" || got.Attempts != attempts ||
+		!strings.Contains(got.Reason, "deadline") {
+		t.Errorf("failure = %+v, want the file, the tries and the reason", got)
+	}
+}
+
+// Seven of the measured failures were the connection being reset mid-call, which
+// the same call makes it through on the next try. That, and the quota below, is
+// the whole reason four identical runs reported four different endpoint counts.
+func TestAFlakyFileIsReadOnTheSecondTry(t *testing.T) {
+	quick(t)
+	files := five()
+	files[3].Path = "flaky.rb"
+	ex := &fake{
+		flaky: map[string]int{"flaky.rb": 1},
+		give:  map[string][]routes.Route{"flaky.rb": {{Method: "GET", Path: "/orders"}}},
+	}
+
+	res, err := FromAI(context.Background(), ex, memo{}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Failed) != 0 {
+		t.Fatalf("failed = %+v, want the retry to have read it", res.Failed)
+	}
+	if len(res.Routes) != 1 {
+		t.Errorf("got %d endpoints, want the one the second try found", len(res.Routes))
+	}
+	if len(ex.calls) != 6 {
+		t.Errorf("made %d calls, want one extra for the retry", len(ex.calls))
+	}
+}
+
+// A request the endpoint rejected answers the same way however often it is
+// asked, so spending two more calls on it is only a bill.
+func TestARejectedRequestIsNotRetried(t *testing.T) {
+	quick(t)
+	files := five()
+	files[3].Path = "toobig.rb"
+	ex := &fake{failOn: map[string]error{
+		"toobig.rb": fmt.Errorf("api.example.com answered 413: %w", model.ErrHopeless),
+	}}
+
+	res, err := FromAI(context.Background(), ex, memo{}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.calls) != 5 {
+		t.Errorf("made %d calls, want the rejection taken at its word", len(ex.calls))
+	}
+	if len(res.Failed) != 1 || res.Failed[0].Attempts != 1 {
+		t.Errorf("failed = %+v, want one file tried once", res.Failed)
 	}
 }
 
@@ -364,7 +450,99 @@ func TestCachedEndpointsSurviveWithoutAKey(t *testing.T) {
 	if len(res.Routes) != 1 || res.Kind != AI {
 		t.Fatalf("res = %+v, want the cached endpoint", res)
 	}
-	if res.Uploaded != 0 || res.Unread != 0 {
-		t.Errorf("uploaded %d, unread %d — nothing was sent", res.Uploaded, res.Unread)
+	if res.Uploaded != 0 || len(res.Failed) != 0 {
+		t.Errorf("uploaded %d, failed %d — nothing was sent", res.Uploaded, len(res.Failed))
 	}
+}
+
+// A quota is the endpoint declining to read the file, not a reading that failed,
+// so being turned away three times and then read is a success on the first
+// attempt. Measured the other way round: 15 files spent all three attempts on
+// 429s and reported no endpoints, for a project whose files were fine.
+func TestAQuotaAnswerIsNotAnAttempt(t *testing.T) {
+	quick(t)
+	files := five()
+	files[2].Path = "busy.rb"
+	ex := &fake{
+		turnAway: map[string]int{"busy.rb": 3},
+		give:     map[string][]routes.Route{"busy.rb": {{Method: "GET", Path: "/loans"}}},
+	}
+
+	res, err := FromAI(context.Background(), ex, memo{}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Failed) != 0 {
+		t.Fatalf("failed = %+v, want the pause to have cleared it", res.Failed)
+	}
+	if got := calls(ex, "busy.rb"); got != 4 {
+		t.Fatalf("called busy.rb %d times, want 3 refusals and one read", got)
+	}
+	if len(res.Routes) != 1 {
+		t.Fatalf("got %d endpoints, want the one the fourth call returned", len(res.Routes))
+	}
+}
+
+// Waiting out a quota has to be bounded, or an exhausted one parks the pass. The
+// file is reported with its reason instead, which is what says whether to slow
+// down or wait for the window.
+func TestAQuotaThatNeverClearsIsReported(t *testing.T) {
+	quick(t)
+	files := five()
+	files[2].Path = "busy.rb"
+	ex := &fake{turnAway: map[string]int{"busy.rb": -1}}
+
+	res, err := FromAI(context.Background(), ex, memo{}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Failed) != 1 || res.Failed[0].Path != "busy.rb" {
+		t.Fatalf("failed = %+v, want busy.rb named", res.Failed)
+	}
+	if !strings.Contains(res.Failed[0].Reason, "429") {
+		t.Fatalf("reason = %q, want the quota named", res.Failed[0].Reason)
+	}
+	if got, want := calls(ex, "busy.rb"), declines+attempts; got != want {
+		t.Fatalf("called busy.rb %d times, want %d", got, want)
+	}
+}
+
+// The pause is one thing every worker respects, and it grows when it is not
+// enough. Being turned away during a pause is the endpoint saying so.
+func TestThePauseIsSharedAndGrows(t *testing.T) {
+	was := quotaPause
+	quotaPause = 30 * time.Millisecond
+	t.Cleanup(func() { quotaPause = was })
+
+	var g gate
+	g.hold(0)
+
+	started := time.Now()
+	if err := g.wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if waited := time.Since(started); waited < quotaPause {
+		t.Fatalf("waited %v, want at least %v", waited, quotaPause)
+	}
+
+	g.hold(0)
+	g.hold(0) // turned away while already holding
+	g.mu.Lock()
+	left := time.Until(g.until)
+	g.mu.Unlock()
+	if left <= quotaPause {
+		t.Fatalf("still holding for %v, want longer than one pause", left)
+	}
+}
+
+func calls(ex *fake, path string) int {
+	ex.mu.Lock()
+	defer ex.mu.Unlock()
+	n := 0
+	for _, p := range ex.calls {
+		if p == path {
+			n++
+		}
+	}
+	return n
 }

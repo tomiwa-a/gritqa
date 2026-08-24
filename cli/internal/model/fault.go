@@ -15,6 +15,30 @@ import (
 // it is pointless, which is what callers use this to decide.
 var ErrRefused = errors.New("refused the key")
 
+// ErrHopeless marks a call a second attempt cannot fix. A rate limit or a server
+// error is the moment being wrong and worth waiting out; a 4xx is the request
+// being wrong, and sending it again only spends another call.
+var ErrHopeless = errors.New("the request itself was rejected")
+
+// Throttle is the endpoint declining to look at the request yet. It is worth
+// separating from every other failure because the thing it is protecting is
+// shared: a quota belongs to the deployment, so the wait it asks for is owed by
+// every caller at once, not by the one request that happened to hit it.
+type Throttle struct {
+	// Wait is what the endpoint asked for, or zero when it named no delay.
+	Wait time.Duration
+	err  error
+}
+
+func (t *Throttle) Error() string { return t.err.Error() }
+func (t *Throttle) Unwrap() error { return t.err }
+
+// Throttled marks err as a quota answer. Exported because the same condition
+// arrives through GritQA's own server, which relays the provider it called.
+func Throttled(err error, wait time.Duration) error {
+	return &Throttle{Wait: wait, err: err}
+}
+
 // fault turns a bad status into something the user can act on. The likely
 // mistake is an sk-ant- key against api.anthropic.com, which speaks
 // /v1/messages and 404s the only call GritQA makes.
@@ -33,6 +57,9 @@ func fault(url, endpoint, source string, code int, body []byte) error {
 	// costs one call per file instead of one call in total.
 	case code == http.StatusBadRequest && badKey(detail):
 		return refused(endpoint, source, detail)
+	}
+	if code < http.StatusInternalServerError && code != http.StatusTooManyRequests {
+		return fmt.Errorf("%s answered %d%s: %w", url, code, detail, ErrHopeless)
 	}
 	return fmt.Errorf("%s answered %d%s", url, code, detail)
 }

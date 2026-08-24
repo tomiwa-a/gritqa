@@ -127,9 +127,13 @@ func (c *Client) send(ctx context.Context, body []byte) (content string, again b
 		return "", true, 0, err
 	}
 	if res.StatusCode != http.StatusOK {
+		asked := retryAfter(res.Header, raw)
+		err := fault(url, c.Endpoint, c.Auth.String(), res.StatusCode, raw)
+		if res.StatusCode == http.StatusTooManyRequests {
+			err = &Throttle{Wait: asked, err: err}
+		}
 		again := res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= 500
-		return "", again, retryAfter(res.Header, raw),
-			fault(url, c.Endpoint, c.Auth.String(), res.StatusCode, raw)
+		return "", again, asked, err
 	}
 
 	var out chatResponse

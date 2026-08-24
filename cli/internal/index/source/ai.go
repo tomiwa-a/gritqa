@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"path"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gritqa/cli/internal/index/routes"
 	"github.com/gritqa/cli/internal/model"
@@ -105,10 +107,11 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 
 	// Without a key the model is out of reach, but what it already read is not:
 	// an unchanged repo keeps its endpoints instead of reporting none.
-	var sent, unread, uncached int
+	var sent, uncached int
+	var failed []Failure
 	if ex != nil {
 		var err error
-		sent, unread, uncached, err = run(ctx, ex, cache, files, todo, found)
+		sent, failed, uncached, err = run(ctx, ex, cache, files, todo, found)
 		if err != nil {
 			return Result{}, err
 		}
@@ -119,31 +122,144 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 		out = append(out, rs...)
 	}
 	if len(out) == 0 {
-		return Result{Uploaded: sent, Unread: unread, Uncached: uncached}, nil
+		return Result{Uploaded: sent, Failed: failed, Uncached: uncached}, nil
 	}
-	return Result{Kind: AI, Routes: out, Uploaded: sent, Unread: unread, Uncached: uncached}, nil
+	return Result{Kind: AI, Routes: out, Uploaded: sent, Failed: failed, Uncached: uncached}, nil
 }
 
-// run returns how many files were read, how many the model could not, and how
-// many were read but could not be cached.
+// attempts is per file: a reply that failed once is worth asking for again, and
+// the pause between them is what makes the second call different from the first.
+const attempts = 3
+
+// declines bounds how often one file may be turned away by a quota. A decline is
+// not an attempt — the endpoint did not read the file — so it must be bounded
+// separately or a exhausted quota parks the pass indefinitely.
+const declines = 3
+
+var backoff = 1500 * time.Millisecond
+
+// quotaPause is what a quota costs when the endpoint names no delay of its own.
+// It is deliberately long: the quota measured here is per minute, and guessing
+// low cost 15 files their endpoints across three retries each.
+var quotaPause = 15 * time.Second
+
+// gate is the pass-wide pause, and it is the correction the measurement forced.
+// A quota belongs to the deployment, not to one file, so four workers each
+// backing off privately wake together and spend it again — measured as 15 files
+// reporting nothing but 429 after three private retries apiece. One pause every
+// worker respects is the only thing that clears a quota.
+type gate struct {
+	mu    sync.Mutex
+	until time.Time
+	held  int
+}
+
+// hold pauses every worker, doubling when it is asked again while already
+// holding: being turned away during a pause is the endpoint saying the pause was
+// too short.
+func (g *gate) hold(d time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if d <= 0 {
+		d = quotaPause
+	}
+	if time.Now().Before(g.until) {
+		g.held++
+		d <<= min(g.held, 3)
+	}
+	if until := time.Now().Add(d); until.After(g.until) {
+		g.until = until
+	}
+}
+
+func (g *gate) wait(ctx context.Context) error {
+	g.mu.Lock()
+	left := time.Until(g.until)
+	g.mu.Unlock()
+
+	if left <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(left):
+		return nil
+	}
+}
+
+// read extracts one file, trying again when the failure is the kind another call
+// can fix, and reports how many calls that took.
+func read(ctx context.Context, ex Extractor, f File, g *gate) ([]routes.Route, int, error) {
+	tries, turned := 0, 0
+	for {
+		if err := g.wait(ctx); err != nil {
+			return nil, tries, err
+		}
+		tries++
+
+		rs, err := ex.Extract(ctx, f)
+		if err == nil {
+			return rs, tries, nil
+		}
+
+		// A quota answer is the endpoint declining to read the file rather than a
+		// reading that failed, so it does not spend one of the file's attempts. It
+		// pauses every worker instead, which is what a shared quota responds to.
+		var quota *model.Throttle
+		if errors.As(err, &quota) && turned < declines && again(ctx, err) {
+			turned++
+			tries--
+			g.hold(quota.Wait)
+			continue
+		}
+		if tries == attempts || !again(ctx, err) {
+			return nil, tries, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, tries, ctx.Err()
+		case <-time.After(time.Duration(tries) * backoff):
+		}
+	}
+}
+
+// again separates the moment being wrong from the request being wrong. A refused
+// key ends the pass, a 4xx answers the same way however often it is asked, and a
+// cancelled run is not a failure to retry.
+func again(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	return !errors.Is(err, ErrRefused) &&
+		!errors.Is(err, model.ErrHopeless) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+}
+
+// run returns how many files went to the model, which of them it could not read,
+// and how many were read but could not be cached.
 func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []int,
-	found [][]routes.Route) (int, int, int, error) {
+	found [][]routes.Route) (int, []Failure, int, error) {
 
 	if len(todo) == 0 {
-		return 0, 0, 0, nil
+		return 0, nil, 0, nil
 	}
 
 	// The first call goes alone, so a refused key fails before the repo uploads.
 	// Anything else — a timeout, a reply that will not parse — costs one file, the
 	// same as it does in the workers below.
 	first := files[todo[0]]
-	sent, unread, uncached := 1, 0, 0
-	rs, err := ex.Extract(ctx, first)
+	sent, uncached := 1, 0
+	var failed []Failure
+	var pause gate
+	rs, tries, err := read(ctx, ex, first, &pause)
 	switch {
 	case errors.Is(err, ErrRefused):
-		return 0, 0, 0, fmt.Errorf("could not read %s with the model: %w", first.Path, err)
+		return 0, nil, 0, fmt.Errorf("could not read %s with the model: %w", first.Path, err)
 	case err != nil:
-		sent, unread = 0, 1
+		failed = append(failed, Failure{Path: first.Path, Attempts: tries, Reason: err.Error()})
 	default:
 		found[todo[0]] = keep(rs, first.Path)
 		if err := save(cache, first, found[todo[0]]); err != nil {
@@ -169,23 +285,26 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 				}
 
 				f := files[i]
-				rs, err := ex.Extract(ctx, f)
+				rs, tries, err := read(ctx, ex, f, &pause)
+				mu.Lock()
+				sent++
 				if err != nil {
-					mu.Lock()
-					unread++
+					failed = append(failed, Failure{
+						Path: f.Path, Attempts: tries, Reason: err.Error(),
+					})
 					if errors.Is(err, ErrRefused) && refused == nil {
 						refused = fmt.Errorf("could not read %s with the model: %w", f.Path, err)
 					}
 					mu.Unlock()
 					continue
 				}
+				mu.Unlock()
 
 				found[i] = keep(rs, f.Path)
 				mu.Lock()
 				if err := save(cache, f, found[i]); err != nil {
 					uncached++
 				}
-				sent++
 				mu.Unlock()
 			}
 		}()
@@ -196,16 +315,23 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
-			return sent, unread, uncached, ctx.Err()
+			return sent, failed, uncached, ctx.Err()
 		case jobs <- i:
 		}
 	}
 	close(jobs)
 	wg.Wait()
 	if refused != nil {
-		return sent, unread, uncached, refused
+		return sent, failed, uncached, refused
 	}
-	return sent, unread, uncached, nil
+	sortFailures(failed)
+	return sent, failed, uncached, nil
+}
+
+// sortFailures makes the report stable: four workers finishing in whatever order
+// they finish is not something the reader should have to see.
+func sortFailures(failed []Failure) {
+	sort.Slice(failed, func(i, j int) bool { return failed[i].Path < failed[j].Path })
 }
 
 // save reports its failure rather than hiding it: the routes are still good, but
@@ -362,6 +488,11 @@ func (c *Client) Extract(ctx context.Context, f File) ([]routes.Route, error) {
 	case http.StatusOK:
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, fmt.Errorf("%s %w", c.Server, ErrRefused)
+	// The server relaying a provider's quota is the same condition as hitting one
+	// directly, so it reaches the same gate. No delay is named: a relayed 429
+	// rarely carries the upstream's Retry-After, and quotaPause is the floor.
+	case http.StatusTooManyRequests:
+		return nil, model.Throttled(fmt.Errorf("%s said %s", c.Server, res.Status), 0)
 	default:
 		return nil, fmt.Errorf("%s said %s", c.Server, res.Status)
 	}

@@ -33,9 +33,19 @@ type Result struct {
 	Detail     string
 	Routes     []routes.Route
 	Unresolved []routes.Route
-	Uploaded   int // files sent to the model for extraction
-	Unread     int // files the model could not read, so their endpoints are missing
-	Uncached   int // files read but not cached, so they will be read again
+	Uploaded   int       // files sent to the model for extraction
+	Failed     []Failure // the ones it could not read, so their endpoints are missing
+	Uncached   int       // files read but not cached, so they will be read again
+}
+
+// Failure is one file the model could not read, and why. A count on its own is
+// not diagnosable: four identical passes over the same project reported 102, 209,
+// 221 and 221 endpoints, and the one that reported 46% of the API named neither a
+// file nor a reason.
+type Failure struct {
+	Path     string
+	Attempts int
+	Reason   string
 }
 
 func (r Result) Empty() bool { return r.Kind == None }
