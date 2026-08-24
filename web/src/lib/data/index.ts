@@ -22,6 +22,7 @@ export {
 } from './plans';
 export { getRecentRuns, getRunHistory, getRunStripStats, type RunStripStats } from './runs';
 export { getCoverage, getCoverageTotals, type CoverageTotals } from './coverage';
+export { getObservedRoutes } from './contracts';
 export { getCommits, getLastDraftedFrom } from './commits';
 export { getAuditLog } from './activity';
 export { getPeriod, type Period } from './period';

@@ -15,7 +15,7 @@ import {
 import { changesBetween, planProblems, type EditedPlan } from '@/lib/plan-edit';
 import { stepHeadline, stepKindOf } from '@/lib/plan';
 import type { Method } from '@/components/ui/method-badge';
-import type { Endpoint, PlanChange, PlanStepSpec } from '@/lib/model';
+import type { Endpoint, ObservedRoute, PlanChange, PlanStepSpec } from '@/lib/model';
 import { Area, Field, Group, IconButton, List, MONO, PairRows, Select } from './editor-parts';
 import { StepForm, blankStep } from './step-form';
 import { cn } from '@/lib/cn';
@@ -80,10 +80,12 @@ function nextId(steps: PlanStepSpec[]): string {
 export function PlanEditor({
   target,
   initial,
+  routes = [],
   baseUrl = '',
 }: {
   target: Target;
   initial: EditedPlan;
+  routes?: ObservedRoute[];
   baseUrl?: string;
 }) {
   const [edited, setEdited] = useState<EditedPlan | null>(null);
@@ -413,6 +415,7 @@ export function PlanEditor({
           others={plan.steps
             .filter((_, i) => i !== open)
             .map((s) => ({ id: s.id, name: s.name }))}
+          routes={routes}
           onSave={saveStep}
           onClose={() => setOpen(null)}
         />

@@ -20,6 +20,7 @@ import { Icon } from '@/components/ui/icon';
 import {
   getAllPlans,
   isCliConnected,
+  getObservedRoutes,
   getPlanDetail,
   getRecentRuns,
   getRunHistory,
@@ -188,11 +189,12 @@ export default async function PlanDetailPage({
   const stepParam = typeof query.step === 'string' ? query.step : undefined;
   const versionParam = typeof query.v === 'string' ? query.v : undefined;
 
-  const [allPlans, cliConnected, history, recent] = await Promise.all([
+  const [allPlans, cliConnected, history, recent, routes] = await Promise.all([
     getAllPlans(),
     isCliConnected(),
     getRunHistory(),
     getRecentRuns(),
+    getObservedRoutes(),
   ]);
 
   const plan = allPlans.find((p) => p.publicId === id);
@@ -363,6 +365,7 @@ export default async function PlanDetailPage({
                 {detail ? (
                   <PlanEditor
                     target={{ mode: 'edit', publicId: plan.publicId, version: plan.version }}
+                    routes={routes}
                     initial={{
                       name: detail.name,
                       description: detail.description,

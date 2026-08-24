@@ -16,6 +16,8 @@ import type { Method } from '@/components/ui/method-badge';
 import type {
   AssertionOperator,
   AssertionType,
+  ObservedCall,
+  ObservedRoute,
   PlanAssertion,
   PlanExtraction,
   PlanStepSpec,
@@ -32,6 +34,7 @@ import {
   PairRows,
   Select,
 } from './editor-parts';
+import { ObservedPicker } from './observed-picker';
 import { cn } from '@/lib/cn';
 
 const KINDS: readonly { key: StepKind; label: string; hint: string }[] = [
@@ -125,12 +128,14 @@ export function StepForm({
   step,
   eyebrow,
   others,
+  routes,
   onSave,
   onClose,
 }: {
   step: PlanStepSpec;
   eyebrow: string;
   others: { id: string; name: string }[];
+  routes: ObservedRoute[];
   onSave: (next: PlanStepSpec) => void;
   onClose: () => void;
 }) {
@@ -161,6 +166,29 @@ export function StepForm({
         (ASSERTIONS_BY_KIND[next] as readonly AssertionType[]).includes(a.type),
       ),
     }));
+
+  /* The url comes from the route pattern rather than the url as sent: the pattern is what a
+     step's url is, relative to the plan's base. The body is offered only where it is an
+     object, because that is the only shape a step can carry. */
+  const fillFrom = (call: ObservedCall) => {
+    set({
+      request: {
+        method: call.method,
+        url: call.path,
+        headers: draft.request?.headers,
+        query: draft.request?.query,
+      },
+    });
+    if (!call.request) return;
+    try {
+      const parsed: unknown = JSON.parse(call.request);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        setBodyText(call.request);
+      }
+    } catch {
+      /* Not JSON, so not a body this form can offer. It is still shown above. */
+    }
+  };
 
   const save = () => {
     let body: Record<string, unknown> | undefined;
@@ -277,6 +305,13 @@ export function StepForm({
 
         {kind === 'http' && (
           <>
+            <Group
+              label="What this project has really sent"
+              hint="Read off the runs, not off the source. GritQA knows an endpoint's request and response where a run has made that call, and nowhere else."
+            >
+              <ObservedPicker routes={routes} onFill={fillFrom} />
+            </Group>
+
             <Group label="Request" hint="The url is relative to the plan's base url. {{name}} reads a variable.">
               <div className="flex min-w-0 gap-1.5">
                 <Select

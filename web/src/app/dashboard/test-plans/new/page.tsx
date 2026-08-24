@@ -6,7 +6,7 @@ import { Panel } from '@/components/app/panel';
 import { PlanEditor } from '@/components/app/plan/plan-editor';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { getLastBaseUrl } from '@/lib/data';
+import { getLastBaseUrl, getObservedRoutes } from '@/lib/data';
 
 export const metadata = { title: 'Write a plan · GritQA' };
 
@@ -18,7 +18,7 @@ export const metadata = { title: 'Write a plan · GritQA' };
  * away from it would be a lost afternoon.
  */
 export default async function NewPlanPage() {
-  const baseUrl = await getLastBaseUrl();
+  const [baseUrl, routes] = await Promise.all([getLastBaseUrl(), getObservedRoutes()]);
 
   return (
     <>
@@ -51,6 +51,7 @@ export default async function NewPlanPage() {
           <PlanEditor
             target={{ mode: 'new' }}
             baseUrl={baseUrl ?? ''}
+            routes={routes}
             initial={{
               name: '',
               description: '',
