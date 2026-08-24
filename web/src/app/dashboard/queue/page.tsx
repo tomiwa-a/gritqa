@@ -134,6 +134,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           prevHref={prevStep ? stepHrefFor(prevStep.id) : undefined}
           nextHref={nextStep ? stepHrefFor(nextStep.id) : undefined}
           failure={detail.previousFailure}
+          check={detail.checks.find((c) => c.stepId === step.id)}
         />
       )}
 

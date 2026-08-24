@@ -4,8 +4,9 @@ import { Icon } from '@/components/ui/icon';
 import { Fence, Prose } from '@/components/ui/prose';
 import { Badge } from '@/components/ui/badge';
 import { Drawer, DrawerBlock } from '../drawer';
+import { CheckNote } from './step-checks';
 import { assertionPredicate, assertionTarget, stepKindOf, variablesUsedBy } from '@/lib/plan';
-import type { PlanFailureSeed, PlanStepSpec, StepKind } from '@/lib/model';
+import type { PlanFailureSeed, PlanStepSpec, StepCheck, StepKind } from '@/lib/model';
 
 /**
  * What the block holding the payload is called, per kind. Three words rather than one
@@ -80,6 +81,7 @@ export function StepInspector({
   prevHref,
   nextHref,
   failure,
+  check,
 }: {
   step: PlanStepSpec;
   index: number;
@@ -88,6 +90,7 @@ export function StepInspector({
   prevHref?: string;
   nextHref?: string;
   failure?: PlanFailureSeed | null;
+  check?: StepCheck;
 }) {
   const broke = failure?.stepId === step.id;
   const uses = variablesUsedBy(step);
@@ -127,6 +130,8 @@ export function StepInspector({
           </div>
         </div>
       )}
+
+      <CheckNote check={check} />
 
       <DrawerBlock label="What it does">
         <Prose>{step.description}</Prose>

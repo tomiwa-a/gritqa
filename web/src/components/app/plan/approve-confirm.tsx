@@ -20,12 +20,18 @@ import { stepIsHeavy, type PlanStepSpec } from '@/lib/model';
  * Only the heavy steps, verbatim. A confirm that summarised the whole plan would be one
  * people learn to dismiss, which would cost more than it bought -- and the plan itself
  * is one click behind this box for anyone who wants all of it.
+ *
+ * `wrong` verdicts are held to the same bar and clear it: the verify pass read the code
+ * and what it read contradicts the step. An `unsupported` one does not appear here, for
+ * exactly the reason above -- it is a gap, not a fault, and the plan page carries it.
  */
 export async function ApproveConfirm({ id, closeHref }: { id: string; closeHref: string }) {
   const [detail, cliConnected] = await Promise.all([getPlanDetail(id), isCliConnected()]);
   if (!detail) return null;
 
   const heavy = detail.steps.filter(stepIsHeavy);
+  const wrong = detail.checks.filter((check) => check.verdict === 'wrong');
+  const named = new Map(detail.steps.map((step) => [step.id, step.name]));
 
   return (
     <Modal
@@ -33,7 +39,13 @@ export async function ApproveConfirm({ id, closeHref }: { id: string; closeHref:
       closeHref={closeHref}
       label={`Approve ${detail.name}`}
       eyebrow="before you approve"
-      title={heavy.length > 0 ? 'This plan does more than ask' : 'Nothing in this plan writes'}
+      title={
+        wrong.length > 0
+          ? 'Some of this does not match the code'
+          : heavy.length > 0
+            ? 'This plan does more than ask'
+            : 'Nothing in this plan writes'
+      }
       footer={
         <form className="flex flex-wrap items-center justify-end gap-2">
           <input type="hidden" name="publicId" value={detail.publicId} />
@@ -72,6 +84,25 @@ export async function ApproveConfirm({ id, closeHref }: { id: string; closeHref:
       }
     >
       <div className="flex flex-col gap-3 p-4">
+        {wrong.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-fail/25 bg-fail-soft/40 px-3 py-2.5">
+            <p className="text-[12.5px] leading-relaxed text-ink">
+              {wrong.length === 1 ? 'One step contradicts' : `${wrong.length} steps contradict`}{' '}
+              what the code says. Approving does not make{' '}
+              {wrong.length === 1 ? 'it' : 'them'} right — it queues the plan to run as written.
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {wrong.map((check) => (
+                <li key={check.stepId} className="text-[11.5px] leading-snug text-ink-muted">
+                  <span className="text-ink">{named.get(check.stepId) ?? check.stepId}</span>
+                  {' — '}
+                  {check.note}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {heavy.length > 0 ? (
           <>
             <p className="text-[12.5px] leading-relaxed text-ink-muted">
@@ -113,7 +144,10 @@ export async function ApproveConfirm({ id, closeHref }: { id: string; closeHref:
              button behind this box would have given you. */
           <p className="text-[12.5px] leading-relaxed text-ink-muted">
             Every step here sends a request or reads. This version of the plan changes nothing on
-            its own, so there is nothing extra to read before approving it.
+            its own
+            {wrong.length > 0
+              ? ', but read the mismatch above before you approve it.'
+              : ', so there is nothing extra to read before approving it.'}
           </p>
         )}
       </div>

@@ -4,9 +4,11 @@ import { StepSpine } from './step-spine';
 import { VariableChain } from './variable-chain';
 import { Provenance } from './provenance';
 import { Assumptions } from './assumptions';
+import { ChecksTally, StepChecks } from './step-checks';
 import { RulesApplied } from './rules-applied';
 import { FailureTriage } from './failure-triage';
 import { kindsIn } from '@/lib/plan';
+import { checkIsDoubt } from '@/lib/model';
 import type { TestPlan, TestPlanDetail } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -93,6 +95,21 @@ export function PlanBody({
         </Panel>
       )}
 
+      {/* Evidence before self-report: a verdict that the code says otherwise outranks
+          anything else on the page, and a plan with no checks says nothing here --
+          which is what every plan written before the third pass existed is. */}
+      {detail.checks.length > 0 && (
+        <Panel
+          title="What it verified"
+          subtitle="Each step against the code, or against a call this project really made"
+          meta={<ChecksTally checks={detail.checks} />}
+          bodyClassName="p-0"
+          className={detail.checks.some(checkIsDoubt) ? 'border-warn/30' : undefined}
+        >
+          <StepChecks steps={detail.steps} checks={detail.checks} hrefFor={stepHrefFor} />
+        </Panel>
+      )}
+
       {/* Before the rules and before the steps: this is the part that decides whether
           the rest is worth reading closely. */}
       {detail.assumptions.length > 0 && (
@@ -133,6 +150,7 @@ export function PlanBody({
           selectedId={selectedStepId}
           hrefFor={stepHrefFor}
           failure={detail.previousFailure}
+          checks={detail.checks}
         />
       </Panel>
     </div>

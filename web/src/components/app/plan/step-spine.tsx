@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { StepBadge } from '@/components/ui/step-badge';
 import { Icon } from '@/components/ui/icon';
 import { Leader } from '@/components/ui/rule';
+import { CheckMark } from './step-checks';
 import { assertionLabel, stepHeadline, stepKindOf, variablesUsedBy } from '@/lib/plan';
-import type { PlanFailureSeed, PlanStepSpec } from '@/lib/model';
+import type { PlanFailureSeed, PlanStepSpec, StepCheck } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
 function Line({ term, children }: { term: string; children: React.ReactNode }) {
@@ -21,14 +22,18 @@ export function StepSpine({
   selectedId,
   hrefFor,
   failure,
+  checks,
   className,
 }: {
   steps: PlanStepSpec[];
   selectedId?: string;
   hrefFor: (stepId: string) => string;
   failure?: PlanFailureSeed | null;
+  checks?: StepCheck[];
   className?: string;
 }) {
+  const doubt = new Map((checks ?? []).map((check) => [check.stepId, check]));
+
   return (
     <ol className={cn('flex flex-col', className)}>
       {steps.map((step, i) => {
@@ -83,6 +88,7 @@ export function StepSpine({
                       <Icon name="alert" size={11} />v{failure.version} broke here
                     </span>
                   )}
+                  <CheckMark check={doubt.get(step.id)} />
                 </div>
 
                 <p className="mt-1 text-[13px] leading-snug text-ink">{step.name}</p>

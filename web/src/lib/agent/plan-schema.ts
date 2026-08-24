@@ -314,15 +314,23 @@ export type ChecksDraft = z.infer<typeof checksSchema>;
  */
 export function checksFor(draft: ChecksDraft, stepIds: string[]): StepCheck[] {
   const known = new Set(stepIds);
-  const seen = new Set<string>();
+  const given = new Map<string, StepCheck>();
 
-  return draft.checks
-    .filter((check) => {
-      if (!known.has(check.stepId) || seen.has(check.stepId)) return false;
-      seen.add(check.stepId);
-      return true;
-    })
-    .map((check) => ({ stepId: check.stepId, verdict: check.verdict, note: check.note.trim() }));
+  for (const check of draft.checks) {
+    if (!known.has(check.stepId) || given.has(check.stepId)) continue;
+    given.set(check.stepId, {
+      stepId: check.stepId,
+      verdict: check.verdict,
+      note: check.note.trim(),
+    });
+  }
+
+  /* One per step, in the plan's order, and a step the pass said nothing about is
+     `unsupported` rather than absent. A short answer would otherwise read downstream
+     as a shorter plan, and "every step held up" is a claim that has to be true. */
+  return stepIds.map(
+    (stepId) => given.get(stepId) ?? { stepId, verdict: 'unsupported' as const, note: '' },
+  );
 }
 
 export type RevisionDraft = z.infer<typeof revisionSchema>;
