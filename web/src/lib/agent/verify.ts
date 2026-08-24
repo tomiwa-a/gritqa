@@ -33,14 +33,17 @@ import type { ObservedRoute, PlanStepSpec, StepCheck } from '@/lib/model';
 /**
  * How many tool calls a verification may make, and it scales with the plan.
  *
- * Pass one gets a flat twelve because a brief is one question however long the answer
- * turns out to be. A check is N questions: fourteen steps is fourteen routes to find
- * and fourteen sets of field names to read. A flat budget there would spend itself on
- * the first four steps and file the other ten as `unsupported`, which is a worse
- * failure than not checking at all -- it looks like evidence.
+ * A check is N questions: fourteen steps is fourteen routes to find and fourteen sets
+ * of field names to read. A flat budget would spend itself on the first four steps and
+ * file the other ten as `unsupported`, which is a worse failure than not checking at
+ * all -- it looks like evidence.
+ *
+ * The floor and the cap both went up with the research budgets they sit beside. Sixty
+ * was under two calls a step on a long plan, which is one route lookup and nothing
+ * left to read the fields with.
  */
 function budget(steps: number): number {
-  return Math.min(8 + 3 * steps, 60);
+  return Math.min(12 + 4 * steps, 100);
 }
 
 /** Routes a run has really called, as evidence a route exists and answers. */

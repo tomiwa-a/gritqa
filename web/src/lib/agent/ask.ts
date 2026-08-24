@@ -18,8 +18,17 @@ import type { AgentStep } from '@/lib/model';
  * because a question is a valid answer.
  */
 
-/** Same budget as a draft. A question that needs more was too broad to answer well. */
-const RESEARCH_STEPS = 12;
+/**
+ * Same budget as a draft's research pass, and for the same reason: a question about a
+ * codebase is answered by reading it. Twelve was eight or nine file reads once the
+ * sandbox boot and a schema query came out of it, which is where an answer that had
+ * only skimmed came from -- turn 6 of the LoanApp conversation returned ten thousand
+ * characters about a KYC provider having made no tool calls at all.
+ *
+ * Forty is not a claim that forty is right. It is enough to read fifteen files, and a
+ * model that has not found the answer by then is stuck rather than short of budget.
+ */
+const RESEARCH_STEPS = 40;
 
 /**
  * What the agent is for on this path, and what it must not do.

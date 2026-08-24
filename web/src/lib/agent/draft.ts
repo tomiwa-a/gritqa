@@ -54,13 +54,19 @@ import type { StepCheck, TestPlanDetail, TestingRule } from '@/lib/model';
  * plan is to never look. Which is the exact inverse of what a developer does by hand,
  * and it is where the invented field names were coming from.
  *
- * Forty is enough to boot the sandbox, read information_schema, follow a handler
+ * Eighty is enough to boot the sandbox, read information_schema, follow a handler
  * through two layers and still have most of the budget left for the reading that
  * actually shapes the plan. The cost is real and it is wall-clock: a draft can now
  * take minutes rather than seconds. That is the right trade for a plan a human is
  * about to be asked to approve.
+ *
+ * The number is the smallest of the levers, and it is worth being honest about the
+ * order. Claude Code makes 50-200 tool calls on a task like this, but what makes it
+ * reliable is that it runs what it wrote and reads the failure. A short agent that
+ * executes beats a long one that only reads. This raise buys the reading; the outline
+ * and the auto-run buy the rest.
  */
-const RESEARCH_STEPS = 40;
+const RESEARCH_STEPS = 80;
 
 /**
  * Pass two, with one correction turn.
