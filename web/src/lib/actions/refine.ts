@@ -113,6 +113,7 @@ export async function refinePlanAction(
       fromVersion: detail.version,
       instruction,
       draft,
+      checks: draft.checks,
     });
 
     await record({

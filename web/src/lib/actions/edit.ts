@@ -8,7 +8,13 @@ import { PlanArchivedError, PlanMovedError, writeNewPlan, writeRevision } from '
 import { planDetail } from '@/lib/db/plans';
 import { requireScope } from '@/lib/db/scope';
 import { revisionSchema } from '@/lib/agent/plan-schema';
-import { changesBetween, noteOn, planProblems, type EditedPlan } from '@/lib/plan-edit';
+import {
+  changesBetween,
+  checksAfter,
+  noteOn,
+  planProblems,
+  type EditedPlan,
+} from '@/lib/plan-edit';
 
 /**
  * Writing a plan by hand, and editing one.
@@ -148,6 +154,9 @@ export async function savePlanEditAction(
          its own, and a hand edit is the one thing that certainly was not that. */
       instruction: note ?? 'Edited by hand.',
       draft: { ...edited, summary, changes },
+      /* Only the verdicts the edit did not invalidate. A check on a step somebody has
+         since rewritten is a check on text that is no longer in the plan. */
+      checks: checksAfter(detail.steps, edited.steps, detail.checks),
     });
 
     await record({

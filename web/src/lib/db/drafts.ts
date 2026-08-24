@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { planRevisions, testPlans } from '@/lib/db/schema';
 import type { PlanDraft, RevisionDraft } from '@/lib/agent/plan-schema';
+import type { StepCheck } from '@/lib/model';
 
 /**
  * Landing a new version of a plan.
@@ -53,6 +54,14 @@ export async function writeRevision(input: {
   /** The sentence the developer typed. Null when the agent redrafted unasked. */
   instruction: string | null;
   draft: RevisionDraft;
+  /**
+   * How each step came out when it was checked against the code. Written with the plan
+   * rather than beside it, because a verdict outlives the turn that produced it and has
+   * to move when the steps move: a hand edit that rewrites step 4 keeps the checks it
+   * did not touch and drops the one it invalidated (`checksAfter` in `plan-edit.ts`).
+   * Omitted reads as unverified, which is what every plan was before this existed.
+   */
+  checks?: StepCheck[];
 }): Promise<WrittenRevision> {
   const next = input.fromVersion + 1;
 
@@ -87,6 +96,7 @@ export async function writeRevision(input: {
           covers: input.draft.covers,
           steps: input.draft.steps,
           assumptions: input.draft.assumptions,
+          checks: input.checks ?? [],
         },
       })
       /* The version predicate again, this time as the lock. The SELECT above is for
@@ -147,6 +157,14 @@ export async function writeNewPlan(input: {
    */
   conversationId?: number;
   draft: PlanDraft;
+  /**
+   * How each step came out when it was checked against the code. Written with the plan
+   * rather than beside it, because a verdict outlives the turn that produced it and has
+   * to move when the steps move: a hand edit that rewrites step 4 keeps the checks it
+   * did not touch and drops the one it invalidated (`checksAfter` in `plan-edit.ts`).
+   * Omitted reads as unverified, which is what every plan was before this existed.
+   */
+  checks?: StepCheck[];
 }): Promise<WrittenPlan> {
   return db.transaction(async (tx) => {
     const [created] = await tx
@@ -161,6 +179,7 @@ export async function writeNewPlan(input: {
           covers: input.draft.covers,
           steps: input.draft.steps,
           assumptions: input.draft.assumptions,
+          checks: input.checks ?? [],
         },
         /* Draft, and there is no other option. Nothing arrives approved -- the whole
            product is the gate between a plan existing and a plan running. */

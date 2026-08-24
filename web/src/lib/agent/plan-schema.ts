@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import type { Endpoint, PlanAssertion, PlanExtraction, PlanStepSpec, StepKind } from '@/lib/model';
+import type {
+  Endpoint,
+  PlanAssertion,
+  PlanExtraction,
+  PlanStepSpec,
+  StepCheck,
+  StepKind,
+} from '@/lib/model';
 import { unloadable } from '@/lib/plan';
 
 /**
@@ -261,6 +268,62 @@ export const revisionSchema = z.object({
     ),
   changes: z.array(changeSchema),
 });
+
+/**
+ * One step, checked.
+ *
+ * Asked for as its own call rather than as a field on the plan, because a model
+ * grading work it is in the middle of producing grades it generously -- and because
+ * the check has to happen with the tools back on, which pass two deliberately does
+ * not have.
+ *
+ * Three verdicts, and `unsupported` is the one that makes the other two mean
+ * something. Without it every unreachable piece of evidence has to be filed as either
+ * a confirmation it did not earn or a fault it did not commit, and a developer reading
+ * a flag cannot tell which of those they are looking at.
+ *
+ * Nothing here is a map or a nested object, so it crosses the wire dialect unchanged.
+ */
+export const checkSchema = z.object({
+  stepId: z.string().min(1).describe('The id of the step this is about, exactly as written'),
+  verdict: z
+    .enum(['confirmed', 'unsupported', 'wrong'])
+    .describe(
+      '`confirmed` when you found the route, the fields and the shape in the code or in a real recorded call. `wrong` when what you read contradicts the step -- no such route, a field by another name, a status the handler cannot return. `unsupported` when the evidence was not reachable: nothing you could read settles it either way. Do not use `confirmed` for a step you merely find plausible.',
+    ),
+  note: z
+    .string()
+    .describe(
+      'What you read and what it said, in one or two lines, naming the file or the query. For `wrong`, say what the code has instead so the developer can fix it in one edit. Empty string for a plain confirmation with nothing to add.',
+    ),
+});
+
+export const checksSchema = z.object({
+  checks: z.array(checkSchema).describe('One entry per step in the plan, in the plan\'s order.'),
+});
+
+export type ChecksDraft = z.infer<typeof checksSchema>;
+
+/**
+ * The checks, keyed to steps that exist.
+ *
+ * A verdict about a step id the plan does not have is dropped rather than repaired:
+ * it is a check on nothing, and the alternative -- guessing which step was meant --
+ * would attach a judgment to a step nobody made it about. A step with no verdict is
+ * left with none, which reads as unverified and is true.
+ */
+export function checksFor(draft: ChecksDraft, stepIds: string[]): StepCheck[] {
+  const known = new Set(stepIds);
+  const seen = new Set<string>();
+
+  return draft.checks
+    .filter((check) => {
+      if (!known.has(check.stepId) || seen.has(check.stepId)) return false;
+      seen.add(check.stepId);
+      return true;
+    })
+    .map((check) => ({ stepId: check.stepId, verdict: check.verdict, note: check.note.trim() }));
+}
 
 export type RevisionDraft = z.infer<typeof revisionSchema>;
 

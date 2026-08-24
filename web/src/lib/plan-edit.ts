@@ -1,6 +1,6 @@
 import { stepInconsistency } from '@/lib/agent/plan-schema';
 import { stepKindOf, unloadable } from '@/lib/plan';
-import type { Endpoint, PlanAssertion, PlanChange, PlanStepSpec } from '@/lib/model';
+import type { Endpoint, PlanAssertion, PlanChange, PlanStepSpec, StepCheck } from '@/lib/model';
 
 /**
  * A plan somebody is editing by hand, and the two things that has to produce:
@@ -263,6 +263,34 @@ function key(check: PlanAssertion): string {
 function words(check: PlanAssertion): string {
   if (check.operator === 'exists') return `${check.target} is there`;
   return `${check.target} ${check.operator} ${check.expected}`;
+}
+
+/**
+ * Which checks still describe the plan after somebody edited it by hand.
+ *
+ * A verdict is about a step's text. Edit the step and the verdict is about text that
+ * is no longer there -- so a `confirmed` carried blindly across an edit is the worst
+ * possible outcome of having verification at all: a badge saying the code was read,
+ * on a step nobody has read.
+ *
+ * Kept only where the step is byte-identical, dropped everywhere else, and a dropped
+ * check reads as unverified rather than as a problem. Comparing serialisations rather
+ * than fields on purpose: a check covers everything about a step, so anything at all
+ * moving is enough to invalidate it, and a field-by-field rule would be a second
+ * opinion about which parts of a step a verdict was really about.
+ */
+export function checksAfter(
+  before: PlanStepSpec[],
+  after: PlanStepSpec[],
+  checks: StepCheck[],
+): StepCheck[] {
+  const was = new Map(before.map((step) => [step.id, JSON.stringify(step)]));
+  const now = new Map(after.map((step) => [step.id, JSON.stringify(step)]));
+
+  return checks.filter((check) => {
+    const then = was.get(check.stepId);
+    return then !== undefined && then === now.get(check.stepId);
+  });
 }
 
 function label(step: PlanStepSpec): string {

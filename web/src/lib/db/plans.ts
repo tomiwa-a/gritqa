@@ -12,6 +12,7 @@ import type {
   PlanFailureSeed,
   PlanRevision,
   PlanStepSpec,
+  StepCheck,
   TestPlan,
   TestPlanDetail,
   TestPlanStatus,
@@ -37,6 +38,8 @@ type PlanJson = {
   steps?: PlanStepSpec[];
   /** Absent on every plan drafted before the field existed, which reads as none. */
   assumptions?: string[];
+  /** Absent on every plan written before anything checked one, which reads as unverified. */
+  checks?: StepCheck[];
 };
 
 const planJsonOf = (row: TestPlanRow): PlanJson => (row.planJson ?? {}) as PlanJson;
@@ -216,6 +219,7 @@ function toDetail(
     variables: json.variables ?? {},
     steps: json.steps ?? [],
     assumptions: json.assumptions ?? [],
+    checks: json.checks ?? [],
     diffContext: (row.diffContext as PlanDiffContext | null) ?? null,
     previousFailure: failure ? toFailureSeed(failure) : null,
     // Oldest first. The detail page reads a version's predecessor as the entry

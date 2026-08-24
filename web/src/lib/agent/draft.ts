@@ -1,6 +1,7 @@
 import { generateObject, generateText, isStepCount } from 'ai';
 import { resolveModel } from './model';
 import { openResearch } from './research';
+import { verifyPlan } from './verify';
 import {
   PlanShapeError,
   draftFromWire,
@@ -10,10 +11,10 @@ import {
   type PlanDraft,
   type RevisionDraft,
 } from './plan-schema';
-import type { TestPlanDetail, TestingRule } from '@/lib/model';
+import type { StepCheck, TestPlanDetail, TestingRule } from '@/lib/model';
 
 /**
- * The agent, in two passes: look at the code, then write the plan.
+ * The agent, in three passes: look at the code, write the plan, then check it.
  *
  * The obvious shape is one call with the tools *and* the output schema attached,
  * and it is worse for a reason that costs real time. Tool calls here reach into
@@ -26,19 +27,40 @@ import type { TestPlanDetail, TestingRule } from '@/lib/model';
  * It also makes the transcript a thing that exists. The findings from pass one
  * are the agent's own account of what it went and read, which is what a developer
  * asking "why did it write that" is actually asking about.
+ *
+ * Pass three is `verify.ts`, and it is there because passes one and two together were
+ * not enough: pass one's budget made evidence the most expensive thing it could buy,
+ * and pass two has no tools at all, so the pass that invents a field name cannot check
+ * one. Nothing downstream tested the result -- `stepFromWire` and `loadable` check the
+ * plan's *shape*, and a step naming a route that does not exist has a perfectly good
+ * shape. So the plan gets read back against the code before a human is asked to
+ * approve it, and each step carries how that came out.
  */
 
 /**
  * How many tool calls one draft may make.
  *
- * A budget rather than a natural stop, because the failure mode without one is
- * not an error -- it is an agent quietly reading a hundred files while somebody
- * watches a spinner. Twelve is enough to find a route, read its handler, follow
- * one layer down and check the schema, which is the shape of nearly every real
- * question. A draft that needed more was probably asked something too broad, and
- * the honest answer to that is a plan built on what it did manage to read.
+ * A budget rather than a natural stop, because the failure mode without one is not an
+ * error -- it is an agent quietly reading a hundred files while somebody watches a
+ * spinner.
+ *
+ * It was twelve, on the reasoning that twelve buys a route, its handler, one layer
+ * down and a look at the schema. Measured against what drafts actually did, that was
+ * wrong in a specific way: across every draft this project had stored, the agent spent
+ * *three* calls in total and never once opened the sandbox or queried the database. A
+ * tight budget does not make an agent read carefully, it makes evidence the most
+ * expensive thing it can buy -- `start_sandbox` is one call and twenty-three seconds,
+ * a schema query is another, and with twelve to spend the cheapest route to a finished
+ * plan is to never look. Which is the exact inverse of what a developer does by hand,
+ * and it is where the invented field names were coming from.
+ *
+ * Forty is enough to boot the sandbox, read information_schema, follow a handler
+ * through two layers and still have most of the budget left for the reading that
+ * actually shapes the plan. The cost is real and it is wall-clock: a draft can now
+ * take minutes rather than seconds. That is the right trade for a plan a human is
+ * about to be asked to approve.
  */
-const RESEARCH_STEPS = 12;
+const RESEARCH_STEPS = 40;
 
 /**
  * Pass two, with one correction turn.
@@ -91,6 +113,14 @@ Research before you write. You have tools onto the developer's actual codebase;
 use them to find the real routes, the real request shapes and the real status
 codes. Do not infer an endpoint from a name, and do not invent a field. If you
 could not establish something, say so in the summary rather than guessing at it.
+
+Read the database, do not reason about it. \`start_sandbox\` brings up a copy of this
+project with its own migrations and seed data applied, and \`db\` queries it -- so
+information_schema tells you what a column is really called, and a SELECT against a
+seeded table tells you what a row actually looks like. Both are worth their cost:
+a column name you guessed at is a step that fails on a typo and reads like a bug in
+the code. Use the seeded data too, rather than inventing an account -- a plan that
+signs in as a guest that exists is a plan whose first step passes.
 
 A path is copied, never composed. Take it character for character from what you
 read -- including any query string, prefix or file name in it -- because that is
@@ -208,6 +238,8 @@ function failurePrompt(detail: TestPlanDetail): string {
 }
 
 export type Refinement = RevisionDraft & {
+  /** How each step came out when it was checked. Empty when verification could not run. */
+  checks: StepCheck[];
   /** The agent's own account of what it read. Kept for the transcript, not shown as prose. */
   findings: string;
   /** Which model wrote it, for the record. Never a key. */
@@ -283,7 +315,20 @@ export async function refinePlan(input: {
       return revisionFromWire(out.object);
     });
 
-    return { ...revision, findings: investigation.text, modelLabel: label };
+    const verified = await verifyPlan({
+      model,
+      tools: research.tools,
+      steps: revision.steps,
+      variables: revision.variables,
+      baseUrl: input.detail.baseUrl,
+    });
+
+    return {
+      ...revision,
+      checks: verified.checks,
+      findings: [investigation.text, verified.findings].filter(Boolean).join('\n\n'),
+      modelLabel: label,
+    };
   } finally {
     /* Always. An open session holds the project's SQLite handle and possibly a
        sandbox on the developer's machine, and a thrown error is exactly when
@@ -293,6 +338,8 @@ export async function refinePlan(input: {
 }
 
 export type Draft = PlanDraft & {
+  /** How each step came out when it was checked. Empty when verification could not run. */
+  checks: StepCheck[];
   /** The agent's own account of what it read. Kept for the transcript, not shown as prose. */
   findings: string;
   /** Which model wrote it, for the record. Never a key. */
@@ -407,7 +454,20 @@ export async function draftPlan(input: {
       return draftFromWire(out.object);
     });
 
-    return { ...draft, findings: investigation.text, modelLabel: label };
+    const verified = await verifyPlan({
+      model,
+      tools: research.tools,
+      steps: draft.steps,
+      variables: draft.variables,
+      baseUrl: input.baseUrl,
+    });
+
+    return {
+      ...draft,
+      checks: verified.checks,
+      findings: [investigation.text, verified.findings].filter(Boolean).join('\n\n'),
+      modelLabel: label,
+    };
   } finally {
     await research.close().catch(() => {});
   }

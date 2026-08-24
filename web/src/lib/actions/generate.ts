@@ -98,6 +98,7 @@ export async function draftPlanAction(
          page able to open with the sentence that produced it. */
       instruction: brief,
       draft,
+      checks: draft.checks,
     });
 
     await record({

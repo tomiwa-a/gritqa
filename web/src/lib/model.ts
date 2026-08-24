@@ -188,6 +188,35 @@ export function stepIsHeavy(step: PlanStepSpec): boolean {
   return step.kind === 'sql' && step.action?.target !== 'verify';
 }
 
+/**
+ * What a step was checked against, and how it came out.
+ *
+ * A drafted step is a claim about somebody else's code -- this route exists, this
+ * field is called that, this status comes back. Nothing used to test those claims:
+ * the only gates were shape gates, so a step naming a route that does not exist
+ * saved as cleanly as one naming a route that does. A developer found out by reading
+ * fourteen steps and knowing the codebase well enough to spot the two wrong ones.
+ *
+ * So a check is recorded per step and kept with the plan. `unsupported` is the
+ * verdict worth having and the one a boolean would have lost: there is a real
+ * difference between a step that was checked and disagreed with the code, and one
+ * whose evidence simply was not reachable -- an endpoint no run has exercised, a
+ * table the sandbox never came up to describe. Only the first is a mistake.
+ */
+export type StepCheckVerdict = 'confirmed' | 'unsupported' | 'wrong';
+
+export type StepCheck = {
+  stepId: string;
+  verdict: StepCheckVerdict;
+  /** Why, in the developer's terms, naming what was read. Empty for a plain confirmation. */
+  note: string;
+};
+
+/** Whether a check is worth a developer's attention. A confirmation is not. */
+export function checkIsDoubt(check: StepCheck): boolean {
+  return check.verdict !== 'confirmed';
+}
+
 export type PlanChangeKind =
   | 'step_added'
   | 'step_removed'
@@ -266,6 +295,11 @@ export type TestPlanDetail = TestPlan & {
    * code, which is the outcome to aim for and not the common one.
    */
   assumptions: string[];
+  /**
+   * How each step came out when it was checked against the code. Empty for a plan
+   * nothing verified, which is every plan written before the pass existed.
+   */
+  checks: StepCheck[];
   diffContext: PlanDiffContext | null;
   previousFailure: PlanFailureSeed | null;
   revisions: PlanRevision[];

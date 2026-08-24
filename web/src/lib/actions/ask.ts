@@ -263,6 +263,7 @@ export async function draftFromConversationAction(
       instruction: brief,
       conversationId: conversation.id,
       draft,
+      checks: draft.checks,
     });
 
     await record({
