@@ -47,6 +47,9 @@ const groupsOf = ({ projects, reviewCount }: ShellData): Group[] => [
       { href: '/dashboard/rules', icon: 'rules', label: 'Rules' },
       { href: '/dashboard/mocks', icon: 'mock', label: 'Mock server' },
       { href: '/dashboard/codebase', icon: 'codebase', label: 'Codebase' },
+      /* Answered once per project and then read by every boot, so it sits with the
+         other things you set rather than with the runs it governs. */
+      { href: '/dashboard/environment', icon: 'shield', label: 'Environment' },
     ],
   },
   {

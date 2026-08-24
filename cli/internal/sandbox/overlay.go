@@ -37,6 +37,13 @@ type Overlay struct {
 	Detached []string
 	// Shared are the volumes created for the writable paths, one per path.
 	Shared []string
+	// Refused are the services taken out of the document altogether, and Held the
+	// ones left in but kept out of the boot. Both are reported because both are a
+	// difference between what the developer runs and what GritQA ran.
+	Refused []string
+	Held    []string
+	// Sealed is whether the copy was cut off from the internet.
+	Sealed bool
 }
 
 // Overlay builds the document. project is the compose project name, which is what
@@ -68,6 +75,32 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		out.Shared = append(out.Shared, fmt.Sprintf("gritqa-writable-%d", i))
 	}
 
+	// A refused service is deleted rather than disabled: the safety property should
+	// not depend on a flag being read correctly further down. A held one stays in
+	// the document behind a profile nothing enables, so a step can still start it by
+	// name. Either way nothing left in the file may depend on it, or compose stops
+	// on a dependency it cannot satisfy.
+	absent := map[string]bool{}
+	for _, name := range e.Refused() {
+		if _, ok := services[name]; !ok {
+			continue
+		}
+		delete(services, name)
+		absent[name] = true
+		out.Refused = append(out.Refused, name)
+	}
+	held := map[string]bool{}
+	for _, name := range e.OnDemand() {
+		if _, ok := services[name]; !ok {
+			continue
+		}
+		held[name] = true
+		absent[name] = true
+		out.Held = append(out.Held, name)
+	}
+	sort.Strings(out.Refused)
+	sort.Strings(out.Held)
+
 	for _, name := range sorted(services) {
 		svc, ok := services[name].(map[string]any)
 		if !ok {
@@ -77,6 +110,12 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		delete(svc, "container_name")
 		svc["restart"] = "no"
 		svc["labels"] = ours
+		if held[name] {
+			// Compose enables a service's own profiles when it is named on `run`, so
+			// one profile nothing turns on is both halves of on_demand at once.
+			svc["profiles"] = []any{HoldProfile}
+		}
+		detach(svc, absent)
 
 		for _, p := range published(svc["ports"]) {
 			out.Dropped = append(out.Dropped, name+" "+p)
@@ -100,6 +139,26 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		svc["volumes"] = mounts
 	}
 
+	// Egress is denied on the networks rather than per service, which is what makes
+	// it hold for a service somebody classified wrongly. A service that declares no
+	// network of its own joins `default`, so denying means naming it: compose emits
+	// that entry itself in most files, and adding it when it is missing is the
+	// difference between denying egress and thinking you did.
+	out.Sealed = e.Denied() && len(e.Services) > 0
+	if out.Sealed {
+		nets, _ := doc["networks"].(map[string]any)
+		if nets == nil {
+			nets = map[string]any{}
+			doc["networks"] = nets
+		}
+		if _, ok := nets["default"]; !ok {
+			nets["default"] = map[string]any{}
+		}
+		for name := range nets {
+			seal(nets, name)
+		}
+	}
+
 	for _, block := range []string{"volumes", "networks"} {
 		out.Detached = append(out.Detached, scope(doc[block], block)...)
 	}
@@ -120,6 +179,82 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 	}
 	out.Document = append(body, '\n')
 	return out, nil
+}
+
+// seal cuts one network off from the internet while leaving it reachable from the
+// host. `internal: true` is the obvious way and it is the wrong one: measured on
+// Docker 28.1.1, an internal network does not publish ports at all -- the port came
+// back as `{"8080/tcp": null}` and `compose port` answered `invalid IP:0`. The app
+// under test would have been unreachable, which is the entire run.
+//
+// Turning off the bridge's IP masquerade instead leaves the bridge attached to the
+// host, so the kernel still DNATs an inbound loopback port, while an outbound packet
+// leaves with a private source address and dies at the first hop. Measured on the
+// same daemon: the published port stayed reachable, service-to-service by name
+// stayed reachable, and TCP to 1.1.1.1:443 was refused.
+//
+// One honest gap: name resolution still works, because the daemon's embedded
+// resolver does the lookup and not the container. Every outbound thing this is
+// meant to stop -- a tunnel dialling home, a worker charging a card, mail going
+// out -- needs a TCP connection, and none of them get one. Exfiltration through
+// DNS queries alone is not covered, and saying so is cheaper than implying it is.
+func seal(nets map[string]any, name string) {
+	entry, ok := nets[name].(map[string]any)
+	if !ok {
+		entry = map[string]any{}
+		nets[name] = entry
+	}
+	// Only a bridge has a masquerade rule to turn off. Anything else is a driver
+	// this cannot speak for, and an option it does not understand is a boot failure
+	// rather than a safer network.
+	if d, _ := entry["driver"].(string); d != "" && d != "bridge" {
+		return
+	}
+	opts, _ := entry["driver_opts"].(map[string]any)
+	if opts == nil {
+		opts = map[string]any{}
+		entry["driver_opts"] = opts
+	}
+	opts["com.docker.network.bridge.enable_ip_masquerade"] = "false"
+}
+
+// HoldProfile is the compose profile an on_demand service sits behind. Nothing
+// enables it, so `up` skips the service and `run` starts it anyway.
+const HoldProfile = "gritqa-on-demand"
+
+// detach drops the dependencies a service has on something that will not be there.
+// Compose refuses to start a stack whose depends_on names a service the document
+// does not declare, and it will not wait on one held behind a profile either -- so
+// removing the service without removing what points at it turns a safety choice
+// into a boot failure.
+func detach(svc map[string]any, gone map[string]bool) {
+	if len(gone) == 0 {
+		return
+	}
+	switch deps := svc["depends_on"].(type) {
+	case map[string]any:
+		for name := range deps {
+			if gone[name] {
+				delete(deps, name)
+			}
+		}
+		if len(deps) == 0 {
+			delete(svc, "depends_on")
+		}
+	case []any:
+		kept := make([]any, 0, len(deps))
+		for _, d := range deps {
+			if name, ok := d.(string); ok && gone[name] {
+				continue
+			}
+			kept = append(kept, d)
+		}
+		if len(kept) == 0 {
+			delete(svc, "depends_on")
+			return
+		}
+		svc["depends_on"] = kept
+	}
 }
 
 // ours is how GritQA finds its own leftovers. Compose scopes everything by project

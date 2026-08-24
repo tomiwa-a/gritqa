@@ -16,6 +16,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import type { AgentStep, CommitFile, PlanChange } from '@/lib/model';
+import type { ComposeService, EnvironmentSpec } from '@/lib/environment';
 
 /**
  * Every table carries the dual-ID pattern from `plan/technical/entities.md`: a
@@ -47,6 +48,11 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 
 export const providerEnum = pgEnum('provider', ['github', 'gitlab']);
 export const projectStatusEnum = pgEnum('project_status', ['active', 'archived']);
+export const environmentStatusEnum = pgEnum('environment_status', [
+  'proposed',
+  'approved',
+  'superseded',
+]);
 export const deviceCodeStatusEnum = pgEnum('device_code_status', [
   'pending',
   'approved',
@@ -712,6 +718,93 @@ export const mockEndpoints = pgTable(
 );
 
 /**
+ * The developer's compose file, as a fact.
+ *
+ * One row per project, replaced whenever the CLI reads the file again. Nobody
+ * approves a fact -- what a service is *for* is the judgement in the next table,
+ * and keeping the two apart is what lets a new service appear as one new row
+ * instead of throwing away decisions somebody already made.
+ *
+ * There is no document column on purpose. Compose resolves `${MYSQL_ROOT_PASSWORD}`
+ * to its value, so the document it prints holds the developer's real secrets; the
+ * CLI puts the `${...}` expressions back before it reports anything, and this table
+ * holds only the reported shape.
+ */
+export const projectCompose = pgTable(
+  'project_compose',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .unique()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Compose's own project name, which is never the one a GritQA copy runs under. */
+    projectName: varchar('project_name', { length: 255 }).notNull().default(''),
+    /**
+     * Covers the resolved document and every Dockerfile it builds from, so it moves
+     * when the environment changes and stays put when a controller is edited.
+     */
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    /** The files it was read from, in override order. */
+    files: jsonb('files')
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
+    services: jsonb('services')
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<ComposeService[]>(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+    ...stamps,
+  },
+);
+
+/**
+ * What GritQA does with each of those services.
+ *
+ * This is the one thing in the product that cannot be recomputed from the
+ * codebase. "Never boot my tunnel" is intent; it is written nowhere in the source,
+ * and no amount of reading the repository produces it. That is precisely why it is
+ * approved by a person once and then persisted, rather than derived per run.
+ *
+ * Superseded, never deleted -- a row records that somebody decided something, and a
+ * later decision does not make the earlier one not have happened. The two partial
+ * unique indexes in `drizzle/0011` hold the invariant that matters: one approved row
+ * and one open proposal per project, so a boot never picks between two answers.
+ */
+export const projectEnvironments = pgTable(
+  'project_environments',
+  {
+    ...identity,
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    status: environmentStatusEnum('status').notNull(),
+    /** `config` | `agent` | `approved`. Never GritQA deciding for itself. */
+    author: varchar('author', { length: 32 }).notNull(),
+    /**
+     * The `sandbox.Environment` the CLI decodes, verbatim. The CLI owns the shape
+     * and re-validates it against the compose file before every boot, so this column
+     * is transport rather than schema -- the web must not be a second opinion about
+     * what a valid environment is.
+     */
+    spec: jsonb('spec').notNull().$type<EnvironmentSpec>(),
+    /**
+     * The compose fingerprint this was worked out against. A row whose fingerprint
+     * has moved is still approved and still boots -- most compose edits move none of
+     * it -- but the screen says so.
+     */
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull().default(''),
+    approvedBy: bigint('approved_by', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    ...stamps,
+  },
+  (t) => [index('project_environments_project_idx').on(t.projectId, t.createdAt)],
+);
+
+/**
  * Append-only, and enforced by triggers in `drizzle/0001_the_rest.sql` rather
  * than by convention. No `public_id` and no `updated_at`: nothing addresses a
  * log row from outside, and a row that could be updated would not be a log.
@@ -770,3 +863,5 @@ export type CommitRow = typeof commits.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
 export type MockEndpointRow = typeof mockEndpoints.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
+export type ProjectComposeRow = typeof projectCompose.$inferSelect;
+export type ProjectEnvironmentRow = typeof projectEnvironments.$inferSelect;
