@@ -47,16 +47,18 @@ func TestExtractorFallsBackToALogin(t *testing.T) {
 	t.Setenv(model.KeyEnv, "")
 
 	opts := Options{Server: "https://app.gritqa.dev"}
+	cfg := modelConfig(t)
 	store, err := creds.Open()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Set(opts.server(), creds.Entry{Token: "t"}); err != nil {
+	key := creds.Key{Server: opts.server(), Root: cfg.Root()}
+	if err := store.Set(key, creds.Entry{Token: "t"}); err != nil {
 		t.Fatal(err)
 	}
 
 	var out bytes.Buffer
-	got := extractor(term.New(&out), opts, modelConfig(t))
+	got := extractor(term.New(&out), opts, cfg)
 
 	c, ok := got.(*source.Client)
 	if !ok {

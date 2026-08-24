@@ -142,7 +142,7 @@ func extractor(w *term.Writer, opts Options, cfg *config.Config) source.Extracto
 	if err != nil {
 		return nil
 	}
-	entry, err := store.Get(opts.server())
+	entry, err := store.Get(creds.Key{Server: opts.server(), Root: cfg.Root()})
 	if err != nil {
 		w.Write(term.Line{
 			Kind: term.Info,

@@ -40,14 +40,22 @@ type Linked struct {
 	} `json:"project"`
 }
 
+// Machine is how the CLI describes the directory it was started in. All of it is
+// for the approval screen: a project the dashboard has never seen is one a human
+// is being asked to add, and they can only say yes to something they can read.
+type Machine struct {
+	Hostname  string `json:"hostname,omitempty"`
+	LocalPath string `json:"localPath,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	RepoURL   string `json:"repoUrl,omitempty"`
+}
+
 // StartDevice asks to be linked and gets back a code worth nothing on its own.
-func StartDevice(ctx context.Context, server, hostname, localPath string) (*Device, error) {
+func StartDevice(ctx context.Context, server string, m Machine) (*Device, error) {
 	const path = "/api/cli/device"
 	c := &Client{Server: server}
-	r, err := c.call(ctx, http.MethodPost, path, struct {
-		Hostname  string `json:"hostname,omitempty"`
-		LocalPath string `json:"localPath,omitempty"`
-	}{hostname, localPath})
+	r, err := c.call(ctx, http.MethodPost, path, m)
 	if err != nil {
 		return nil, err
 	}

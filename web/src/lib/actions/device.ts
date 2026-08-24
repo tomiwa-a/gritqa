@@ -6,6 +6,7 @@ import { clientIp } from '@/lib/client-ip';
 import { record } from '@/lib/db/audit';
 import { findUserByPublicId } from '@/lib/db/auth';
 import {
+  addProjectForDevice,
   approveDevice,
   denyDevice,
   findPendingByUserCode,
@@ -43,8 +44,17 @@ async function decide(formData: FormData, approve: boolean): Promise<never> {
   // Expired, already decided, or never existed. The page re-reads and says which.
   if (!row || row.status !== 'pending') redirect(`/auth/cli?code=${code}`);
 
+  let added: string | null = null;
   if (approve) {
-    const project = await projectForDevice(user.id, row.localPath, session.pid);
+    const target = await projectForDevice(user.id, row, session.pid);
+    // Approving a directory the dashboard has never seen is what adds it. The row
+    // is written before the code is marked approved, so a CLI that collects its
+    // token has a project to be scoped to by the time it asks.
+    let project = target.kind === 'existing' ? target.project : null;
+    if (target.kind === 'new') {
+      project = await addProjectForDevice(user.id, target);
+      added = project?.publicId ?? null;
+    }
     await approveDevice(code, user.id, project?.id ?? null);
   } else {
     await denyDevice(code);
@@ -58,7 +68,7 @@ async function decide(formData: FormData, approve: boolean): Promise<never> {
     action: approve ? 'device.approved' : 'device.denied',
     entityType: 'device_codes',
     entityId: row.id,
-    values: { hostname: row.hostname, localPath: row.localPath },
+    values: { hostname: row.hostname, localPath: row.localPath, projectAdded: added },
     ip: await clientIp(),
   });
 

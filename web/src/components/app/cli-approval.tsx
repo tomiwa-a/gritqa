@@ -11,6 +11,8 @@ const SCOPE = [
   'Nothing else — the CLI cannot read your other projects',
 ];
 
+const SCOPE_NEW = ['Add this directory to your dashboard as a project', ...SCOPE];
+
 /**
  * Every state here is a fact read out of the database, not a click remembered in
  * the browser. That is the difference between showing someone their machine was
@@ -24,7 +26,8 @@ type CliApprovalProps =
   | {
       state: 'pending';
       code: string;
-      projectName: string | null;
+      /** `added` means this directory is not a project yet, and approving makes it one. */
+      project: { name: string; added: boolean } | null;
       requestedLabel: string;
       hostname: string | null;
       localPath: string | null;
@@ -188,13 +191,13 @@ function Linked({ projectName, collected }: { projectName: string | null; collec
 
 function Pending({
   code,
-  projectName,
+  project,
   requestedLabel,
   hostname,
   localPath,
 }: {
   code: string;
-  projectName: string | null;
+  project: { name: string; added: boolean } | null;
   requestedLabel: string;
   hostname: string | null;
   localPath: string | null;
@@ -202,7 +205,11 @@ function Pending({
   return (
     <>
       <Tile tone="dark" icon="terminal" />
-      <Title>A CLI wants to link to your account</Title>
+      <Title>
+        {project?.added
+          ? 'A CLI wants to add a project to your account'
+          : 'A CLI wants to link to your account'}
+      </Title>
       <Body>
         Only approve this if you started it. Check the code below against the one in your terminal.
       </Body>
@@ -217,14 +224,18 @@ function Pending({
       </div>
 
       <dl className="mt-4 flex flex-col divide-y divide-rule-soft border-y border-rule-soft">
-        <Row label="Project" value={projectName ?? 'None yet'} mono={Boolean(projectName)} />
+        <Row
+          label={project?.added ? 'New project' : 'Project'}
+          value={project?.name ?? 'None yet'}
+          mono={Boolean(project)}
+        />
         {hostname && <Row label="Machine" value={hostname} mono />}
         {localPath && <Row label="Directory" value={localPath} mono />}
         <Row label="Requested" value={requestedLabel} />
       </dl>
 
       <ul className="mt-4 flex flex-col gap-2">
-        {SCOPE.map((line) => (
+        {(project?.added ? SCOPE_NEW : SCOPE).map((line) => (
           <li
             key={line}
             className="flex items-start gap-2 text-[12.5px] leading-snug text-ink-muted"

@@ -155,6 +155,14 @@ export const deviceCodes = pgTable(
     /** What the CLI told us about itself, for the approval screen to show. */
     hostname: varchar('hostname', { length: 255 }),
     localPath: text('local_path'),
+    /**
+     * The project the CLI is standing in, as it described it. A proposal, not a
+     * project: when `local_path` matches nothing the developer owns, approving is
+     * what turns these three into a row.
+     */
+    projectName: varchar('project_name', { length: 255 }),
+    repoUrl: text('repo_url'),
+    defaultBranch: varchar('default_branch', { length: 255 }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),

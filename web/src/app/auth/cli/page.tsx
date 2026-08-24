@@ -80,14 +80,20 @@ export default async function CliAuthPage({
     redirect(`/login?next=${encodeURIComponent(`/auth/cli?code=${code}`)}`);
   }
 
-  const project = await projectForDevice(user.id, row.localPath, session.pid);
+  const target = await projectForDevice(user.id, row, session.pid);
 
   return (
     <AuthFrame>
       <CliApproval
         state="pending"
         code={code}
-        projectName={project?.name ?? null}
+        project={
+          target.kind === 'existing'
+            ? { name: target.project.name, added: false }
+            : target.kind === 'new'
+              ? { name: target.name, added: true }
+              : null
+        }
         requestedLabel={agoLabel(row.createdAt)}
         hostname={row.hostname}
         localPath={row.localPath}

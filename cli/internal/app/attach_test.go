@@ -73,7 +73,7 @@ func (d *dashboard) start(t *testing.T, job map[string]any) *httptest.Server {
 
 // linked puts a token where cloud.New will find it, in a config directory belonging
 // to this test rather than to whoever is running it.
-func linked(t *testing.T, server string) {
+func linked(t *testing.T, server, root string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -83,7 +83,8 @@ func linked(t *testing.T, server string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Set(server, creds.Entry{Token: "a-token"}); err != nil {
+	key := creds.Key{Server: server, Root: root}
+	if err := store.Set(key, creds.Entry{Token: "a-token"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -124,14 +125,13 @@ func TestAttachRunsAClaimedPlan(t *testing.T) {
 		"publicId": "job_1", "type": "execute_tests", "attempt": 1, "maxAttempts": 3,
 		"payload": runPayload(api.URL),
 	})
-	linked(t, srv.URL)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	d.settled = cancel
 
 	w, out := writer()
 	cfg := conf(t, &config.Run{})
+	linked(t, srv.URL, cfg.Root())
 	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +167,13 @@ func TestAttachGivesBackWhatItCannotDo(t *testing.T) {
 		"publicId": "job_1", "type": "teach_it_to_dance", "attempt": 1, "maxAttempts": 3,
 		"payload": map[string]any{},
 	})
-	linked(t, srv.URL)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	d.settled = cancel
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
+	linked(t, srv.URL, cfg.Root())
 	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -197,14 +196,13 @@ func TestAttachSettlesAnUnreadablePayload(t *testing.T) {
 		"publicId": "job_1", "type": "execute_tests", "attempt": 1, "maxAttempts": 3,
 		"payload": map[string]any{"plan": map[string]any{"steps": "not a list"}},
 	})
-	linked(t, srv.URL)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	d.settled = cancel
 
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
+	linked(t, srv.URL, cfg.Root())
 	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
 		t.Fatal(err)
 	}

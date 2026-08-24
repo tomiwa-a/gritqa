@@ -34,12 +34,12 @@ type Client struct {
 // New reads the token stored for this server. The key is the server string the
 // rest of the CLI uses, so --server and GRITQA_SERVER pick the same entry the
 // login wrote and --logout would remove.
-func New(server string) (*Client, error) {
+func New(server, root string) (*Client, error) {
 	store, err := creds.Open()
 	if err != nil {
 		return nil, err
 	}
-	entry, err := store.Get(server)
+	entry, err := store.Get(creds.Key{Server: server, Root: root})
 	if err != nil {
 		return nil, err
 	}

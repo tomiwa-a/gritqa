@@ -40,6 +40,9 @@ export type StartedDevice = {
 export async function startDevice(input: {
   hostname?: string | null;
   localPath?: string | null;
+  projectName?: string | null;
+  repoUrl?: string | null;
+  defaultBranch?: string | null;
 }): Promise<StartedDevice> {
   const deviceCode = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + TTL_MINUTES * 60_000);
@@ -58,6 +61,9 @@ export async function startDevice(input: {
         deviceCodeHash: hashDeviceCode(deviceCode),
         hostname: input.hostname ?? null,
         localPath: input.localPath ?? null,
+        projectName: input.projectName ?? null,
+        repoUrl: input.repoUrl ?? null,
+        defaultBranch: input.defaultBranch ?? null,
         expiresAt,
       });
       return { userCode: code, deviceCode, expiresAt };
@@ -88,28 +94,82 @@ export function normalizeUserCode(input: string | null | undefined): string | nu
 }
 
 /**
- * Which project this machine is asking about.
+ * Which project this machine is asking about, and whether it exists yet.
  *
  * The CLI reports the directory it was started in, and that is a better answer than
  * whatever the dashboard's switcher happens to be pointing at -- a developer with
- * six projects is approving *this* checkout. When the path is not one we know, fall
- * back to the session's project rather than refusing: an unindexed directory is a
- * normal first run, not a mismatch.
+ * six projects is approving *this* checkout.
+ *
+ * `new` is the case that used to be silently wrong. A directory nothing owns fell
+ * back to the session's project, so approving pointed a second checkout at the
+ * first one's rows. It is now what it looks like: a project waiting to be added,
+ * described well enough for a human to recognise it.
  */
+export type DeviceTarget =
+  | { kind: 'existing'; project: ProjectRow }
+  | { kind: 'new'; name: string; localPath: string; repoUrl: string | null; branch: string }
+  | { kind: 'none' };
+
 export async function projectForDevice(
   userId: number,
-  localPath: string | null,
+  row: Pick<DeviceCodeRow, 'localPath' | 'projectName' | 'repoUrl' | 'defaultBranch'>,
   sessionProjectId: string | null,
-): Promise<ProjectRow | null> {
-  if (localPath) {
+): Promise<DeviceTarget> {
+  if (row.localPath) {
     const [match] = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.userId, userId), eq(projects.localPath, localPath)))
+      .where(and(eq(projects.userId, userId), eq(projects.localPath, row.localPath)))
       .limit(1);
-    if (match) return match;
+    if (match) return { kind: 'existing', project: match };
+
+    // The CLI names the project it is standing in. Without a name there is nothing
+    // to add, so this falls through to whatever the session was already looking at
+    // -- which is the pre-0010 CLI, still linking the way it always did.
+    if (row.projectName) {
+      return {
+        kind: 'new',
+        name: row.projectName,
+        localPath: row.localPath,
+        repoUrl: row.repoUrl,
+        branch: row.defaultBranch || 'main',
+      };
+    }
   }
-  return resolveProjectForUser(userId, sessionProjectId);
+  const fallback = await resolveProjectForUser(userId, sessionProjectId);
+  return fallback ? { kind: 'existing', project: fallback } : { kind: 'none' };
+}
+
+/**
+ * Add the project the CLI described, or return the one that got there first.
+ *
+ * The unique index on `(user_id, local_path)` is the arbiter: two terminals in the
+ * same directory approving at once is one project, not an error either of them
+ * should see.
+ */
+export async function addProjectForDevice(
+  userId: number,
+  target: Extract<DeviceTarget, { kind: 'new' }>,
+): Promise<ProjectRow> {
+  const [created] = await db
+    .insert(projects)
+    .values({
+      userId,
+      name: target.name,
+      localPath: target.localPath,
+      repoUrl: target.repoUrl,
+      defaultBranch: target.branch,
+    })
+    .onConflictDoNothing({ target: [projects.userId, projects.localPath] })
+    .returning();
+  if (created) return created;
+
+  const [existing] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.userId, userId), eq(projects.localPath, target.localPath)))
+    .limit(1);
+  return existing;
 }
 
 /** The project a decided request was linked to, for the page that reports it back. */

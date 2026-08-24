@@ -10,7 +10,13 @@ import { appOrigin } from '@/lib/oauth';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  let body: { hostname?: string; localPath?: string } = {};
+  let body: {
+    hostname?: string;
+    localPath?: string;
+    name?: string;
+    branch?: string;
+    repoUrl?: string;
+  } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -18,10 +24,16 @@ export async function POST(request: Request) {
   }
 
   const device = await startDevice({
-    // Truncated because both land in a VARCHAR and because they are shown to a
-    // human on the approval screen, where a pathological hostname is a layout bug.
+    // Truncated because they land in bounded columns and because they are shown to
+    // a human on the approval screen, where a pathological hostname is a layout bug.
     hostname: body.hostname?.slice(0, 255) ?? null,
     localPath: body.localPath?.slice(0, 1024) ?? null,
+    // What the CLI proposes to add, if this directory is one the dashboard has
+    // never seen. Nothing is created here -- an unapproved code names a project
+    // the same way it names a hostname, which is to say it only describes one.
+    projectName: body.name?.trim().slice(0, 255) || null,
+    repoUrl: body.repoUrl?.trim().slice(0, 1024) || null,
+    defaultBranch: body.branch?.trim().slice(0, 255) || null,
   });
 
   return NextResponse.json(

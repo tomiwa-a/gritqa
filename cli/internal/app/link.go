@@ -9,13 +9,14 @@ import (
 	"github.com/gritqa/cli/internal/cloud"
 	"github.com/gritqa/cli/internal/config"
 	"github.com/gritqa/cli/internal/creds"
+	"github.com/gritqa/cli/internal/gitinfo"
 	"github.com/gritqa/cli/internal/term"
 )
 
 // connect returns a client for this server, linking the machine first when there
 // is no token for it yet.
 func connect(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options) (*cloud.Client, error) {
-	c, err := cloud.New(opts.server())
+	c, err := cloud.New(opts.server(), cfg.Root())
 	if err == nil {
 		return c, nil
 	}
@@ -32,7 +33,13 @@ func link(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	server := opts.server()
 	host, _ := os.Hostname()
 
-	dev, err := cloud.StartDevice(ctx, server, host, cfg.Root())
+	dev, err := cloud.StartDevice(ctx, server, cloud.Machine{
+		Hostname:  host,
+		LocalPath: cfg.Root(),
+		Name:      cfg.Project,
+		Branch:    cfg.Branch,
+		RepoURL:   gitinfo.RemoteURL(ctx, cfg.Root()),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +56,8 @@ func link(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	if err != nil {
 		return nil, err
 	}
-	if err := store.Set(server, creds.Entry{Token: got.Token}); err != nil {
+	key := creds.Key{Server: server, Root: cfg.Root()}
+	if err := store.Set(key, creds.Entry{Token: got.Token}); err != nil {
 		return nil, err
 	}
 

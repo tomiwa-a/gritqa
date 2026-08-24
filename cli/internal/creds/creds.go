@@ -1,5 +1,5 @@
-// Package creds stores the CLI's bearer token outside the repository, keyed by
-// server host so a machine can be linked to more than one deployment.
+// Package creds stores the CLI's bearer tokens outside the repository, one per
+// server and project directory.
 package creds
 
 import (
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Entry struct {
@@ -21,6 +22,21 @@ type Store struct {
 }
 
 var ErrNoToken = errors.New("not linked to an account yet")
+
+// Key names one link. A token carries the project it may write to, so two
+// directories on one machine are two links: sharing one would push this project's
+// index into the other project's rows, and the server would accept it.
+type Key struct {
+	Server string
+	Root   string
+}
+
+func (k Key) String() string {
+	if k.Root == "" {
+		return k.Server
+	}
+	return k.Server + " " + k.Root
+}
 
 func dir() (string, error) {
 	base, err := os.UserConfigDir()
@@ -57,23 +73,33 @@ func Open() (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) Get(host string) (Entry, error) {
-	e, ok := s.Entries[host]
+func (s *Store) Get(k Key) (Entry, error) {
+	e, ok := s.Entries[k.String()]
 	if !ok || e.Token == "" {
 		return Entry{}, ErrNoToken
 	}
 	return e, nil
 }
 
-func (s *Store) Set(host string, e Entry) error {
-	s.Entries[host] = e
+func (s *Store) Set(k Key, e Entry) error {
+	s.Entries[k.String()] = e
 	return s.save()
 }
 
-func (s *Store) Delete(host string) error {
-	delete(s.Entries, host)
-	return s.save()
+// Forget drops every link to this server, whichever project it was for: logging
+// out of a deployment means logging out of it.
+func (s *Store) Forget(server string) int {
+	gone := 0
+	for k := range s.Entries {
+		if k == server || strings.HasPrefix(k, server+" ") {
+			delete(s.Entries, k)
+			gone++
+		}
+	}
+	return gone
 }
+
+func (s *Store) Save() error { return s.save() }
 
 func (s *Store) save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {

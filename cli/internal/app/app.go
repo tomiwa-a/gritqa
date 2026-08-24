@@ -212,11 +212,11 @@ func logout(w *term.Writer, opts Options) error {
 		return err
 	}
 	host := opts.server()
-	if _, err := store.Get(host); errors.Is(err, creds.ErrNoToken) {
+	if store.Forget(host) == 0 {
 		w.Write(term.Line{Kind: term.Info, Text: "no token stored for " + host})
 		return nil
 	}
-	if err := store.Delete(host); err != nil {
+	if err := store.Save(); err != nil {
 		return err
 	}
 	w.Write(term.Line{Kind: term.OK, Text: "forgot the token for " + host})
