@@ -99,6 +99,10 @@ var skipDirs = map[string]bool{
 	".vscode": true, "node_modules": true, "vendor": true, "dist": true,
 	"build": true, "target": true, "coverage": true, "__pycache__": true,
 	"venv": true, "third_party": true,
+	// .NET build output, which holds generated .cs the walker would otherwise
+	// index as a second copy of the API. git already excludes it; this is for the
+	// fallback walk, where there is no .gitignore to read.
+	"obj": true, "bin": true,
 }
 
 // Language names the language of a source file, or "" for anything that is not

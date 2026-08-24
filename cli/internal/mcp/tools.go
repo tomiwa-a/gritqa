@@ -237,10 +237,13 @@ type readOut struct {
 	Content   string `json:"content"`
 }
 
-func (s *Server) readFile(_ context.Context, _ *sdk.CallToolRequest, in readIn) (*sdk.CallToolResult, readOut, error) {
+func (s *Server) readFile(ctx context.Context, _ *sdk.CallToolRequest, in readIn) (*sdk.CallToolResult, readOut, error) {
 	full, err := s.inProject(in.Path)
 	if err != nil {
 		return nil, readOut{}, err
+	}
+	if err := index.Readable(ctx, s.root, in.Path); err != nil {
+		return nil, readOut{}, fmt.Errorf("%s: %w — get_index and search list what is readable", in.Path, err)
 	}
 	info, err := os.Stat(full)
 	if err != nil {
@@ -268,8 +271,8 @@ func (s *Server) readFile(_ context.Context, _ *sdk.CallToolRequest, in readIn) 
 }
 
 // inProject resolves a repo-relative path and refuses anything outside the
-// project, symlinks included. read_file is a host read, so this is the only
-// boundary there is.
+// project, symlinks included. read_file is a host read, so this and
+// index.Readable are the whole boundary.
 func (s *Server) inProject(rel string) (string, error) {
 	if rel == "" {
 		return "", errors.New("no path given")
