@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import { AGENT_JOBS, jobEvents, jobs } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
@@ -414,7 +414,7 @@ export async function listWork(projectId: number): Promise<WorkRow[]> {
       )`,
     })
     .from(jobs)
-    .where(and(eq(jobs.projectId, projectId), sql`${jobs.type} = ANY(${[...AGENT_JOBS]})`))
+    .where(and(eq(jobs.projectId, projectId), inArray(jobs.type, [...AGENT_JOBS])))
     .orderBy(desc(jobs.createdAt))
     .limit(RECENT);
 
@@ -577,7 +577,12 @@ export async function workRunning(projectId: number): Promise<number> {
     .where(
       and(
         eq(jobs.projectId, projectId),
-        sql`${jobs.type} = ANY(${[...AGENT_JOBS]})`,
+        /* `inArray` and not ``sql`= ANY(${arr})` ``: drizzle expands a JS array inside an
+           `sql` template into a comma-separated parameter list, so `ANY` receives three
+           scalars and Postgres refuses with *requires array on right side*. The `raw`
+           postgres.js queries above bind a real array and keep their explicit
+           `::job_type[]` cast; the two template kinds are not interchangeable. */
+        inArray(jobs.type, [...AGENT_JOBS]),
         sql`${jobs.status} IN ('pending', 'claimed')`,
       ),
     );
