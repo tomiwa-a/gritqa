@@ -79,9 +79,13 @@ var surface = []struct {
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "db",
-			Description: "Run one read-only query against the sandbox database, which has to be " +
-				"running already. One statement, and nothing that writes. This is GritQA's own " +
-				"database, not the developer's, so information_schema describes what it created."}, s.db)
+			Description: "Run one read-only query against the project's primary SQL datastore via the sandbox " +
+				"(MySQL, Postgres, ClickHouse, etc.). If the sandbox is not yet running it will be started " +
+				"automatically (about a minute the first time). One statement, and nothing that writes. " +
+				"Use this for tables, schema, and data that lives in the project's own SQL store — " +
+				"information_schema (or equivalent) describes what the project created, and you can make " +
+				"multiple calls to join, filter, and cross-check. For non-SQL stores (MongoDB, Redis, " +
+				"Kafka, etc.) this has no data to query — use search + read_file on the code instead."}, s.db)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "derive_environment",
@@ -423,9 +427,9 @@ func (s *Server) startSandbox(ctx context.Context, _ *sdk.CallToolRequest, _ emp
 	}, nil
 }
 
-// live is the sandbox as it stands. Nothing boots one on the way to answering a
-// question: start_sandbox is how Docker starts, so a research turn never pays for
-// a container it did not ask for.
+// live is the sandbox as it stands. Most tools require an explicit
+// start_sandbox so a research turn never pays for a container it did not ask for.
+// db is the exception — it auto-starts when nothing is running.
 func (s *Server) live() (*sandbox.Stack, error) {
 	st := s.back.Sandbox()
 	if st == nil {
@@ -460,7 +464,18 @@ func (s *Server) db(ctx context.Context, _ *sdk.CallToolRequest, in dbIn) (*sdk.
 
 	st, err := s.live()
 	if err != nil {
-		return nil, dbOut{}, err
+		began := time.Now()
+		s.log("db: no sandbox running, auto-starting for " + clipped(stmt))
+		boot, serr := s.back.StartSandbox(ctx)
+		if serr != nil {
+			return nil, dbOut{}, fmt.Errorf("no sandbox was running and auto-start failed: %w", serr)
+		}
+		st = s.back.Sandbox()
+		if st == nil {
+			return nil, dbOut{}, errors.New("sandbox auto-start reported success but no sandbox is available")
+		}
+		s.log(fmt.Sprintf("db: sandbox up (%s, %d tables) in %s — already=%v",
+			boot.Database, len(boot.Tables), time.Since(began).Round(time.Millisecond), boot.Already))
 	}
 	if st.DB() == nil {
 		return nil, dbOut{}, errors.New("this build has no client for what this project's " +

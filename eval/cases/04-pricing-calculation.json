@@ -1,0 +1,11 @@
+{
+  "name": "04 — Pricing calculation",
+  "question": "How is the price calculated for a reservation? What factors affect the total (room rate, quantity, duration, discounts)? Trace the logic.",
+  "category": "logic",
+  "expectedTools": ["search", "read_file"],
+  "rubric": {
+    "completeness": "Mentions room rate, quantity, duration (nights), and discount handling with where each is computed",
+    "accuracy": "Cited code locations exist and the formula matches the code",
+    "hallucination": "No invented pricing rules or fields"
+  }
+}

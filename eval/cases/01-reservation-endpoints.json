@@ -1,0 +1,11 @@
+{
+  "name": "01 — Reservation endpoints",
+  "question": "What are the main API endpoints for reservations? List the HTTP method, path, and what each does.",
+  "category": "code-reading",
+  "expectedTools": ["get_index", "read_file"],
+  "rubric": {
+    "completeness": "Lists at least 3 reservation endpoints with method and purpose",
+    "accuracy": "All listed endpoints exist in get_index or in the file that was read",
+    "hallucination": "No invented endpoints or files"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "gritqa-eval",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "tsx run.ts",
+    "eval:all": "tsx run.ts --all"
+  },
+  "dependencies": {
+    "ai": "^7.0.71",
+    "@ai-sdk/mcp": "^2.0.34",
+    "@ai-sdk/google-vertex": "^5.0.59",
+    "@ai-sdk/openai-compatible": "^3.0.33",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  }
+}

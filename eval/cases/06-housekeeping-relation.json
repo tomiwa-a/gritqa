@@ -1,0 +1,14 @@
+{
+  "name": "06 — Housekeeping relation",
+  "question": "How is the reservation/booking flow related to housekeeping? What booking status or event triggers a housekeeping task?",
+  "category": "multi-file",
+  "expectedTools": ["search", "read_file"],
+  "followUps": [
+    "also based on the database what types of users have the housekeeping-related permissions? check the db and the code"
+  ],
+  "rubric": {
+    "completeness": "Names the trigger (e.g. checkout) and the housekeeping table/task creation, with code evidence",
+    "accuracy": "Trigger and table/column exist in code and DB",
+    "hallucination": "No invented housekeeping workflow"
+  }
+}

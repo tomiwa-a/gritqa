@@ -1,0 +1,11 @@
+{
+  "name": "02 — Check-in flow end-to-end",
+  "question": "How does the check-in process work? Trace from the API endpoint to the handler and what it writes to the database.",
+  "category": "multi-file",
+  "expectedTools": ["get_index", "read_file", "search"],
+  "rubric": {
+    "completeness": "Mentions the checkin endpoint, the handler file, and a DB effect (bookings status/room_number update)",
+    "accuracy": "Handler path and DB table/column exist in code; does not confuse checkin with checkout/cancel",
+    "hallucination": "No invented status values or files"
+  }
+}

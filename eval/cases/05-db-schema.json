@@ -1,0 +1,12 @@
+{
+  "name": "05 — DB schema for bookings",
+  "question": "What tables are in the database? Show the schema for the bookings table (columns, types, and key constraints).",
+  "category": "db",
+  "expectedTools": ["db"],
+  "minDbCalls": 2,
+  "rubric": {
+    "completeness": "Lists tables and describes bookings columns with types/keys",
+    "accuracy": "Tables/columns/types match SHOW TABLES and DESCRIBE output",
+    "hallucination": "No invented tables or columns"
+  }
+}

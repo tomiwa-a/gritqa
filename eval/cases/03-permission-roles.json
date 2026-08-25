@@ -1,0 +1,12 @@
+{
+  "name": "03 — Permission roles (code + DB cross-check)",
+  "question": "Based on the database and the code, what types of users have these permissions: create:booking, view:bookings, edit:booking, checkin:booking, checkout:booking, cancel:booking, export:bookings? Query the DB and confirm against the code. Show both sources.",
+  "category": "cross-verify",
+  "expectedTools": ["db", "search"],
+  "minDbCalls": 2,
+  "rubric": {
+    "completeness": "Lists permissions with the role(s) that have them, citing both DB rows and code (middleware/guard) that enforces them",
+    "accuracy": "Role names match what is in the DB and in code; does not claim sandbox-not-running",
+    "hallucination": "No invented role names or permission strings"
+  }
+}
