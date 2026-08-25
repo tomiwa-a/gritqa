@@ -6,6 +6,8 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { decryptSecret } from '@/lib/crypto';
 import { readSession } from '@/lib/session';
+import type { Session } from '@/lib/session';
+export type { Session } from '@/lib/session';
 
 /**
  * Which model drafts, and on whose account.
@@ -107,14 +109,14 @@ export type ResolvedModel = {
  * deliberately only ever yields the masked tail -- the point of this being its own
  * function is that the set of callers holding a decrypted key stays countable.
  */
-async function storedKey(): Promise<string | null> {
-  const session = await readSession();
-  if (!session) return null;
+async function storedKey(session?: Session | null): Promise<string | null> {
+  const s = session ?? (await readSession());
+  if (!s) return null;
 
   const [row] = await db
     .select({ aiApiKey: users.aiApiKey })
     .from(users)
-    .where(eq(users.publicId, session.uid))
+    .where(eq(users.publicId, s.uid))
     .limit(1);
 
   if (!row?.aiApiKey) return null;
@@ -136,8 +138,8 @@ async function storedKey(): Promise<string | null> {
  * Both are `NODE_ENV !== 'production'`, without exception. This is the path that
  * bills us instead of the developer.
  */
-async function choose(): Promise<Choice | null> {
-  const key = await storedKey();
+async function choose(session?: Session | null): Promise<Choice | null> {
+  const key = await storedKey(session);
   if (key) {
     return {
       on: 'user',
@@ -169,8 +171,8 @@ async function choose(): Promise<Choice | null> {
  * A caller that cannot produce a model has to say so, and `NO_MODEL_KEY` is the
  * state the AI settings page renders as "Drafting off".
  */
-export async function resolveModel(): Promise<ResolvedModel> {
-  const choice = await choose();
+export async function resolveModel(session?: Session | null): Promise<ResolvedModel> {
+  const choice = await choose(session);
   if (!choice) throw new NoModelKeyError();
 
   if (choice.on === 'user') {
@@ -208,8 +210,8 @@ export async function resolveModel(): Promise<ResolvedModel> {
  */
 export type Drafting = { on: false } | { on: true; billsTo: 'you' | 'server'; label: string };
 
-export async function drafting(): Promise<Drafting> {
-  const choice = await choose();
+export async function drafting(session?: Session | null): Promise<Drafting> {
+  const choice = await choose(session);
   if (!choice) return { on: false };
   return choice.on === 'user'
     ? { on: true, billsTo: 'you', label: choice.name }

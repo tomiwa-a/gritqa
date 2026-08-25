@@ -13,6 +13,7 @@ import {
   priorFindingsOf,
   refinePlan,
 } from '@/lib/agent';
+import type { Session } from '@/lib/session';
 import type { Held, Recorder } from '@/lib/db/work';
 
 /**
@@ -38,7 +39,7 @@ import type { Held, Recorder } from '@/lib/db/work';
  * take the page down over a job -- and the failure is a row either way, which is the
  * whole point of the table.
  */
-export async function runWork(jobPublicId: string): Promise<void> {
+export async function runWork(jobPublicId: string, session?: Session | null): Promise<void> {
   let job: Held | null = null;
   try {
     job = await holdWork(jobPublicId);
@@ -53,7 +54,7 @@ export async function runWork(jobPublicId: string): Promise<void> {
 
   const watch = recorder(job);
   try {
-    const done = await carryOut(job, watch);
+    const done = await carryOut(job, watch, session);
     watch.note({ phase: 'save', kind: 'note', label: done.note });
     await settleWork(job, { href: done.href, note: done.note });
     refresh(done.revalidate);
@@ -84,7 +85,7 @@ type Done = { href: string; note: string; revalidate: string[] };
  * the only thing that reads them back. A field missing means a caller and this
  * function disagree, which is a bug to see rather than a state to handle.
  */
-async function carryOut(job: Held, watch: Recorder): Promise<Done> {
+async function carryOut(job: Held, watch: Recorder, session?: Session | null): Promise<Done> {
   const payload = (job.payload ?? {}) as Record<string, unknown>;
   const userId = job.requestedBy;
   if (userId === null) {
@@ -93,11 +94,11 @@ async function carryOut(job: Held, watch: Recorder): Promise<Done> {
 
   switch (job.type) {
     case 'draft_plan':
-      return draftJob(job, watch, payload, userId);
+      return draftJob(job, watch, payload, userId, session);
     case 'refine_plan':
-      return refineJob(job, watch, payload, userId);
+      return refineJob(job, watch, payload, userId, session);
     case 'answer_question':
-      return answerJob(job, watch, payload);
+      return answerJob(job, watch, payload, session);
     default:
       /* A machine job in this queue means `claimNextJob`'s type filter and
          `AGENT_JOBS` disagree, which is worth saying rather than silently dropping. */
@@ -137,6 +138,7 @@ async function draftJob(
   watch: Recorder,
   payload: Record<string, unknown>,
   userId: number,
+  session?: Session | null,
 ): Promise<Done> {
   const brief = text(payload, 'brief');
   const baseUrl = text(payload, 'baseUrl');
@@ -156,7 +158,7 @@ async function draftJob(
     ? priorFindingsOf(await conversationHistory(conversation.id))
     : undefined;
 
-  const draft = await draftPlan({ brief, baseUrl, name, rules, priorFindings, watch });
+  const draft = await draftPlan({ brief, baseUrl, name, rules, priorFindings, watch, session });
 
   const written = await writeNewPlan({
     projectId: job.projectId,
@@ -207,6 +209,7 @@ async function refineJob(
   watch: Recorder,
   payload: Record<string, unknown>,
   userId: number,
+  session?: Session | null,
 ): Promise<Done> {
   const publicId = text(payload, 'plan');
   const instruction = text(payload, 'instruction');
@@ -219,7 +222,7 @@ async function refineJob(
   if (!detail) throw new Error('That plan is not in this project any more.');
 
   const rules = (await listRules(job.projectId)).map(toTestingRule);
-  const draft = await refinePlan({ detail, instruction, rules, watch });
+  const draft = await refinePlan({ detail, instruction, rules, watch, session });
 
   const written = await writeRevision({
     projectId: job.projectId,
@@ -266,6 +269,7 @@ async function answerJob(
   job: Held,
   watch: Recorder,
   payload: Record<string, unknown>,
+  session?: Session | null,
 ): Promise<Done> {
   const threadId = text(payload, 'conversation');
   const question = text(payload, 'question');
@@ -279,7 +283,7 @@ async function answerJob(
 
   watch.note({ phase: 'research', kind: 'note', label: 'Reading the code.' });
   const history = await historyBefore(conversation.id, seq);
-  const answer = await askAgent({ question, history, watch });
+  const answer = await askAgent({ question, history, watch, session });
 
   await answeredIn({ conversationId: conversation.id, seq, answer });
 

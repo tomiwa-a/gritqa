@@ -1,5 +1,5 @@
 import { NoObjectGeneratedError, generateObject, generateText, isStepCount } from 'ai';
-import { resolveModel } from './model';
+import { resolveModel, type Session } from './model';
 import { openResearch } from './research';
 import { verifyPlan } from './verify';
 import { unwatched, watching } from './watch';
@@ -321,9 +321,11 @@ export async function refinePlan(input: {
    * identically either way.
    */
   watch?: Watcher;
+  /** Pre-read session to avoid `cookies()` inside `after()`. */
+  session?: Session | null;
 }): Promise<Refinement> {
   const watch = input.watch ?? unwatched;
-  const { model, label } = await resolveModel();
+  const { model, label } = await resolveModel(input.session);
   const research = await openResearch();
 
   const context = [
@@ -475,9 +477,11 @@ export async function draftPlan(input: {
   priorFindings?: string;
   /** See `refinePlan`. Notes go here when this is queued work. */
   watch?: Watcher;
+  /** Pre-read session to avoid `cookies()` inside `after()`. */
+  session?: Session | null;
 }): Promise<Draft> {
   const watch = input.watch ?? unwatched;
-  const { model, label } = await resolveModel();
+  const { model, label } = await resolveModel(input.session);
   const research = await openResearch();
 
   const context = [HOUSE_RULES, rulesPrompt(input.rules)].join('\n');

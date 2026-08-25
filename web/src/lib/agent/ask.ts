@@ -1,6 +1,6 @@
 import { generateObject, generateText, isStepCount } from 'ai';
 import { z } from 'zod';
-import { resolveModel } from './model';
+import { resolveModel, type Session } from './model';
 import { openResearch } from './research';
 import { unwatched, watching } from './watch';
 import type { Watcher } from './watch';
@@ -101,9 +101,11 @@ export async function askAgent(input: {
    * there is no half of this to resume from. An abandoned ask runs again whole.
    */
   watch?: Watcher;
+  /** Pre-read session to avoid `cookies()` inside `after()`. */
+  session?: Session | null;
 }): Promise<AskTurn> {
   const watch = input.watch ?? unwatched;
-  const { model, label } = await resolveModel();
+  const { model, label } = await resolveModel(input.session);
   const research = await openResearch();
 
   try {

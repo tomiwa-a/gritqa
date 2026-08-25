@@ -1,5 +1,6 @@
 import { after } from 'next/server';
 import { reapHopeless, unattendedWork } from '@/lib/db/work';
+import { readSession } from '@/lib/session';
 import { runWork } from '@/lib/work/run';
 
 /**
@@ -18,11 +19,14 @@ import { runWork } from '@/lib/work/run';
  * revived is `pending` in the list the reader is looking at, and `claimed` a poll
  * later. Cheaper than the alternative, and the poller is four seconds away.
  *
- * Safe to call from a render. `runWork` never throws, and nothing in here reads
- * cookies or headers -- which `after()` does not allow from a Server Component's
- * callback.
+ * Safe to call from a render. `runWork` never throws, and the session is read before
+ * `after()` so that `storedKey` does not have to call `cookies()` inside it.
  */
-export function resumeWork(projectId: number): void {
+export async function resumeWork(projectId: number): Promise<void> {
+  /* Read the session before `after()`. Server Components can call `cookies()`, but
+     `after()` callbacks cannot. The session is passed to `runWork` so the agent can
+     resolve the developer's AI key without reading cookies inside the callback. */
+  const session = await readSession();
   after(async () => {
     try {
       /* First, because a job that has spent its attempts must stop being offered:
@@ -33,7 +37,7 @@ export function resumeWork(projectId: number): void {
       /* Together rather than in turn. Two drafts asked for a minute apart already run
          at the same time -- each in its own `after()` -- so a resume that ran them one
          after another would make recovery slower than the thing it is recovering. */
-      await Promise.all(ids.map((id) => runWork(id)));
+      await Promise.all(ids.map((id) => runWork(id, session)));
     } catch (error) {
       console.error('work: could not resume', error);
     }
