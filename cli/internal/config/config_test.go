@@ -158,6 +158,45 @@ run:
 	}
 }
 
+// The config can hold a database password and the directory beside it holds a
+// cache and every draft, so none of it belongs in the project's commits. The
+// pattern covers the .gitignore itself, which is why the check is on its contents
+// rather than on git status.
+func TestTheGritqaDirectoryIgnoresItself(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, Dir, Name), "project: api\npath: .\nbranch: main\n")
+
+	if _, err := Load(root); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, Dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("loading a config left .gritqa/ committable: %v", err)
+	}
+	if strings.TrimSpace(string(b)) != "*" {
+		t.Fatalf(".gitignore = %q, want *", b)
+	}
+}
+
+// A project that already keeps a rule of its own there keeps it: the directory is
+// GritQA's, the file is the developer's once they have edited it.
+func TestAnExistingIgnoreFileIsLeftAlone(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, Dir, Name), "project: api\npath: .\nbranch: main\n")
+	mustWrite(t, filepath.Join(root, Dir, ".gitignore"), "cache.db\n")
+
+	if _, err := Load(root); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, Dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(b)) != "cache.db" {
+		t.Fatalf(".gitignore = %q, want the one that was there", b)
+	}
+}
+
 func TestLoadRejectsConfigWithoutProject(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, Dir, Name), "path: .\nbranch: main\n")

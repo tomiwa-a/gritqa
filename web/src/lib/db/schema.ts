@@ -227,6 +227,15 @@ export const ruleCategoryEnum = pgEnum('rule_category', [
 ]);
 export const testPlanStatusEnum = pgEnum('test_plan_status', ['draft', 'approved', 'archived']);
 export const triggerSourceEnum = pgEnum('trigger_source', ['git_push', 'manual']);
+/**
+ * How a *run* started, which is a different question from how its plan was written.
+ *
+ * `queued` is the dashboard: a click, a job, a machine that claimed it. `terminal`
+ * is a developer running a plan on their own machine and reporting it afterwards --
+ * which has no job behind it and so settles in one insert. `auto` is a run GritQA
+ * started because the code moved; it has no writer yet.
+ */
+export const runTriggerEnum = pgEnum('run_trigger', ['queued', 'terminal', 'auto']);
 export const executionStatusEnum = pgEnum('execution_status', [
   'pending',
   'running',
@@ -453,6 +462,11 @@ export const testExecutions = pgTable(
      */
     planVersion: integer('plan_version').notNull(),
     status: executionStatusEnum('status').notNull().default('pending'),
+    /**
+     * Where this run came from. Defaulted to `queued`, which is what every row
+     * written before the CLI could report one directly actually was.
+     */
+    trigger: runTriggerEnum('trigger').notNull().default('queued'),
     dockerContainerId: varchar('docker_container_id', { length: 64 }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),

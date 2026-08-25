@@ -1,4 +1,4 @@
-import type { StepReport } from '@/lib/db/cli';
+import type { RunReport, StepReport } from '@/lib/db/cli';
 import type { TestResultRow } from '@/lib/db/schema';
 import type { MovedUnit } from '@/lib/model';
 
@@ -186,4 +186,84 @@ export function bounded(value: unknown): unknown {
   // nothing in it that cannot go back the other way.
   const bytes = Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
   return bytes > MAX_BODY_BYTES ? { truncated: true, bytes } : value;
+}
+
+const OUTCOMES = new Set(['passed', 'failed', 'error']);
+
+export type ParsedReport =
+  | { ok: true; instanceId: string; report: RunReport }
+  | { ok: false; error: string };
+
+/**
+ * A finished run, off the wire.
+ *
+ * Shared by the two routes that take one -- `jobs/[id]/complete`, which settles a run
+ * somebody queued, and `executions`, which records one nobody did. Literally the same
+ * code rather than the same shape twice, for the reason `parseStep` is: the two
+ * differing on what an outcome may be, or on whether a `failed` run must contain a
+ * failed step, would mean a run reported from a terminal and a run reported from the
+ * queue could disagree about the same facts.
+ *
+ * `instanceId` is read here too, though only one of the two routes authorises with
+ * it. Both use it as a sighting -- a machine that finishes a long run and then goes
+ * idle should not read as disconnected in the gap before its next poll.
+ */
+export function parseReport(body: unknown): ParsedReport {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'invalid_body' };
+  }
+  const input = body as Record<string, unknown>;
+
+  const instanceId = typeof input.instanceId === 'string' ? input.instanceId.trim() : '';
+  if (!instanceId || instanceId.length > 255) return { ok: false, error: 'invalid_instance' };
+
+  const outcome = input.outcome;
+  if (typeof outcome !== 'string' || !OUTCOMES.has(outcome)) {
+    return { ok: false, error: 'invalid_outcome' };
+  }
+
+  const rawSteps = input.steps ?? [];
+  if (!Array.isArray(rawSteps)) return { ok: false, error: 'invalid_steps' };
+  if (rawSteps.length > MAX_STEPS) return { ok: false, error: 'too_many_steps' };
+
+  const steps: StepReport[] = [];
+  for (const entry of rawSteps) {
+    const step = parseStep(entry);
+    if (!step) return { ok: false, error: 'invalid_step' };
+    steps.push(step);
+  }
+
+  /* The verdict and the steps have to be able to agree, in both directions.
+     A `passed` run with a step that did not pass is the obvious half. The other half
+     is a `failed` run in which nothing failed, and it is the one that bites: the runs
+     table renders that status as "A step failed", the run report reads its headline
+     off the cells and finds nothing stopped there, and the two disagree on screen
+     about the same row.
+     Refused rather than corrected, because either half could be the true one and
+     guessing wrong is how that disagreement gets written down as fact. `skipped` is
+     allowed through a passing run -- a step nobody reached is not a step that failed --
+     and a run that failed before its first step is an `error`, which is what the run
+     report already has copy for. */
+  const broke = steps.some((s) => s.status === 'failed' || s.status === 'error');
+  if ((outcome === 'passed' && broke) || (outcome === 'failed' && !broke)) {
+    return { ok: false, error: 'contradictory_outcome' };
+  }
+
+  const moved = parseMoved(input.moved);
+  if (!moved) return { ok: false, error: 'invalid_moved' };
+  if (ledgerRows(steps, moved) > MAX_MOVED) return { ok: false, error: 'too_much_state' };
+
+  return {
+    ok: true,
+    instanceId,
+    report: {
+      outcome: outcome as RunReport['outcome'],
+      durationMs: int(input.durationMs),
+      containerId: str(input.containerId, 64),
+      errorMessage: str(input.errorMessage, 4000),
+      steps,
+      moved,
+      stateNote: str(input.stateNote, 4000),
+    },
+  };
 }

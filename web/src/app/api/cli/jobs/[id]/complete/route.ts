@@ -1,15 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cliScope, completeJob, touchInstance } from '@/lib/db/cli';
-import type { RunReport, StepReport } from '@/lib/db/cli';
-import {
-  MAX_MOVED,
-  MAX_STEPS,
-  ledgerRows,
-  parseMoved,
-  parseStep,
-  int,
-  str,
-} from '@/lib/cli/report';
+import { parseReport } from '@/lib/cli/report';
 
 /**
  * The results come home. This is the end of the round trip that started with
@@ -44,10 +35,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     body = await request.json();
   } catch {
-    /* Falls through to the parse below, which rejects a non-object. */
+    /* Falls through to `parseReport`, which rejects a non-object. */
   }
 
-  const parsed = parse(body);
+  const parsed = parseReport(body);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400, headers: NO_STORE });
   }
@@ -70,68 +61,3 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 }
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
-
-const OUTCOMES = new Set(['passed', 'failed', 'error']);
-
-type Parsed = { ok: true; instanceId: string; report: RunReport } | { ok: false; error: string };
-
-/** Everything the body has to survive before it reaches the database. */
-function parse(body: unknown): Parsed {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: false, error: 'invalid_body' };
-  }
-  const input = body as Record<string, unknown>;
-
-  const instanceId = typeof input.instanceId === 'string' ? input.instanceId.trim() : '';
-  if (!instanceId || instanceId.length > 255) return { ok: false, error: 'invalid_instance' };
-
-  const outcome = input.outcome;
-  if (typeof outcome !== 'string' || !OUTCOMES.has(outcome)) {
-    return { ok: false, error: 'invalid_outcome' };
-  }
-
-  const rawSteps = input.steps ?? [];
-  if (!Array.isArray(rawSteps)) return { ok: false, error: 'invalid_steps' };
-  if (rawSteps.length > MAX_STEPS) return { ok: false, error: 'too_many_steps' };
-
-  const steps: StepReport[] = [];
-  for (const entry of rawSteps) {
-    const step = parseStep(entry);
-    if (!step) return { ok: false, error: 'invalid_step' };
-    steps.push(step);
-  }
-
-  /* The verdict and the steps have to be able to agree, in both directions.
-     A `passed` run with a step that did not pass is the obvious half. The other half
-     is a `failed` run in which nothing failed, and it is the one that bites: the runs
-     table renders that status as "A step failed", the run report reads its headline
-     off the cells and finds nothing stopped there, and the two disagree on screen
-     about the same row.
-     Refused rather than corrected, because either half could be the true one and
-     guessing wrong is how that disagreement gets written down as fact. `skipped` is
-     allowed through a passing run -- a step nobody reached is not a step that failed --
-     and a run that failed before its first step is an `error`, which is what the run
-     report already has copy for. */
-  const broke = steps.some((s) => s.status === 'failed' || s.status === 'error');
-  if ((outcome === 'passed' && broke) || (outcome === 'failed' && !broke)) {
-    return { ok: false, error: 'contradictory_outcome' };
-  }
-
-  const moved = parseMoved(input.moved);
-  if (!moved) return { ok: false, error: 'invalid_moved' };
-  if (ledgerRows(steps, moved) > MAX_MOVED) return { ok: false, error: 'too_much_state' };
-
-  return {
-    ok: true,
-    instanceId,
-    report: {
-      outcome: outcome as RunReport['outcome'],
-      durationMs: int(input.durationMs),
-      containerId: str(input.containerId, 64),
-      errorMessage: str(input.errorMessage, 4000),
-      steps,
-      moved,
-      stateNote: str(input.stateNote, 4000),
-    },
-  };
-}

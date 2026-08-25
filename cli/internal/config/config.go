@@ -286,7 +286,31 @@ func Load(root string) (*Config, error) {
 	}
 	c.root = root
 	c.retired = retiredIn(b)
+	shield(root)
 	return &c, nil
+}
+
+// shield keeps .gritqa/ out of the project's commits. Everything in there is a
+// cache or this machine's own -- the index, the drafts, and a config that can hold
+// a database password -- and GritQA's own .gitignore cannot reach a directory
+// inside somebody else's repository, so the rule has to live in the directory.
+//
+// The pattern covers this file too, which is the point: the directory leaves no
+// trace in git status at all.
+//
+// Best-effort, and silent. A project that runs is worth more than one that refuses
+// over two bytes, and a repository GritQA cannot write to has already said so
+// through the config it just read.
+func shield(root string) {
+	dir := filepath.Join(root, Dir)
+	file := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(file); err == nil {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(file, []byte("*\n"), 0o644)
 }
 
 // retiredIn re-reads the file as a bare map, because a key nothing decodes into
@@ -339,6 +363,7 @@ func (c *Config) Save() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	shield(c.root)
 
 	b, err := yaml.Marshal(c)
 	if err != nil {

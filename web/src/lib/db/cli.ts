@@ -5,8 +5,10 @@ import {
   codebaseIndex,
   executionState,
   jobs,
+  planRevisions,
   projects,
   testExecutions,
+  testPlans,
   testResults,
   users,
 } from '@/lib/db/schema';
@@ -495,6 +497,92 @@ export type RunReport = {
   stateNote?: string | null;
 };
 
+/**
+ * The steps of a run, and what each of them moved.
+ *
+ * Shared by the two ways a run's results arrive -- `completeJob`, which settles a run
+ * the dashboard queued, and `recordRun`, which writes one that happened on a
+ * developer's own machine and was reported afterwards. One function rather than two
+ * copies, because these rows are what the run report renders and what the coverage
+ * grid counts: the two diverging would mean a run's evidence depended on which button
+ * started it.
+ *
+ * Always inside a transaction with whatever settles the execution. The failure that
+ * matters is the half-done one -- a run marked finished whose steps never landed reads
+ * as a run that did nothing.
+ */
+async function writeResults(tx: Executor, executionId: number, report: RunReport): Promise<void> {
+  /* The previous attempt's rows are not this attempt's answer. A job that was reaped
+     and re-handed out reports afresh, and two attempts' steps left side by side would
+     read as one run of twice the length -- the report is ordered by id and has no
+     column saying which attempt a row belongs to. */
+  /* The run's own ledger rows go too, and they need saying separately: they hang off
+     the execution rather than off a step, so deleting the steps does not cascade to
+     them. Before the steps, so the cascade has nothing left to do. */
+  await tx.delete(executionState).where(eq(executionState.executionId, executionId));
+  await tx.delete(testResults).where(eq(testResults.executionId, executionId));
+
+  const resultIds = new Map<string, number>();
+  if (report.steps.length) {
+    const written = await tx
+      .insert(testResults)
+      .values(
+        report.steps.map((step) => ({
+          executionId,
+          stepId: step.stepId,
+          stepName: step.stepName,
+          status: step.status,
+          stepKind: step.kind,
+          requestMethod: step.method,
+          routePattern: step.routePattern,
+          requestUrl: step.requestUrl,
+          requestBody: step.requestBody ?? null,
+          responseStatus: step.responseStatus,
+          responseBody: step.responseBody ?? null,
+          responseTimeMs: step.responseTimeMs,
+          rowCount: step.rowCount,
+          exitCode: step.exitCode,
+          output: step.output,
+          assertionResults: step.assertions ?? null,
+          errorMessage: step.errorMessage,
+        })),
+      )
+      .returning({ id: testResults.id, stepId: testResults.stepId });
+    for (const row of written) resultIds.set(row.stepId, row.id);
+  }
+
+  /* What moved: each step's margin, then the run's own reading with no step against
+     it. `seq` is the order the readings were taken, which is the order a ledger is
+     worth reading in.
+
+     Matched to their steps by step id rather than by position in the RETURNING,
+     because the ledger is the only record of a fact nothing else can recover, and
+     "the rows come back in the order they went in" is not a promise worth resting
+     that on. */
+  const ledger = [
+    ...report.steps.flatMap((step) =>
+      (step.moved ?? []).map((unit) => ({
+        unit,
+        resultId: resultIds.get(step.stepId) ?? null,
+      })),
+    ),
+    ...(report.moved ?? []).map((unit) => ({ unit, resultId: null })),
+  ];
+  if (!ledger.length) return;
+
+  await tx.insert(executionState).values(
+    ledger.map(({ unit, resultId }, seq) => ({
+      executionId,
+      testResultId: resultId,
+      seq,
+      unit: unit.unit,
+      rowsMoved: unit.rows,
+      fromValue: unit.from ?? null,
+      toValue: unit.to ?? null,
+    })),
+  );
+}
+
 export type Completion = {
   /** The run this described, so the CLI can print a link to it. Null for an index job. */
   runPublicId: string | null;
@@ -579,78 +667,7 @@ export async function completeJob(
       .limit(1);
     if (!execution) return { runPublicId: null, steps: 0 };
 
-    /* The previous attempt's rows are not this attempt's answer. A job that was
-       reaped and re-handed out reports afresh, and two attempts' steps left side by
-       side would read as one run of twice the length -- the report is ordered by id
-       and has no column saying which attempt a row belongs to. Nothing writes steps
-       before a completion today, so in practice this deletes nothing; it is here
-       because the day something reports incrementally is the day that appears. */
-    /* The run's own ledger rows go too, and they need saying separately: they hang off
-       the execution rather than off a step, so deleting the steps does not cascade to
-       them. Before the steps, so the cascade has nothing left to do. */
-    await tx.delete(executionState).where(eq(executionState.executionId, execution.id));
-    await tx.delete(testResults).where(eq(testResults.executionId, execution.id));
-
-    const resultIds = new Map<string, number>();
-    if (report.steps.length) {
-      const written = await tx
-        .insert(testResults)
-        .values(
-          report.steps.map((step) => ({
-            executionId: execution.id,
-            stepId: step.stepId,
-            stepName: step.stepName,
-            status: step.status,
-            stepKind: step.kind,
-            requestMethod: step.method,
-            routePattern: step.routePattern,
-            requestUrl: step.requestUrl,
-            requestBody: step.requestBody ?? null,
-            responseStatus: step.responseStatus,
-            responseBody: step.responseBody ?? null,
-            responseTimeMs: step.responseTimeMs,
-            rowCount: step.rowCount,
-            exitCode: step.exitCode,
-            output: step.output,
-            assertionResults: step.assertions ?? null,
-            errorMessage: step.errorMessage,
-          })),
-        )
-        .returning({ id: testResults.id, stepId: testResults.stepId });
-      for (const row of written) resultIds.set(row.stepId, row.id);
-    }
-
-    /* What moved: each step's margin, then the run's own reading with no step against
-       it. `seq` is the order the readings were taken, which is the order a ledger is
-       worth reading in.
-
-       Matched to their steps by step id rather than by position in the RETURNING,
-       because the ledger is the only record of a fact nothing else can recover, and
-       "the rows come back in the order they went in" is not a promise worth resting
-       that on. */
-    const ledger = [
-      ...report.steps.flatMap((step) =>
-        (step.moved ?? []).map((unit) => ({
-          unit,
-          resultId: resultIds.get(step.stepId) ?? null,
-        })),
-      ),
-      ...(report.moved ?? []).map((unit) => ({ unit, resultId: null })),
-    ];
-
-    if (ledger.length) {
-      await tx.insert(executionState).values(
-        ledger.map(({ unit, resultId }, seq) => ({
-          executionId: execution.id,
-          testResultId: resultId,
-          seq,
-          unit: unit.unit,
-          rowsMoved: unit.rows,
-          fromValue: unit.from ?? null,
-          toValue: unit.to ?? null,
-        })),
-      );
-    }
+    await writeResults(tx, execution.id, report);
 
     /* Still guarded on the unsettled statuses, though the job gate above is the one
        that actually holds: a reap and a completion both have to move the same
@@ -874,5 +891,223 @@ export async function releaseJob(
     }
 
     return null;
+  });
+}
+
+/**
+ * A plan the CLI wrote, and where it landed.
+ *
+ * `changed: false` is an answer, not a failure: pushing the same text twice leaves the
+ * plan on the version it was already on. Without that, a machine that re-pushes its
+ * drafts on every boot would walk an approved plan back to `draft` and bump its
+ * version for nothing.
+ */
+export type PlanPush =
+  | { ok: true; publicId: string; version: number; changed: boolean }
+  | { ok: false; reason: 'unknown' | 'archived' };
+
+export type PlanBody = {
+  /** The plan this is a new version of. Absent means a plan that did not exist. */
+  planPublicId?: string | null;
+  name: string;
+  description: string | null;
+  baseUrl: string;
+  /** What the runner reads: variables, steps, and whatever the drafter recorded beside them. */
+  planJson: Record<string, unknown>;
+  /** One line for the revision thread. */
+  summary: string;
+};
+
+/**
+ * A draft written on a developer's machine, into the record.
+ *
+ * **The file is the cache and this is the record.** A plan drafted at a terminal used
+ * to exist only under `.gritqa/drafts/`, which meant the run that came out of it had
+ * nowhere to hang -- `test_executions.test_plan_id` is `NOT NULL`, so a run of a file
+ * is a run of nothing as far as the dashboard is concerned. Pushing the plan first is
+ * what makes the run recordable at all, and it is also what lets somebody else on the
+ * team read a plan a colleague drafted.
+ *
+ * Compared canonically rather than by `JSON.stringify`, because `jsonb` does not keep
+ * key order: the stored copy comes back with its keys sorted differently from the way
+ * they went in, so a plain string comparison would find every push different from
+ * itself and bump the version each time.
+ *
+ * `status` goes back to `draft` on a change, exactly as `writeRevision` does it and
+ * for the same reason -- approval is approval of a particular text.
+ */
+export async function savePlan(scope: CliScope, input: PlanBody): Promise<PlanPush> {
+  return db.transaction(async (tx) => {
+    if (!input.planPublicId) {
+      const [created] = await tx
+        .insert(testPlans)
+        .values({
+          projectId: scope.projectId,
+          name: input.name,
+          description: input.description,
+          baseUrl: input.baseUrl,
+          planJson: input.planJson,
+          status: 'draft',
+          version: 1,
+          /* `manual` because somebody ran a command. `git_push` is for the drafts that
+             appear on their own once the CLI is watching a branch. */
+          triggerSource: 'manual',
+        })
+        .returning({ id: testPlans.id, publicId: testPlans.publicId });
+
+      await tx.insert(planRevisions).values({
+        testPlanId: created.id,
+        version: 1,
+        /* `agent` with no instruction: the drafter wrote it. The developer's own words
+           went to the model on the command line and the CLI does not keep them, so
+           claiming a `human` turn here would put a row in the thread with nothing in
+           it -- and the table's CHECK requires an instruction for one. */
+        author: 'agent',
+        instruction: null,
+        summary: input.summary,
+        changes: [],
+        createdBy: scope.userId,
+      });
+
+      return { ok: true as const, publicId: created.publicId, version: 1, changed: true };
+    }
+
+    const [current] = await tx
+      .select({
+        id: testPlans.id,
+        version: testPlans.version,
+        status: testPlans.status,
+        planJson: testPlans.planJson,
+      })
+      .from(testPlans)
+      .where(
+        and(eq(testPlans.projectId, scope.projectId), eq(testPlans.publicId, input.planPublicId)),
+      )
+      .limit(1);
+
+    /* Scoped by project, so a plan belonging to somebody else reads as absent rather
+       than as forbidden -- the same answer the read side gives. */
+    if (!current) return { ok: false as const, reason: 'unknown' as const };
+    if (current.status === 'archived') return { ok: false as const, reason: 'archived' as const };
+
+    if (canonical(current.planJson) === canonical(input.planJson)) {
+      return {
+        ok: true as const,
+        publicId: input.planPublicId,
+        version: current.version,
+        changed: false,
+      };
+    }
+
+    const next = current.version + 1;
+    const [moved] = await tx
+      .update(testPlans)
+      .set({
+        name: input.name,
+        description: input.description,
+        baseUrl: input.baseUrl,
+        planJson: input.planJson,
+        status: 'draft',
+        version: next,
+      })
+      /* The version as the lock, same as `writeRevision`: two pushes that read v3
+         cannot both write v4, because the second finds no row. */
+      .where(and(eq(testPlans.id, current.id), eq(testPlans.version, current.version)))
+      .returning({ id: testPlans.id });
+    if (!moved) return { ok: false as const, reason: 'unknown' as const };
+
+    await tx.insert(planRevisions).values({
+      testPlanId: current.id,
+      version: next,
+      author: 'agent',
+      instruction: null,
+      summary: input.summary,
+      changes: [],
+      createdBy: scope.userId,
+    });
+
+    return { ok: true as const, publicId: input.planPublicId, version: next, changed: true };
+  });
+}
+
+/**
+ * The same object twice is the same string.
+ *
+ * `jsonb` stores keys in its own order, so what comes back out of Postgres is rarely
+ * spelled the way it went in. Sorting every object's keys on the way to a string is
+ * what makes "has this plan changed" a question about the plan rather than about how
+ * the database chose to lay it out.
+ */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+    const source = entry as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) out[key] = source[key];
+    return out;
+  });
+}
+
+/**
+ * A run that already happened.
+ *
+ * The other end of `completeJob`: same report, same results, no job behind it. A
+ * developer typing `gritqa --run` has finished the run by the time anything is told
+ * about it, so this inserts the execution **already settled** -- status is the outcome
+ * and both timestamps are in the one INSERT. That is also what keeps it clear of
+ * `test_executions_one_live_idx`, which is partial over the unsettled statuses: there
+ * is no moment at which this row is `running`, so it cannot collide with a queued run
+ * of the same plan, and a queued run cannot be settled by this arriving.
+ *
+ * `completedAt` is computed from the run's own start and duration rather than set to
+ * now. The run ended when it ended; the gap before it was reported is network and
+ * process time, and folding that in would make `completed_at - started_at` disagree
+ * with the duration the runner measured.
+ */
+export async function recordRun(
+  scope: CliScope,
+  input: { planPublicId: string; startedAt: Date | null; report: RunReport },
+): Promise<{ runPublicId: string; steps: number } | null> {
+  const { report } = input;
+
+  return db.transaction(async (tx) => {
+    const [plan] = await tx
+      .select({ id: testPlans.id, version: testPlans.version })
+      .from(testPlans)
+      .where(
+        and(eq(testPlans.projectId, scope.projectId), eq(testPlans.publicId, input.planPublicId)),
+      )
+      .limit(1);
+    if (!plan) return null;
+
+    const startedAt = input.startedAt;
+    const completedAt =
+      startedAt && report.durationMs !== null
+        ? new Date(startedAt.getTime() + report.durationMs)
+        : new Date();
+
+    const [run] = await tx
+      .insert(testExecutions)
+      .values({
+        testPlanId: plan.id,
+        projectId: scope.projectId,
+        /* The plan's current version, because that is the text the runner just read --
+           the CLI pushes the plan before it reports the run, so the two agree by
+           construction rather than by the CLI naming a number. */
+        planVersion: plan.version,
+        status: report.outcome,
+        trigger: 'terminal',
+        dockerContainerId: report.containerId,
+        startedAt,
+        completedAt,
+        durationMs: report.durationMs,
+        errorMessage: report.errorMessage,
+        stateNote: report.stateNote ?? null,
+      })
+      .returning({ id: testExecutions.id, publicId: testExecutions.publicId });
+
+    await writeResults(tx, run.id, report);
+
+    return { runPublicId: run.publicId, steps: report.steps.length };
   });
 }

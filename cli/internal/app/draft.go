@@ -86,10 +86,19 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 		})
 	}
 
+	// The dashboard is the record and the file under .gritqa/drafts/ is the copy that
+	// keeps --plan working with no network. Its own store, because read() closed the
+	// one it used.
+	var up *pushes
+	if store, err := index.Open(cfg.CachePath()); err == nil {
+		defer store.Close()
+		up = pushing(w, cfg, opts, store)
+	}
+
 	w.Write(term.Line{Kind: term.Blank})
 	w.Write(term.Line{Kind: term.Out, Text: "what it drafted"})
 
-	wrote := 0
+	var wrote []drafted
 	for i, d := range fan(ctx, drafter, reqs) {
 		last := i == len(reqs)-1
 		if d.err != nil {
@@ -99,10 +108,12 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 			})
 			continue
 		}
-		if _, err := writeDraft(cfg, d.plan); err != nil {
+		file, err := writeDraft(cfg, d.plan)
+		if err != nil {
 			return err
 		}
-		wrote++
+		d.file = file
+		wrote = append(wrote, d)
 		w.Write(term.Line{
 			Kind: term.Tree, Text: d.plan.Name, Status: term.Pass, Last: last,
 			Meta: fmt.Sprintf("%s, %s",
@@ -112,20 +123,35 @@ func draftPlans(ctx context.Context, w *term.Writer, cfg *config.Config, got *re
 	}
 
 	w.Write(term.Line{Kind: term.Blank})
-	if wrote == 0 {
+	if len(wrote) == 0 {
 		return errors.New("nothing was drafted")
 	}
 	w.Write(term.Line{
 		Kind: term.OK,
 		Text: fmt.Sprintf("wrote %s to %s",
-			term.Count(wrote, "plan", "plans"), filepath.Join(config.Dir, "drafts")),
+			term.Count(len(wrote), "plan", "plans"), filepath.Join(config.Dir, "drafts")),
 	})
+
+	// After the tree rather than inside it, so a plan that did not reach the dashboard
+	// says so somewhere a reader is not counting steps.
+	sent := 0
+	for _, d := range wrote {
+		if up.plan(ctx, d.file, d.plan, draftedHere) != "" {
+			sent++
+		}
+	}
+	if sent > 0 {
+		w.Write(term.Line{Kind: term.OK, Text: fmt.Sprintf("the dashboard holds %s",
+			term.Count(sent, "plan", "plans"))})
+	}
+
 	w.Write(term.Line{Kind: term.Info, Text: "run one with gritqa --plan <file>"})
 	return nil
 }
 
 type drafted struct {
 	plan *plan.Plan
+	file string
 	err  error
 }
 

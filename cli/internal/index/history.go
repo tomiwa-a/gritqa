@@ -88,6 +88,18 @@ CREATE TABLE IF NOT EXISTS sandbox_environment_proposal (
   saved_at    TEXT NOT NULL
 );
 
+-- Which plan on the dashboard a draft file became, per server. A draft is written
+-- as a file and is the plan's record nowhere: keeping the id means a second push
+-- of the same file is a new version of one plan instead of a second plan.
+CREATE TABLE IF NOT EXISTS remote_plans (
+  server    TEXT NOT NULL,
+  plan_file TEXT NOT NULL,
+  plan_id   TEXT NOT NULL,
+  version   INTEGER NOT NULL,
+  saved_at  TEXT NOT NULL,
+  PRIMARY KEY (server, plan_file)
+);
+
 CREATE TABLE IF NOT EXISTS plan_changes (
   revision_id INTEGER NOT NULL REFERENCES plan_revisions(id) ON DELETE CASCADE,
   seq         INTEGER NOT NULL,
@@ -548,6 +560,26 @@ func (s *Store) saveEnv(table, fingerprint, author, body string) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO `+table+
 		` (id, fingerprint, author, environment, saved_at) VALUES (1, ?, ?, ?, ?)`,
 		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// RemotePlan is the dashboard plan a draft file became, and "" when this file has
+// never been pushed to this server. Keyed by server as well as file because two
+// servers hand out different ids for the same draft.
+func (s *Store) RemotePlan(server, file string) (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT plan_id FROM remote_plans WHERE server = ? AND plan_file = ?`,
+		server, file).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
+func (s *Store) SaveRemotePlan(server, file, planID string, version int) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO remote_plans
+	  (server, plan_file, plan_id, version, saved_at) VALUES (?, ?, ?, ?, ?)`,
+		server, file, planID, version, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 

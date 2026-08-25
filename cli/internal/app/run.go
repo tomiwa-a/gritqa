@@ -142,8 +142,16 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		e.Confirmed = sql.NullBool{Bool: sure.Proved, Valid: true}
 		e.ConfirmNote = sure.Why
 	}
+	// Local first, dashboard second, and decision 36 is why round that way: the store
+	// is the buffer, so a run the network lost is still readable here.
 	record(w, store, e)
+	verdict(w, res, st, sure, all)
+	pushing(w, cfg, opts, store).run(ctx, opts.PlanFile, p, base, started, res, project(st))
+	return nil
+}
 
+// verdict is the transcript's last block: what the run came to, why, and what moved.
+func verdict(w *term.Writer, res *run.Result, st *sandbox.Stack, sure *agent.Confidence, all []run.Attempt) {
 	w.Write(term.Line{Kind: term.Blank})
 	if res.Status == run.RunPassed {
 		w.Write(term.Line{
@@ -156,7 +164,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 		if st != nil {
 			ledger(w, res)
 		}
-		return nil
+		return
 	}
 
 	w.Write(term.Line{
@@ -175,7 +183,15 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 	if needsVerdict(all) {
 		w.Write(term.Line{Kind: term.Info, Text: "awaiting your verdict: real bug, or bad test"})
 	}
-	return nil
+}
+
+// project names the stack a run went against, and "" when it went against whatever
+// run.base_url points at.
+func project(st *sandbox.Stack) string {
+	if st == nil {
+		return ""
+	}
+	return st.Project()
 }
 
 // secrets are the values that must not reach a transcript, a recorded run or a
