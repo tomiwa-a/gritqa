@@ -260,7 +260,35 @@ export const stepStatusEnum = pgEnum('step_status', [
   'skipped',
   'error',
 ]);
-export const jobTypeEnum = pgEnum('job_type', ['index_codebase', 'execute_tests']);
+export const jobTypeEnum = pgEnum('job_type', [
+  'index_codebase',
+  'execute_tests',
+  'draft_plan',
+  'refine_plan',
+  'answer_question',
+]);
+
+/**
+ * The two families of queued work, and which side of the seam carries each one.
+ *
+ * They share a table because they are the same errand shape -- something to do, an
+ * attempt count, a result -- but they have nothing else in common, and the difference
+ * is load-bearing: a machine job needs a developer's laptop, and an agent job needs a
+ * model key. Handing either to the wrong runner is not a slow path, it is a job that
+ * cannot be done: `attach.go` answers a type it does not recognise with "this machine
+ * does not know what a X job is" and gives the work back, three times, until it is
+ * dead.
+ *
+ * So `claimNextJob` selects on `MACHINE_JOBS` and the web's own claim selects on
+ * `AGENT_JOBS`. Named here beside the enum rather than written into each query,
+ * because a new type added to one list and not the other is the bug this exists to
+ * make hard.
+ */
+export const MACHINE_JOBS = ['index_codebase', 'execute_tests'] as const;
+export const AGENT_JOBS = ['draft_plan', 'refine_plan', 'answer_question'] as const;
+
+export type MachineJobType = (typeof MACHINE_JOBS)[number];
+export type AgentJobType = (typeof AGENT_JOBS)[number];
 export const jobStatusEnum = pgEnum('job_status', [
   'pending',
   'claimed',
@@ -672,8 +700,11 @@ export const commits = pgTable(
  * a socket waiting for, so a partition here is latency rather than failure.
  * Research goes the other way, synchronously over MCP.
  *
- * No `generate_tests` type. Drafting is a conversation that streams to the
- * browser, so it never becomes queued work.
+ * It holds the agent's work too, which it did not at first -- the note that used to
+ * be here said drafting streams to the browser and so never becomes queued work.
+ * Drafting does not stream, and holding a request open for a research pass meant the
+ * developer watched a spinner and lost the answer if they navigated away. Both
+ * families live here; `MACHINE_JOBS` and `AGENT_JOBS` say which runner takes which.
  */
 export const jobs = pgTable(
   'jobs',
@@ -688,6 +719,14 @@ export const jobs = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     result: jsonb('result'),
+    /**
+     * Who asked. Null for a machine's own errand -- an index pass is the poller's
+     * idea, not a person's -- and `set null` on delete, because the work and what it
+     * produced outlive the account that asked for it.
+     */
+    requestedBy: bigint('requested_by', { mode: 'number' }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
     /** Which CLI instance holds it. Kept after the job ends: part of what happened. */
     claimedBy: varchar('claimed_by', { length: 255 }),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
@@ -706,6 +745,54 @@ export const jobs = pgTable(
       .on(t.createdAt)
       .where(sql`status = 'pending'`),
     index('jobs_project_idx').on(t.projectId, t.createdAt),
+  ],
+);
+
+/**
+ * What the agent did while a job ran, written as it happened.
+ *
+ * A run reports its steps over a live channel the CLI holds open, so `test_results`
+ * only ever has to hold the finished thing. The agent has no such channel and no
+ * client waiting -- that is the point of moving its work off the request -- so the
+ * only place a half-finished draft can be read from is the database. One row per tool
+ * call, model turn or note, and the work page is a select over them.
+ *
+ * It doubles as the resume record, which is why the findings block is stored rather
+ * than summarised. Research is the expensive phase and its whole output is text, so a
+ * job whose web process died between reading the code and writing the plan is finished
+ * from the event that recorded it instead of paying for the reading again.
+ */
+export const jobEvents = pgTable(
+  'job_events',
+  {
+    ...identity,
+    jobId: bigint('job_id', { mode: 'number' })
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    /**
+     * Order within the job. `createdAt` cannot carry it alone: two tool calls can
+     * land in the same millisecond, and which ran first is what a reader is following.
+     */
+    seq: integer('seq').notNull(),
+    /**
+     * Which part of the work this came out of. A varchar rather than an enum because
+     * the phases are the agent loop's shape and that shape is still moving.
+     */
+    phase: varchar('phase', { length: 24 }).notNull(),
+    kind: varchar('kind', { length: 24 }).notNull(),
+    /** One line, in the words a developer reads. */
+    label: text('label').notNull(),
+    detail: jsonb('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * Both reads: everything for one job, in order. Unique because `seq` comes from
+     * the count already written, so a collision means two writers on one job -- the
+     * condition the lease exists to prevent, and better as a constraint violation
+     * than as a silently interleaved transcript.
+     */
+    uniqueIndex('job_events_seq_idx').on(t.jobId, t.seq),
   ],
 );
 

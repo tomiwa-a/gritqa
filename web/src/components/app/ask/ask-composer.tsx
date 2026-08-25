@@ -33,7 +33,9 @@ export function AskComposer({
   opening: boolean;
 }) {
   const [state, submit, pending] = useActionState(askAction, null);
-  const landed = state && 'ok' in state ? state.turn : 0;
+  /* The turn the question landed on, which is a new number every time, so a second
+     question in the same thread is a new field with the caret in it. */
+  const landed = state && 'asked' in state ? state.turn : 0;
 
   return (
     <Box
@@ -116,15 +118,21 @@ function Box({
           size={14}
           className={cn(pending && 'animate-spin')}
         />
-        {pending ? 'Reading your code…' : 'Ask'}
+        {pending ? 'Asking…' : 'Ask'}
       </Button>
 
+      {/* Three states, and the middle one is the change: the question is a row before
+          this box comes back, so the waiting happens on the thread above rather than
+          under the button. */}
       {pending ? (
-        <p className="text-[11px] leading-snug text-ink-subtle">
-          Looking at the code before answering. Usually seconds.
-        </p>
+        <p className="text-[11px] leading-snug text-ink-subtle">Writing down your question.</p>
       ) : state && 'error' in state ? (
         <p className="text-[11.5px] leading-snug text-punch-red">{state.error}</p>
+      ) : state && 'asked' in state ? (
+        <p className="text-[11px] leading-snug text-ink-subtle">
+          GritQA is reading your code. The answer appears above when it is written — you can
+          close this and come back to it.
+        </p>
       ) : (
         <p className="text-[11px] leading-snug text-ink-subtle">
           GritQA reads your real code to answer. It never changes it, and nothing runs from here.

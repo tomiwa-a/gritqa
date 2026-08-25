@@ -1,13 +1,13 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { redirect } from 'next/navigation';
 import { clientIp } from '@/lib/client-ip';
-import { record } from '@/lib/db/audit';
-import { writeNewPlan } from '@/lib/db/drafts';
 import { requireScope } from '@/lib/db/scope';
-import { listRules, toTestingRule } from '@/lib/db/rules';
-import { CliUnavailableError, NoModelKeyError, draftPlan } from '@/lib/agent';
+import { enqueueWork } from '@/lib/db/work';
+import { agentUnavailable } from '@/lib/work/ready';
+import { runWork } from '@/lib/work/run';
+import { WORK } from '@/lib/work/where';
 
 /**
  * The generate wizard, connected to something.
@@ -17,13 +17,15 @@ import { CliUnavailableError, NoModelKeyError, draftPlan } from '@/lib/agent';
  * `g=drafting` and the animation ran for as long as you cared to watch it. This is
  * what it moves to instead.
  *
- * A server action rather than a stream, for now, and the honest version of why: a
- * stream would show the plan being written, which is a better experience and a
- * bigger build -- a route handler, a client reader, a partial-plan renderer, and a
- * writer that runs after the last chunk instead of inside a transaction. The data
- * path is the same either way, so it can be put in front of this later without
- * moving anything. What the developer loses in the meantime is watching it happen;
- * what they do not lose is the plan, which lands whole and already saved.
+ * The action no longer drafts. It writes down what was asked for and hands the work
+ * to the queue, which is a smaller change than it sounds and a much better shape: a
+ * draft is a research pass, a write and a verify -- a minute or two of model calls --
+ * and holding a request open for that made navigating away destructive. Now the click
+ * lands on the work page, where the agent says what it is reading as it reads, and
+ * closing the tab costs nothing.
+ *
+ * What is kept is the instant answer to the two failures that are settings rather
+ * than surprises: no key, no machine. See `agentUnavailable`.
  */
 
 /** A brief is a paragraph, not a pasted file. */
@@ -31,29 +33,6 @@ const MAX_BRIEF = 2_000;
 const MAX_NAME = 120;
 
 export type DraftState = null | { error: string };
-
-/**
- * The failures worth naming, in the words of what to do about them.
- *
- * Deliberately the same three as `refine.ts`, because they are the same three
- * conditions and a developer who has seen one of these sentences on the plan page
- * should read the identical sentence here rather than wonder if it is a different
- * problem.
- */
-function readable(error: unknown): string {
-  if (error instanceof NoModelKeyError) {
-    return 'No model key yet, so there is nothing to draft with. Add one in Settings → AI.';
-  }
-  if (error instanceof CliUnavailableError) {
-    /* Logged, unlike the other named failures, because `detail` carries the address
-       that did not answer and the reason -- and this is the one condition a developer
-       has to fix rather than read. */
-    console.error('agent: research unavailable', error.detail);
-    return 'GritQA could not reach the research server on your machine, so it has no way to read the code. That is a separate channel from the job poller, so a connected machine can still be missing it — start it and ask again.';
-  }
-  console.error('generate: could not produce a plan', error);
-  return 'The model did not come back with a usable plan. Try saying it a different way.';
-}
 
 /** A plan records where it will run, so a typo here would be stored as fact. */
 function cleanBaseUrl(value: string): string | null {
@@ -84,41 +63,33 @@ export async function draftPlanAction(
     return { error: 'That address is not a URL GritQA can call. Try http://localhost:8080.' };
 
   const scope = await requireScope();
-  const rules = (await listRules(scope.projectId)).map(toTestingRule);
 
-  let written: Awaited<ReturnType<typeof writeNewPlan>>;
-  try {
-    const draft = await draftPlan({ brief, baseUrl, name, rules });
+  const blocked = await agentUnavailable();
+  if (blocked) return { error: blocked };
 
-    written = await writeNewPlan({
-      projectId: scope.projectId,
-      userId: scope.userId,
-      baseUrl,
-      /* The brief is the instruction, and storing it is what makes the plan's own
-         page able to open with the sentence that produced it. */
-      instruction: brief,
-      draft,
-      checks: draft.checks,
-    });
+  /* Read here, before the work is handed off. `headers()` cannot be called inside
+     `after()` on every path, and the address that belongs on the audit row is the one
+     that clicked the button rather than whichever request happens to pick the job up
+     later. So it travels in the payload. */
+  const ip = await clientIp();
 
-    await record({
-      userId: scope.userId,
-      action: 'test_plan.drafted',
-      entityType: 'test_plans',
-      entityId: written.planId,
-      values: { name: written.name, steps: draft.steps.length, model: draft.modelLabel },
-      ip: await clientIp(),
-    });
-  } catch (error) {
-    return { error: readable(error) };
-  }
+  const jobId = await enqueueWork({
+    projectId: scope.projectId,
+    userId: scope.userId,
+    type: 'draft_plan',
+    /* What the row on the work page says. The name if they gave one, because it is
+       what they will look for; the brief otherwise, because it is what they said. */
+    label: name ?? brief,
+    request: { brief, baseUrl, ...(name ? { name } : {}), ...(ip ? { ip } : {}) },
+  });
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/queue');
-  revalidatePath('/dashboard/test-plans');
-  revalidatePath('/dashboard/settings/activity');
+  /* Starts now and outlives this response, so the developer is not waiting on it and
+     is not required to stay for it either. If this process dies mid-draft the row is
+     still `claimed` and still has attempts left, and opening the work page picks it
+     up. */
+  after(() => runWork(jobId));
 
-  /* Outside the try, because `redirect` works by throwing and a catch around it
-     would read the navigation as a failed draft. */
-  redirect(`/dashboard/test-plans/${written.publicId}`);
+  /* Outside any try, because `redirect` works by throwing and a catch around it would
+     read the navigation as a failed draft. */
+  redirect(WORK);
 }

@@ -21,8 +21,17 @@ export type ShellData = {
   user: ShellUser;
   projects: ShellProject[];
   currentProject: ShellCurrentProject;
-  /** Drives the badge on Review queue — the one count the nav carries. */
+  /** Drives the badge on Review queue. */
   reviewCount: number;
+  /**
+   * Drives the badge on Work: how many things the agent is doing right now.
+   *
+   * Live enough to be worth a number and cheap enough to read on every navigation --
+   * one indexed count. It is a navigation-time answer, not a polled one: the work page
+   * itself refreshes, and a badge that lied by ninety seconds on the settings screen is
+   * not a reason to poll every page in the dashboard.
+   */
+  workCount: number;
 };
 
 /** The projection, kept beside the type so the two cannot drift apart. */
@@ -31,6 +40,7 @@ export function shellDataOf(input: {
   projects: Project[];
   currentProject: Project;
   reviewCount: number;
+  workCount: number;
 }): ShellData {
   return {
     user: {
@@ -50,5 +60,6 @@ export function shellDataOf(input: {
       defaultBranch: input.currentProject.defaultBranch,
     },
     reviewCount: input.reviewCount,
+    workCount: input.workCount,
   };
 }

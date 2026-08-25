@@ -2,35 +2,31 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { clientIp } from '@/lib/client-ip';
-import { record } from '@/lib/db/audit';
-import { writeNewPlan } from '@/lib/db/drafts';
 import { requireScope } from '@/lib/db/scope';
-import { listRules, toTestingRule } from '@/lib/db/rules';
 import {
+  askedIn,
   conversationHistory,
   findConversation,
-  writeExchange,
   type ConversationRef,
 } from '@/lib/db/conversations';
-import {
-  CliUnavailableError,
-  NoModelKeyError,
-  askAgent,
-  draftPlan,
-  priorFindingsOf,
-  proposeBrief,
-} from '@/lib/agent';
+import { enqueueWork } from '@/lib/db/work';
+import { NoModelKeyError, proposeBrief } from '@/lib/agent';
+import { agentUnavailable } from '@/lib/work/ready';
+import { runWork } from '@/lib/work/run';
+import { WORK } from '@/lib/work/where';
 import { NEW_CONVERSATION, askToken, withOverlayOn } from '@/lib/overlay';
 
 /**
  * The three things the ask panel can do: answer, propose a brief, draft from one.
  *
- * Server actions rather than a streaming route, and the reason is the same one
- * `generate.ts` gives about itself -- the data path here is the one a stream would
- * use, so a reader can be put in front of it later without moving anything. What is
- * different is that this path is already non-destructive: the exchange is a row, so
- * closing the panel mid-answer loses the waiting and not the answer.
+ * Two of the three are queued now, and the exception is the interesting one.
+ * `proposeBriefAction` reads a conversation that is already in front of the developer
+ * and hands back a paragraph they are about to edit -- no tools, no research, seconds
+ * -- so queueing it would mean a work row and a page refresh for something faster than
+ * the navigation. Asking and drafting both go and read the code, which is minutes, so
+ * both hand off.
  *
  * All three read through `requireScope()`, so a conversation belonging to another
  * project is simply not found. None of them can reach a plan, run anything, or write
@@ -43,22 +39,16 @@ const MAX_BRIEF = 2_000;
 const MAX_NAME = 120;
 
 /**
- * The failures worth naming, in the words of what to do about them.
+ * The failures worth naming for the one thing here that still runs inline.
  *
- * The same two conditions `refine.ts` and `generate.ts` name, in the same sentences,
- * because they are the same two conditions and a developer who has read one of these
- * on the plan page should not wonder whether this is a different problem.
+ * Down to the missing key, which is the only named condition `proposeBrief` can hit:
+ * it calls no tools, so there is no machine to be unreachable. The arm for that used
+ * to be here and was always dead on this path -- what made it look alive was the two
+ * actions that have since moved to the queue, where `run.ts` names it properly.
  */
 function readable(error: unknown): string {
   if (error instanceof NoModelKeyError) {
     return 'No model key yet, so there is nothing to answer with. Add one in Settings → AI.';
-  }
-  if (error instanceof CliUnavailableError) {
-    /* Logged, unlike the other named failures, because `detail` carries the address
-       that did not answer and the reason -- and this is the one condition a developer
-       has to fix rather than read. */
-    console.error('agent: research unavailable', error.detail);
-    return 'GritQA could not reach the research server on your machine, so it has no way to read the code. That is a separate channel from the job poller, so a connected machine can still be missing it — start it and ask again.';
   }
   /* Logged rather than shown: a provider's own error text is written for whoever
      wired the provider up, and it is the one place a request id or a key fragment
@@ -94,10 +84,24 @@ function fromConversationPage(here: string): boolean {
   return pageOf(here).startsWith(CONVERSATIONS);
 }
 
-export type AskState = null | { error: string } | { ok: true; turn: number };
+/**
+ * What comes back from asking.
+ *
+ * `asked` rather than `ok`, because that is now all it means: the question is a row and
+ * an answer is coming. The answer itself arrives on the thread, which is the whole
+ * point of the change -- there is no return value that could carry it, because this
+ * request is long finished by the time it exists.
+ */
+export type AskState = null | { error: string } | { asked: true; turn: number };
 
 /**
- * One turn: the question, and the answer to it.
+ * A question, and an answer on the way.
+ *
+ * The question is written here rather than by the work, and that is the design: a
+ * thread you can read the moment you press the button, whether or not you stay for the
+ * answer. `seq` comes back from the write and travels in the payload, so the answer
+ * lands in the slot immediately after this question rather than after whatever is last
+ * -- two people asking in one thread would otherwise cross their answers over.
  *
  * A new conversation ends in a redirect, because `ask:new` has to become
  * `ask:<id>` -- the panel is addressed by the thread it is showing, and the thread
@@ -123,44 +127,48 @@ export async function askAction(_previous: AskState, formData: FormData): Promis
     if (!conversation) return { error: 'That conversation is not in this project any more.' };
   }
 
-  let written: ConversationRef;
-  let turns: number;
-  try {
-    const history = conversation ? await conversationHistory(conversation.id) : [];
-    const answer = await askAgent({ question, history });
+  /* Before the question is written, so a project with no key and no machine does not
+     collect questions nothing will ever answer. */
+  const blocked = await agentUnavailable();
+  if (blocked) return { error: blocked };
 
-    written = await writeExchange({
-      projectId: scope.projectId,
-      userId: scope.userId,
-      conversation,
-      question,
-      answer,
-    });
-    turns = history.length + 2;
-  } catch (error) {
-    return { error: readable(error) };
-  }
+  const { thread, seq } = await askedIn({
+    projectId: scope.projectId,
+    userId: scope.userId,
+    conversation,
+    question,
+  });
+
+  /* No `ip` in this payload, unlike the two draft jobs: answering writes no audit row,
+     so there is nothing for an address to be recorded on. */
+  const job = await enqueueWork({
+    projectId: scope.projectId,
+    userId: scope.userId,
+    type: 'answer_question',
+    label: question,
+    request: { conversation: thread.publicId, question, seq },
+  });
+
+  after(() => runWork(job));
 
   revalidatePath(pageOf(here));
-  /* And the list, which sorts by activity and counts turns -- stale the moment an
-     exchange lands, wherever it was asked from. Before the redirect below, because
+  /* And the list, which sorts by activity and counts turns -- stale the moment a
+     question lands, wherever it was asked from. Before the redirect below, because
      `redirect` throws and nothing after it runs. */
   revalidatePath(CONVERSATIONS);
 
-  /* Outside the try, because `redirect` works by throwing and a catch around it
-     would read a saved exchange as a failed one. */
   if (!conversation) {
     /* Asked from the pages -- including the panel opened over them, which is how a
        thread is started there -- the new thread is a page. Asked from anywhere else,
        it is the panel over the page you were reading, which is where you still are. */
     redirect(
       fromConversationPage(here)
-        ? `${CONVERSATIONS}/${written.publicId}`
-        : withOverlayOn(here, askToken(written.publicId)),
+        ? `${CONVERSATIONS}/${thread.publicId}`
+        : withOverlayOn(here, askToken(thread.publicId)),
     );
   }
 
-  return { ok: true, turn: turns };
+  return { asked: true, turn: seq };
 }
 
 export type BriefState = null | { error: string } | { ok: true; brief: string; name: string };
@@ -221,6 +229,12 @@ function cleanBaseUrl(value: string): string | null {
  * held ten minutes ago is a cache, and research is the one thing here that is not
  * allowed to be one.
  *
+ * The thread is carried as its public id rather than its row id, because the runner
+ * resolves it through the project again -- a thread deleted between the click and the
+ * work is then a sentence on the work page instead of a foreign key violation. It is
+ * also what reads back the prior findings, so the conversation is used as it stands
+ * when the draft actually runs rather than as it stood when the button was pressed.
+ *
  * `trigger_source` stays `manual` -- a person asked for this -- and
  * `conversation_id` carries the difference.
  */
@@ -249,52 +263,29 @@ export async function draftFromConversationAction(
   const conversation = await findConversation(scope.projectId, id);
   if (!conversation) return { error: 'That conversation is not in this project any more.' };
 
-  const rules = (await listRules(scope.projectId)).map(toTestingRule);
+  const blocked = await agentUnavailable();
+  if (blocked) return { error: blocked };
 
-  let written: Awaited<ReturnType<typeof writeNewPlan>>;
-  try {
-    const priorFindings = priorFindingsOf(await conversationHistory(conversation.id));
-    const draft = await draftPlan({ brief, baseUrl, name, rules, priorFindings });
+  const ip = await clientIp();
 
-    written = await writeNewPlan({
-      projectId: scope.projectId,
-      userId: scope.userId,
+  const job = await enqueueWork({
+    projectId: scope.projectId,
+    userId: scope.userId,
+    type: 'draft_plan',
+    label: name ?? brief,
+    request: {
+      brief,
       baseUrl,
-      instruction: brief,
-      conversationId: conversation.id,
-      draft,
-      checks: draft.checks,
-    });
+      conversation: conversation.publicId,
+      ...(name ? { name } : {}),
+      ...(ip ? { ip } : {}),
+    },
+  });
 
-    await record({
-      userId: scope.userId,
-      action: 'test_plan.drafted',
-      entityType: 'test_plans',
-      entityId: written.planId,
-      /* `from` is what the timeline reads to say this came out of a conversation
-         rather than out of the wizard. The transcript stays where it is. */
-      values: {
-        name: written.name,
-        steps: draft.steps.length,
-        model: draft.modelLabel,
-        from: 'conversation',
-      },
-      ip: await clientIp(),
-    });
-  } catch (error) {
-    return { error: readable(error) };
-  }
+  after(() => runWork(job));
 
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/queue');
-  revalidatePath('/dashboard/test-plans');
-  revalidatePath('/dashboard/settings/activity');
-  /* Both conversation surfaces count the plans a thread produced, and this is the
-     one call that changes that number. */
-  revalidatePath(CONVERSATIONS);
-  revalidatePath(`${CONVERSATIONS}/${conversation.publicId}`);
-
-  /* Outside the try, for the same reason as above. The plan is worth a page: it is
-     long, it is the thing to read, and the conversation is one click back. */
-  redirect(`/dashboard/test-plans/${written.publicId}`);
+  /* Nothing to revalidate here any more. The plan count on both conversation surfaces
+     changes when the plan is written, which is now the runner's job -- and it
+     revalidates both of those paths itself. */
+  redirect(WORK);
 }

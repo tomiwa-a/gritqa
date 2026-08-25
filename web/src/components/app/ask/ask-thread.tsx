@@ -1,4 +1,5 @@
 import { TurnRow } from '../plan/revision-thread';
+import { StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { Prose } from '@/components/ui/prose';
 import type { AgentStep, ConversationTurn } from '@/lib/model';
@@ -71,6 +72,40 @@ function Steps({ steps }: { steps: AgentStep[] }) {
   );
 }
 
+/**
+ * Is there an answer on the way?
+ *
+ * A thread whose last turn is yours is a thread with an answer being written, because
+ * that is the only way it can end that way -- `askedIn` writes the question and the
+ * runner writes the answer, and nothing else appends to either side. Exported because
+ * both surfaces that render a thread need the same answer for a different reason: this
+ * file draws the waiting row, and the page around it decides whether to poll.
+ */
+export function awaitingAnswer(turns: ConversationTurn[]): boolean {
+  return turns.length > 0 && turns[turns.length - 1].author === 'you';
+}
+
+/**
+ * The turn that has not been written yet.
+ *
+ * A question and its answer are two rows, and the answer is now queued work rather than
+ * something the request that asked for it waits on. Without this the thread would end on
+ * your own question with nothing after it, which reads as *it did not hear you* -- the
+ * one thing that is not happening. It needs no prop: a thread whose last turn is yours is
+ * a thread with an answer on the way, because that is the only way it can end that way.
+ */
+function Waiting() {
+  return (
+    <TurnRow who="GritQA" whenLabel="now" mine={false}>
+      <p className="mt-2 flex items-center gap-2 text-[12.5px] leading-relaxed text-ink-muted">
+        <StatusDot tone="running" pulse label="Working" />
+        Reading your code to answer. You can close this — the answer lands here when it is
+        written.
+      </p>
+    </TurnRow>
+  );
+}
+
 export function AskThread({
   turns,
   author,
@@ -81,6 +116,8 @@ export function AskThread({
   /** The drawer is narrow and the conversation page is not. */
   size?: 'sm' | 'md' | 'lg';
 }) {
+  const waiting = awaitingAnswer(turns);
+
   return (
     <ol className="flex flex-col">
       {turns.map((turn, i) => {
@@ -91,7 +128,7 @@ export function AskThread({
             who={mine ? author : 'GritQA'}
             whenLabel={turn.whenLabel}
             mine={mine}
-            divide={i < turns.length - 1}
+            divide={waiting || i < turns.length - 1}
           >
             {mine ? (
               <blockquote className="mt-2 border-l-2 border-punch-red pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">
@@ -108,6 +145,7 @@ export function AskThread({
           </TurnRow>
         );
       })}
+      {waiting && <Waiting />}
     </ol>
   );
 }

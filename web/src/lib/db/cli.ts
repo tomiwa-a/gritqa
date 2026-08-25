@@ -1,6 +1,7 @@
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import {
+  MACHINE_JOBS,
   cliInstances,
   codebaseIndex,
   executionState,
@@ -246,6 +247,12 @@ type JobRowRaw = {
  * because the machine is thrashing is not re-handed to it instantly. Past
  * `max_attempts` it goes `dead` and the run it belonged to goes `error` -- which is
  * also what releases the index, because `error` is settled.
+ *
+ * Bounded to `MACHINE_JOBS`, because "the machine stopped reporting" is not a question
+ * that can be asked about an agent job at all. Those are held by a web process and
+ * heartbeat on a different clock, and reaping one here would hand the developer's draft
+ * back to a poller that has no model key and no idea what to do with it. Agent work has
+ * its own reaper in `work.ts`.
  */
 export async function reapAbandoned(projectId: number): Promise<number> {
   const revived = await raw<JobRowRaw[]>`
@@ -257,6 +264,7 @@ export async function reapAbandoned(projectId: number): Promise<number> {
       error_message = 'the machine stopped reporting before it finished'
     WHERE project_id = ${projectId}
       AND status = 'claimed'
+      AND type = ANY(${[...MACHINE_JOBS]}::job_type[])
       AND claimed_at < now() - ${ABANDON_AFTER}::interval
       AND attempts < max_attempts
     RETURNING id, public_id, type, payload, attempts, max_attempts
@@ -268,6 +276,7 @@ export async function reapAbandoned(projectId: number): Promise<number> {
       error_message = 'the machine stopped reporting, and there are no attempts left'
     WHERE project_id = ${projectId}
       AND status = 'claimed'
+      AND type = ANY(${[...MACHINE_JOBS]}::job_type[])
       AND claimed_at < now() - ${ABANDON_AFTER}::interval
       AND attempts >= max_attempts
     RETURNING id, public_id, type, payload, attempts, max_attempts
@@ -346,6 +355,12 @@ function executionIdOf(payload: unknown): string | null {
  * Claiming an `execute_tests` job starts its run in the same call. The alternative is
  * a run that sits `pending` while its container is already building, and the dashboard
  * saying "waiting for your machine" about work the machine is doing.
+ *
+ * The type filter is not a tidiness measure. Without it this query takes the oldest
+ * pending job of *any* kind, so the first draft a developer asks for would be handed to
+ * whichever machine polled next, met `attach.go`'s "this machine does not know what a
+ * draft_plan job is", and been given back and re-handed until it died -- while the
+ * developer watched a queue page saying their plan was being worked on.
  */
 export async function claimNextJob(
   scope: CliScope,
@@ -361,6 +376,7 @@ export async function claimNextJob(
       SELECT id FROM jobs
       WHERE project_id = ${scope.projectId}
         AND status = 'pending'
+        AND type = ANY(${[...MACHINE_JOBS]}::job_type[])
         AND (next_retry_at IS NULL OR next_retry_at <= now())
       ORDER BY created_at
       FOR UPDATE SKIP LOCKED

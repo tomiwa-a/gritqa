@@ -2,6 +2,8 @@ import { generateObject, generateText, isStepCount } from 'ai';
 import { z } from 'zod';
 import { resolveModel } from './model';
 import { openResearch } from './research';
+import { unwatched, watching } from './watch';
+import type { Watcher } from './watch';
 import type { AgentStep } from '@/lib/model';
 
 /**
@@ -91,7 +93,16 @@ export async function askAgent(input: {
   question: string;
   /** Everything said before this question, oldest first. Empty on the first turn. */
   history: PriorTurn[];
+  /**
+   * Where to narrate the reading, when this is queued work.
+   *
+   * No `findings` note is written here and `resumeFrom` is ignored, which is the
+   * honest thing rather than an omission: the reading and the answer are one call, so
+   * there is no half of this to resume from. An abandoned ask runs again whole.
+   */
+  watch?: Watcher;
 }): Promise<AskTurn> {
+  const watch = input.watch ?? unwatched;
   const { model, label } = await resolveModel();
   const research = await openResearch();
 
@@ -108,6 +119,7 @@ export async function askAgent(input: {
       ],
       tools: research.tools,
       stopWhen: isStepCount(RESEARCH_STEPS),
+      ...watching(watch, 'research'),
     });
 
     return { body: answer.text.trim(), steps: stepsOf(answer.content), modelLabel: label };

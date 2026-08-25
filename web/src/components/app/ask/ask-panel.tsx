@@ -2,10 +2,12 @@ import Link from 'next/link';
 import { Drawer, DrawerBlock } from '../drawer';
 import { AskFooter } from './ask-footer';
 import { AskHistory } from './ask-history';
-import { AskThread } from './ask-thread';
+import { AskThread, awaitingAnswer } from './ask-thread';
+import { WorkPulse } from '../work-pulse';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { getConversation, getConversations, getLastBaseUrl, getUser } from '@/lib/data';
+import { pulse } from '@/lib/work/pulse';
 import { NEW_CONVERSATION, askToken } from '@/lib/overlay';
 
 /**
@@ -117,6 +119,11 @@ export async function AskPanel({
   const turns = detail?.turns ?? [];
   const canDraft = turns.some((turn) => turn.author === 'ai');
 
+  /* Only while an answer is outstanding. A poll every four seconds is right for a thread
+     you are waiting on and wrong for one you are reading back, and the mark is the same
+     query either way -- so the cheapest place to decide is here, by not mounting it. */
+  const mark = await pulse(awaitingAnswer(turns));
+
   return (
     <Drawer
       id="ask-panel"
@@ -152,6 +159,7 @@ export async function AskPanel({
     >
       {detail ? (
         <>
+          {mark !== null && <WorkPulse mark={mark} />}
           <AskThread turns={turns} author={user.name} />
           {detail.plans.length > 0 && <PlansFrom plans={detail.plans} />}
         </>

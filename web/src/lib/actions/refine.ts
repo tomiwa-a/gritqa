@@ -1,80 +1,40 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { clientIp } from '@/lib/client-ip';
-import { record } from '@/lib/db/audit';
-import { PlanArchivedError, PlanMovedError, writeRevision } from '@/lib/db/drafts';
 import { requireScope } from '@/lib/db/scope';
 import { planDetail } from '@/lib/db/plans';
-import { listRules, toTestingRule } from '@/lib/db/rules';
-import { CliUnavailableError, NoModelKeyError, refinePlan } from '@/lib/agent';
+import { enqueueWork } from '@/lib/db/work';
+import { agentUnavailable } from '@/lib/work/ready';
+import { runWork } from '@/lib/work/run';
 
 /**
  * "Ask for a new version", connected to something.
  *
- * The composer has been submitting into nothing since it was built, and this is
- * where it lands. A server action rather than a streaming route, because of what the
- * button promises: *writes v4 for you to read*. That is a request and an answer, and
- * a token stream would be a different product -- watching a plan get typed instead
- * of being handed the version to read. Streaming belongs to the generate wizard,
- * where there is no v3 to compare against and the waiting is the whole experience.
+ * It used to write the version inside this request: a minute or so of model calls
+ * with the button spinning, and the honest reason given for it was that the button
+ * promises *writes v4 for you to read* -- a request and an answer rather than a
+ * stream. That reasoning was about streaming, and it is still right about streaming.
+ * It was never an argument for holding the request open.
  *
- * It is slow on purpose. The agent reads the developer's actual code before it
- * writes, which takes as long as it takes, and the alternative is a fast answer
- * about code it guessed at.
+ * So the ask becomes queued work. What the developer gets back immediately is the
+ * fact that it started, and v4 arrives on the plan page whether or not they stayed to
+ * watch -- which is a better answer to the same promise, because the previous one
+ * quietly depended on them not navigating away.
  */
 
 /** Long enough for a paragraph, short enough that a paste accident is not a prompt. */
 const MAX_INSTRUCTION = 2_000;
 
-export type RefineState = null | { error: string } | { ok: true; version: number; summary: string };
-
 /**
- * Everything a new version changes on screen.
+ * What comes back from asking.
  *
- * The status line is in here because a revision can move one: an approved plan
- * drops back to `draft`, so the queue loses a row and the badge changes -- and a
- * page still showing `Approved` beside v4 would be describing v3.
+ * `queued` carries the job's id rather than only a flag, and it earns its place: the
+ * composer keys itself on it, so a second ask is a new field with the caret in it
+ * instead of an effect that clears the old one. The version number cannot be in here
+ * any more -- nothing knows it yet -- and that is the honest shape of the change.
  */
-function revalidateRevision(planPublicId: string): void {
-  revalidatePath('/dashboard');
-  revalidatePath('/dashboard/queue');
-  revalidatePath('/dashboard/test-plans');
-  revalidatePath(`/dashboard/test-plans/${planPublicId}`);
-  revalidatePath('/dashboard/settings/activity');
-}
-
-/**
- * The failures worth naming, in the words of what to do about them.
- *
- * Each of these is a state the developer can act on rather than an error report:
- * two of them are a thing that is not switched on yet, and one is a page that has
- * gone stale. Anything else falls through to the last line, which says the model
- * did not produce a usable plan and does not pretend to know why.
- */
-function readable(error: unknown): string {
-  if (error instanceof NoModelKeyError) {
-    return 'No model key yet, so there is nothing to draft with. Add one in Settings → AI.';
-  }
-  if (error instanceof CliUnavailableError) {
-    /* Logged, unlike the other named failures, because `detail` carries the address
-       that did not answer and the reason -- and this is the one condition a developer
-       has to fix rather than read. */
-    console.error('agent: research unavailable', error.detail);
-    return 'GritQA could not reach the research server on your machine, so it has no way to read the code. That is a separate channel from the job poller, so a connected machine can still be missing it — start it and ask again.';
-  }
-  if (error instanceof PlanMovedError) {
-    return 'This plan changed while you were reading it. Reload the page and ask again.';
-  }
-  if (error instanceof PlanArchivedError) {
-    return 'This plan is archived. Copy it into a new plan to take it further.';
-  }
-  /* Logged rather than shown. A provider's own error text is written for whoever
-     wired the provider up, and it is the one place a request id or a key fragment
-     could turn up in something a browser renders. */
-  console.error('refine: could not produce a revision', error);
-  return 'The model did not come back with a usable plan. Try asking again, or say it a different way.';
-}
+export type RefineState = null | { error: string } | { queued: true; job: string };
 
 export async function refinePlanAction(
   _previous: RefineState,
@@ -94,43 +54,30 @@ export async function refinePlanAction(
 
   /* Read through the scope, so a plan belonging to someone else is simply not
      found -- the same answer the detail page gives, and one that does not confirm
-     the id exists. */
+     the id exists. Read here as well as in the runner, for two different jobs: this
+     one refuses an id that is already gone, so nobody watches a job fail for a
+     reason the form could have said. The runner's read is the one that decides
+     `fromVersion`, and it has to happen there. */
   const detail = await planDetail(scope.projectId, publicId);
   if (!detail) return { error: 'That plan is not in this project any more.' };
 
-  const rules = (await listRules(scope.projectId)).map(toTestingRule);
+  const blocked = await agentUnavailable();
+  if (blocked) return { error: blocked };
 
-  try {
-    const draft = await refinePlan({ detail, instruction, rules });
+  const ip = await clientIp();
 
-    /* `detail.version` is the version the agent was shown, and it is passed through
-       rather than re-read: it is what makes the write refuse if somebody else
-       revised the plan while this draft was being written. */
-    const written = await writeRevision({
-      projectId: scope.projectId,
-      userId: scope.userId,
-      planPublicId: publicId,
-      fromVersion: detail.version,
-      instruction,
-      draft,
-      checks: draft.checks,
-    });
+  const job = await enqueueWork({
+    projectId: scope.projectId,
+    userId: scope.userId,
+    type: 'refine_plan',
+    /* Named for the plan and the version being asked for, because the work page
+       lists jobs across a project and "make the tax assertion stricter" on its own
+       does not say which plan it is about. */
+    label: `${detail.name} v${detail.version + 1}: ${instruction}`,
+    request: { plan: publicId, instruction, ...(ip ? { ip } : {}) },
+  });
 
-    await record({
-      userId: scope.userId,
-      action: 'test_plan.revised',
-      entityType: 'test_plans',
-      entityId: written.planId,
-      /* The model's name, never its key, and not the transcript either -- the
-         instruction is already on the revision row, where the developer can read
-         it back. */
-      values: { name: draft.name, version: written.version, model: draft.modelLabel },
-      ip: await clientIp(),
-    });
+  after(() => runWork(job));
 
-    revalidateRevision(publicId);
-    return { ok: true, version: written.version, summary: draft.summary };
-  } catch (error) {
-    return { error: readable(error) };
-  }
+  return { queued: true, job };
 }

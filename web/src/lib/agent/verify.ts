@@ -1,8 +1,10 @@
 import { generateObject, generateText, isStepCount } from 'ai';
 import type { LanguageModel, ToolSet } from 'ai';
 import { checksFor, checksSchema } from './plan-schema';
+import { unwatched, watching } from './watch';
 import { observedRoutes } from '@/lib/db/contracts';
 import { currentScope } from '@/lib/db/scope';
+import type { Watcher } from './watch';
 import type { ObservedRoute, PlanStepSpec, StepCheck } from '@/lib/model';
 
 /**
@@ -143,8 +145,11 @@ export async function verifyPlan(input: {
   steps: PlanStepSpec[];
   variables: Record<string, string>;
   baseUrl: string;
+  /** Where to narrate the reading, when this is queued work. */
+  watch?: Watcher;
 }): Promise<Verification> {
   if (input.steps.length === 0) return { checks: [], findings: '' };
+  const watch = input.watch ?? unwatched;
 
   const routes = await recorded();
   const plan = [
@@ -175,6 +180,7 @@ export async function verifyPlan(input: {
       ].join('\n'),
       tools: input.tools,
       stopWhen: isStepCount(budget(input.steps.length)),
+      ...watching(watch, 'verify'),
     });
 
     const out = await generateObject({
@@ -202,7 +208,17 @@ export async function verifyPlan(input: {
   } catch (error) {
     /* A plan that could not be checked is still a plan. The log names the reason and
        the developer sees an unverified plan, which is what they had yesterday. */
-    console.warn(`verify: ${error instanceof Error ? error.message : String(error)}`);
+    const why = error instanceof Error ? error.message : String(error);
+    console.warn(`verify: ${why}`);
+    /* Recorded rather than only logged, because a plan that arrives with no checks on
+       it looks the same as a plan nobody thought to check. Not `failed`: the job did
+       not fail, and the plan is about to be written. */
+    watch.note({
+      phase: 'verify',
+      kind: 'note',
+      label: 'Could not check the steps against the code, so the plan arrives unverified.',
+      detail: { why },
+    });
     return { checks: [], findings: '' };
   }
 }

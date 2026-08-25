@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { conversationMessages, conversations, testPlans } from '@/lib/db/schema';
 import { agoLabel } from '@/lib/when';
@@ -213,31 +213,30 @@ export async function findConversation(
 }
 
 /**
- * One exchange -- a question and the answer to it -- and a conversation to hold it
- * when there is not one yet.
+ * A question, written the moment somebody asks it.
  *
- * A question and its answer are written together, and that is the decision worth
- * explaining. Storing the question first would make a closed panel less destructive
- * for the sixty seconds the model is thinking, and it would pay for that with a
- * thread that can contain a question nothing ever answered: a row that is not a
- * record of anything, sitting above a composer, with no way to tell whether the
- * answer is coming or the request died. So nothing is written until there is
- * something to say. An ask that fails leaves no trace and the question is still in
- * the box.
+ * This reverses a decision, and the reversal is worth recording rather than quietly
+ * making. Until now a question and its answer were written together, because a
+ * question stored on its own would be "a row that is not a record of anything,
+ * sitting above a composer, with no way to tell whether the answer is coming or the
+ * request died". That objection was exact, and it is answered: the answer is queued
+ * work now, so there is a job row that says an answer is coming and says so if it
+ * stopped. With the objection gone, what is left is the half that was always better
+ * -- a thread that exists while the agent is reading, on a page the developer is
+ * free to close.
  *
- * `seq` is computed once and used twice, so the pair cannot straddle somebody else's
- * turn. The unique index is what makes that a guarantee rather than an intention: two
- * exchanges landing together means one transaction fails and is told to ask again,
- * which is the right outcome for a panel one person is typing into.
+ * `seq` comes back rather than being discarded, because the answer is written later
+ * by something else and has to land in the slot immediately after this one. Passing
+ * it through the job payload is what keeps the pair together across a process that
+ * might not be the one that finishes.
  */
-export async function writeExchange(input: {
+export async function askedIn(input: {
   projectId: number;
   userId: number;
   /** The thread this belongs to, or null to start one from the question. */
   conversation: ConversationRef | null;
   question: string;
-  answer: { body: string; steps: AgentStep[]; modelLabel: string };
-}): Promise<ConversationRef> {
+}): Promise<{ thread: ConversationRef; seq: number }> {
   return db.transaction(async (tx) => {
     let thread = input.conversation;
     if (!thread) {
@@ -263,34 +262,85 @@ export async function writeExchange(input: {
       .from(conversationMessages)
       .where(eq(conversationMessages.conversationId, thread.id));
 
-    await tx.insert(conversationMessages).values([
-      {
-        conversationId: thread.id,
-        seq: next,
-        author: 'human',
-        /* Null on both, which the table's CHECK requires: somebody typing called no
-           tools and used no model. */
-        body: input.question,
-      },
-      {
-        conversationId: thread.id,
-        seq: next + 1,
-        author: 'agent',
-        body: input.answer.body,
-        steps: input.answer.steps,
-        modelLabel: input.answer.modelLabel,
-      },
-    ]);
+    await tx.insert(conversationMessages).values({
+      conversationId: thread.id,
+      seq: next,
+      author: 'human',
+      /* `steps` and `model_label` left null, which the table's CHECK requires:
+         somebody typing called no tools and used no model. */
+      body: input.question,
+    });
 
     /* The value set here is discarded -- `set_updated_at()` overwrites it with the
        server's own now() on every UPDATE. What the statement is for is causing the
        update, so the trigger fires and the history list re-sorts by what was last
-       spoken in. */
+       spoken in. A question counts as activity: a thread being answered right now is
+       the one you most want at the top. */
     await tx
       .update(conversations)
       .set({ updatedAt: new Date() })
       .where(eq(conversations.id, thread.id));
 
-    return thread;
+    return { thread, seq: next };
+  });
+}
+
+/**
+ * The thread up to a question, for handing to the model.
+ *
+ * `conversationHistory` cannot be used on the queued path: the question is already a
+ * row by the time the agent runs, and `askAgent` appends it as the final user
+ * message -- so reading everything would send it twice, once as history and once as
+ * the thing being asked. Strictly before, so the boundary is the question's own seq
+ * and not "the last row", which a second person asking in the same thread would move.
+ */
+export async function historyBefore(
+  conversationId: number,
+  seq: number,
+): Promise<{ author: 'agent' | 'human'; body: string }[]> {
+  return db
+    .select({ author: conversationMessages.author, body: conversationMessages.body })
+    .from(conversationMessages)
+    .where(
+      and(
+        eq(conversationMessages.conversationId, conversationId),
+        lt(conversationMessages.seq, seq),
+      ),
+    )
+    .orderBy(asc(conversationMessages.seq));
+}
+
+/**
+ * The answer, in the slot after the question it answers.
+ *
+ * `onConflictDoNothing` is not defensive tidiness, it is the one real race on this
+ * path: a job whose answer was written and whose `settleWork` never landed is
+ * resumed, and it must not append a second copy of an answer that is already in the
+ * thread. Doing nothing is right rather than clever -- the row that is there was
+ * written by an attempt that got further than this one.
+ */
+export async function answeredIn(input: {
+  conversationId: number;
+  /** The seq of the question. The answer goes immediately after it. */
+  seq: number;
+  answer: { body: string; steps: AgentStep[]; modelLabel: string };
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(conversationMessages)
+      .values({
+        conversationId: input.conversationId,
+        seq: input.seq + 1,
+        author: 'agent',
+        body: input.answer.body,
+        steps: input.answer.steps,
+        modelLabel: input.answer.modelLabel,
+      })
+      .onConflictDoNothing();
+
+    await tx
+      .update(conversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(conversations.id, input.conversationId));
   });
 }

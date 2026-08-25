@@ -179,18 +179,21 @@ function DraftForm({
           size={14}
           className={cn(pending && 'animate-spin')}
         />
-        {pending ? 'Writing the plan…' : 'Draft it'}
+        {pending ? 'Handing it over…' : 'Draft it'}
       </Button>
 
+      {/* No success branch: a draft ends in a navigation to the work page, so this
+          form is gone by the time there would be anything to say. */}
       {pending ? (
         <p className="text-[11px] leading-snug text-ink-subtle">
-          Confirming what this conversation found, then writing the steps. This can take a minute.
+          Writing down what you asked for.
         </p>
       ) : state && 'error' in state ? (
         <p className="text-[11.5px] leading-snug text-punch-red">{state.error}</p>
       ) : (
         <p className="text-[11px] leading-snug text-ink-subtle">
-          Lands as a draft on its own page. Nothing runs until you approve it.
+          GritQA confirms what this conversation found, then writes the steps — a minute or so,
+          on the work page. Nothing runs until you approve it.
         </p>
       )}
     </form>

@@ -2,6 +2,7 @@ import { NoObjectGeneratedError, generateObject, generateText, isStepCount } fro
 import { resolveModel } from './model';
 import { openResearch } from './research';
 import { verifyPlan } from './verify';
+import { unwatched, watching } from './watch';
 import {
   PlanShapeError,
   draftFromWire,
@@ -11,6 +12,7 @@ import {
   type PlanDraft,
   type RevisionDraft,
 } from './plan-schema';
+import type { Watcher } from './watch';
 import type { StepCheck, TestPlanDetail, TestingRule } from '@/lib/model';
 
 /**
@@ -313,7 +315,14 @@ export async function refinePlan(input: {
   detail: TestPlanDetail;
   instruction: string;
   rules: TestingRule[];
+  /**
+   * Somewhere to say what it is doing, when this is queued work rather than a
+   * request somebody is waiting on. Omitted everywhere else, and the agent behaves
+   * identically either way.
+   */
+  watch?: Watcher;
 }): Promise<Refinement> {
+  const watch = input.watch ?? unwatched;
   const { model, label } = await resolveModel();
   const research = await openResearch();
 
@@ -326,25 +335,48 @@ export async function refinePlan(input: {
 
   try {
     /* Pass one. No schema, because the job is to go and look -- and a model
-       working towards a shape reads less than one working towards an answer. */
-    const investigation = await generateText({
-      model,
-      system: context,
-      prompt: [
-        `The developer asks: "${input.instruction}"`,
-        '',
-        'Research whatever you need in the codebase to answer it well, then report',
-        'what you found: the routes and handlers you read, the request and response',
-        'shapes you confirmed, and anything you looked for and could not establish.',
-        'Do not write the plan yet.',
-      ].join('\n'),
-      tools: research.tools,
-      stopWhen: isStepCount(RESEARCH_STEPS),
-    });
+       working towards a shape reads less than one working towards an answer.
+       Skipped outright when a previous attempt at this same job already did it: its
+       findings are in the record, and the reading is the expensive part. */
+    let findings = watch.resumeFrom;
+    if (findings) {
+      watch.note({
+        phase: 'research',
+        kind: 'note',
+        label: 'Picked up where the last attempt got to, reusing what it read.',
+      });
+    } else {
+      watch.note({ phase: 'research', kind: 'note', label: 'Reading the code.' });
+      const investigation = await generateText({
+        model,
+        system: context,
+        prompt: [
+          `The developer asks: "${input.instruction}"`,
+          '',
+          'Research whatever you need in the codebase to answer it well, then report',
+          'what you found: the routes and handlers you read, the request and response',
+          'shapes you confirmed, and anything you looked for and could not establish.',
+          'Do not write the plan yet.',
+        ].join('\n'),
+        tools: research.tools,
+        stopWhen: isStepCount(RESEARCH_STEPS),
+        ...watching(watch, 'research'),
+      });
+      findings = investigation.text;
+      /* The one `findings` note per job, and it is pass one's rather than the whole
+         return value: verify runs *after* the write, so its findings describe a plan
+         a resume is about to throw away. */
+      watch.note({ phase: 'research', kind: 'findings', label: findings });
+    }
 
     /* Pass two. The tools are deliberately absent: this is a shaping call, and a
        model that can still reach for a file here will keep researching instead of
        committing to an answer. */
+    watch.note({
+      phase: 'write',
+      kind: 'note',
+      label: `Writing version ${input.detail.version + 1} of ${input.detail.name}.`,
+    });
     const revision = await shaped(async (correction) => {
       const out = await generateObject({
         model,
@@ -354,7 +386,7 @@ export async function refinePlan(input: {
           `The developer asked: "${input.instruction}"`,
           '',
           'What you found when you looked:',
-          investigation.text,
+          findings,
           '',
           `Write the plan as it should now read, in full, as version ${input.detail.version + 1}.`,
           'Carry over every step the instruction does not touch, unchanged and with the',
@@ -369,18 +401,24 @@ export async function refinePlan(input: {
       return revisionFromWire(out.object);
     });
 
+    watch.note({
+      phase: 'verify',
+      kind: 'note',
+      label: `Checking ${revision.steps.length} steps against the code.`,
+    });
     const verified = await verifyPlan({
       model,
       tools: research.tools,
       steps: revision.steps,
       variables: revision.variables,
       baseUrl: input.detail.baseUrl,
+      watch,
     });
 
     return {
       ...revision,
       checks: verified.checks,
-      findings: [investigation.text, verified.findings].filter(Boolean).join('\n\n'),
+      findings: [findings, verified.findings].filter(Boolean).join('\n\n'),
       modelLabel: label,
     };
   } finally {
@@ -435,43 +473,64 @@ export async function draftPlan(input: {
    * of one. Context for pass one, not a substitute for it -- see below.
    */
   priorFindings?: string;
+  /** See `refinePlan`. Notes go here when this is queued work. */
+  watch?: Watcher;
 }): Promise<Draft> {
+  const watch = input.watch ?? unwatched;
   const { model, label } = await resolveModel();
   const research = await openResearch();
 
   const context = [HOUSE_RULES, rulesPrompt(input.rules)].join('\n');
 
   try {
-    const investigation = await generateText({
-      model,
-      system: context,
-      prompt: [
-        `The developer wants a test plan that proves this: "${input.brief}"`,
-        ...(input.priorFindings
-          ? [
-              '',
-              'You already looked at this code, in a conversation that led here. What you',
-              'found then:',
-              input.priorFindings,
-              '',
-              'Confirm it and fill the gaps rather than starting over. Anything you already',
-              'established needs one check that it is still true, not a fresh investigation;',
-              'spend the reading on what a plan needs and a conversation did not cover.',
-            ]
-          : []),
-        '',
-        'Go and find out how the code actually does it. The routes involved and their',
-        'real paths, the exact field names each one reads off the request and returns in',
-        'its response, which of them need a signed-in caller and how the code expects that',
-        'credential to arrive -- a header, a cookie, a parameter -- and what has to exist',
-        'before a step can run. Find out which values a run is already given, so the plan',
-        'refers to those rather than inventing an account that does not exist.',
-        'Report what you read and what you could not establish. Do not write the plan yet.',
-      ].join('\n'),
-      tools: research.tools,
-      stopWhen: isStepCount(RESEARCH_STEPS),
-    });
+    let findings = watch.resumeFrom;
+    if (findings) {
+      watch.note({
+        phase: 'research',
+        kind: 'note',
+        label: 'Picked up where the last attempt got to, reusing what it read.',
+      });
+    } else {
+      watch.note({ phase: 'research', kind: 'note', label: 'Reading the code.' });
+      const investigation = await generateText({
+        model,
+        system: context,
+        prompt: [
+          `The developer wants a test plan that proves this: "${input.brief}"`,
+          ...(input.priorFindings
+            ? [
+                '',
+                'You already looked at this code, in a conversation that led here. What you',
+                'found then:',
+                input.priorFindings,
+                '',
+                'Confirm it and fill the gaps rather than starting over. Anything you already',
+                'established needs one check that it is still true, not a fresh investigation;',
+                'spend the reading on what a plan needs and a conversation did not cover.',
+              ]
+            : []),
+          '',
+          'Go and find out how the code actually does it. The routes involved and their',
+          'real paths, the exact field names each one reads off the request and returns in',
+          'its response, which of them need a signed-in caller and how the code expects that',
+          'credential to arrive -- a header, a cookie, a parameter -- and what has to exist',
+          'before a step can run. Find out which values a run is already given, so the plan',
+          'refers to those rather than inventing an account that does not exist.',
+          'Report what you read and what you could not establish. Do not write the plan yet.',
+        ].join('\n'),
+        tools: research.tools,
+        stopWhen: isStepCount(RESEARCH_STEPS),
+        ...watching(watch, 'research'),
+      });
+      findings = investigation.text;
+      watch.note({ phase: 'research', kind: 'findings', label: findings });
+    }
 
+    watch.note({
+      phase: 'write',
+      kind: 'note',
+      label: input.name ? `Writing "${input.name}".` : 'Writing the plan.',
+    });
     const draft = await shaped(async (correction) => {
       const out = await generateObject({
         model,
@@ -481,7 +540,7 @@ export async function draftPlan(input: {
           `The developer asked for: "${input.brief}"`,
           '',
           'What you found when you looked:',
-          investigation.text,
+          findings,
           '',
           `The plan will run against ${input.baseUrl}, so every step's url is relative to that.`,
           input.name
@@ -508,18 +567,24 @@ export async function draftPlan(input: {
       return draftFromWire(out.object);
     });
 
+    watch.note({
+      phase: 'verify',
+      kind: 'note',
+      label: `Checking ${draft.steps.length} steps against the code.`,
+    });
     const verified = await verifyPlan({
       model,
       tools: research.tools,
       steps: draft.steps,
       variables: draft.variables,
       baseUrl: input.baseUrl,
+      watch,
     });
 
     return {
       ...draft,
       checks: verified.checks,
-      findings: [investigation.text, verified.findings].filter(Boolean).join('\n\n'),
+      findings: [findings, verified.findings].filter(Boolean).join('\n\n'),
       modelLabel: label,
     };
   } finally {

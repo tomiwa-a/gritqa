@@ -4,12 +4,14 @@ import { Topbar } from '@/components/app/topbar';
 import { PageBody } from '@/components/app/page-body';
 import { Panel } from '@/components/app/panel';
 import { OverlayHost } from '@/components/app/overlay-host';
-import { AskThread } from '@/components/app/ask/ask-thread';
+import { AskThread, awaitingAnswer } from '@/components/app/ask/ask-thread';
+import { WorkPulse } from '@/components/app/work-pulse';
 import { AskFooter } from '@/components/app/ask/ask-footer';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
 import { getConversation, getLastBaseUrl, getUser } from '@/lib/data';
+import { pulse } from '@/lib/work/pulse';
 import { NEW_CONVERSATION, askToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { ConversationDetail } from '@/lib/model';
 
@@ -114,9 +116,11 @@ export default async function ConversationPage({
 
   const base = `${PATH}/${detail.publicId}`;
   const canDraft = detail.turns.some((turn) => turn.author === 'ai');
+  const mark = await pulse(awaitingAnswer(detail.turns));
 
   return (
     <>
+      {mark !== null && <WorkPulse mark={mark} />}
       <Topbar
         icon="sparkle"
         title={detail.title}

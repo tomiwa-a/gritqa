@@ -20,12 +20,15 @@ import { cn } from '@/lib/cn';
 type Item = { href: string; icon: IconName; label: string; count?: number; notice?: boolean };
 type Group = { key: string; label: string; items: Item[] };
 
-const groupsOf = ({ projects, reviewCount }: ShellData): Group[] => [
+const groupsOf = ({ projects, reviewCount, workCount }: ShellData): Group[] => [
   {
     key: 'essentials',
     label: 'Essentials',
     items: [
       { href: '/dashboard', icon: 'overview', label: 'Overview' },
+      /* Before the review queue, because that is the order things happen in: the agent
+         writes something, then a human approves it, then it runs. */
+      { href: '/dashboard/work', icon: 'terminal', label: 'Work', count: workCount },
       {
         href: '/dashboard/queue',
         icon: 'queue',

@@ -8,19 +8,29 @@ import {
   getProjects,
   getUser,
 } from '@/lib/data';
+import { currentScope } from '@/lib/db/scope';
+import { workRunning } from '@/lib/db/work';
 
 /**
  * The shell is a client island — it holds the collapse and mobile-nav state — so
  * the reading happens here, once per navigation, and goes down as one prop.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [user, projects, currentProject, plansAwaitingReview, machine] = await Promise.all([
-    getUser(),
-    getProjects(),
-    getCurrentProject(),
-    getPlansAwaitingReview(),
-    getMachineStatus(),
-  ]);
+  /* `currentScope` and not `requireScope`, which is the difference between this layout
+     redirecting a stranger to /login and 500ing at them: every seam function beside it
+     either tolerates no scope or redirects, and the layout must not be the one thing that
+     throws. No scope means no count, and `getUser()` below sends them to sign in. */
+  const scope = await currentScope();
+
+  const [user, projects, currentProject, plansAwaitingReview, machine, workCount] =
+    await Promise.all([
+      getUser(),
+      getProjects(),
+      getCurrentProject(),
+      getPlansAwaitingReview(),
+      getMachineStatus(),
+      scope ? workRunning(scope.projectId) : 0,
+    ]);
 
   // Narrowed on purpose: the shell is a client island, so whatever goes in here
   // ships to the browser on every navigation.
@@ -29,6 +39,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     projects,
     currentProject,
     reviewCount: plansAwaitingReview.length,
+    workCount,
   });
 
   return (

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -16,7 +17,7 @@ const EXAMPLES = [
  * The next turn in the conversation, so it sits where the next turn goes: pinned
  * under the thread it belongs to, in the panel's narrow column.
  *
- * Split in two so that a version landing empties the box by *remounting* it. The
+ * Split in two so that an ask landing empties the box by *remounting* it. The
  * obvious version of that is an effect watching for success and calling `setText('')`,
  * which is the pattern React now flags -- a render, then a second render to undo
  * part of it. A key is the same intent stated once: this is a new ask, so it is a
@@ -29,7 +30,10 @@ export function RefineComposer(props: {
   wasApproved: boolean;
 }) {
   const [state, submit, pending] = useActionState(refinePlanAction, null);
-  const landed = state && 'ok' in state ? state.version : 0;
+  /* The job's id, so a second ask remounts the field even though the first one is
+     still running -- which the version number could not do any more, because nothing
+     knows it until the agent has written it. */
+  const landed = state && 'queued' in state ? state.job : '';
 
   return <Ask key={landed} {...props} state={state} submit={submit} pending={pending} />;
 }
@@ -102,20 +106,27 @@ function Ask({
           size={14}
           className={cn(pending && 'animate-spin')}
         />
-        {pending ? 'Reading your code…' : 'Ask for a new version'}
+        {pending ? 'Handing it over…' : 'Ask for a new version'}
       </Button>
 
       {/* What is actually happening, because it takes long enough to wonder. */}
       {pending ? (
         <p className="text-[11px] leading-snug text-ink-subtle">
-          Looking at the routes this touches before writing anything. This can take a minute.
+          Writing down what you asked for.
         </p>
       ) : state && 'error' in state ? (
         <p className="text-[11.5px] leading-snug text-punch-red">{state.error}</p>
-      ) : state && 'ok' in state ? (
+      ) : state && 'queued' in state ? (
+        /* No version number here on purpose: the ask has not produced one yet, and
+           `nextVersion` is what was true when the page loaded -- which a second ask
+           in the same sitting would already have moved past. */
         <p className="text-[11.5px] leading-snug text-ink-muted">
-          <span className="nums font-mono text-ink">v{state.version}</span> is above.{' '}
-          {state.summary}
+          GritQA is reading your code. The new version lands on this page when it is
+          written —{' '}
+          <Link href="/dashboard/work" className="text-ink underline underline-offset-2">
+            follow it on the work page
+          </Link>
+          .
         </p>
       ) : (
         <p className="text-[11px] leading-snug text-ink-subtle">
