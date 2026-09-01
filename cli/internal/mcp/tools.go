@@ -172,10 +172,13 @@ type endpointOut struct {
 }
 
 func (s *Server) getIndex(ctx context.Context, _ *sdk.CallToolRequest, _ indexIn) (*sdk.CallToolResult, indexOut, error) {
+	s.log(fmt.Sprintf("get_index: start root=%s", s.root))
 	snap, delta, err := s.back.Index(ctx)
 	if err != nil {
+		s.log("get_index: error " + err.Error())
 		return nil, indexOut{}, err
 	}
+	s.log(fmt.Sprintf("get_index: done %d files from %s", len(snap.Files), snap.Source))
 
 	out := indexOut{
 		Root:      s.root,

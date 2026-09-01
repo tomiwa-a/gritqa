@@ -1,0 +1,12 @@
+{
+  "name": "09 — PM implicit DB: who can do what?",
+  "question": "I'm a product manager, not a developer. My manager said I should be able to cancel bookings but when I try I get an error. Can you tell me, in plain terms, who is supposed to be able to do which booking actions — like creating, viewing, editing, checking in, checking out, cancelling, and exporting? And is the system set up correctly?",
+  "category": "cross-verify",
+  "expectedTools": ["db", "search"],
+  "minDbCalls": 2,
+  "rubric": {
+    "completeness": "Lists permissions (create, view, edit, checkin, checkout, cancel, export) with the roles that have them, in plain language, citing both the database and the code that checks them. Mentions if setup looks correct or if something is off.",
+    "accuracy": "Role names and permissions match DB rows and code (middleware, PermissionsController). Does not say 'sandbox not running'.",
+    "hallucination": "No invented roles or permissions."
+  }
+}

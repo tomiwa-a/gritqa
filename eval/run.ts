@@ -185,7 +185,13 @@ async function main() {
     for (const tc of cases) {
       console.log(chalk.bold(`\n▶ ${tc.name} [${tc.category}]`));
       console.log(chalk.dim(`  Q: ${tc.question}`));
-      const timeoutMs = tc.timeoutMs ?? 180_000;
+      // Conversations pay per turn, so their budget scales with the turn count;
+      // a single turn gets room for one model retry after a hang.
+      const timeoutMs =
+        tc.timeoutMs ??
+        (tc.followUps?.length
+          ? Math.min(600_000, 150_000 * (tc.followUps.length + 1))
+          : 240_000);
 
       const runPromise = (async () => {
         // If followUps present, run as conversation
@@ -240,7 +246,7 @@ async function main() {
       modelLabel = result.modelLabel;
       console.log(chalk.dim(`  → ${result.toolCalls.length} tool calls in ${result.agentMs}ms (total ${result.totalMs}ms)`));
       for (const c of result.toolCalls) {
-        const err = c.error ? chalk.red(` ✘ ${c.error.slice(0, 80)}`) : "";
+        const err = c.error ? chalk.red(` ✘ ${c.error.slice(0, 160)}`) : "";
         console.log(chalk.dim(`    - ${c.name} ${fmtInput(c.input)} ${fmtMs(c.durationMs)}${err}`));
       }
 

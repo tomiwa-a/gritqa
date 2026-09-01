@@ -1,0 +1,11 @@
+{
+  "name": "07 — PM simple: what does the app do?",
+  "question": "Hi, I'm new to this system and not technical. What does this hotel app actually do? If I'm a guest, how would I book a room in simple terms?",
+  "category": "code-reading",
+  "expectedTools": ["get_index"],
+  "rubric": {
+    "completeness": "Explains the app in non-technical terms: guest browses rooms, adds to bag/cart, pays, gets bookings; staff manages inventory/housekeeping. Mentions at least 2-3 endpoints or flows in plain language.",
+    "accuracy": "Description matches actual controllers (ReservationController, RoomController, etc.) and does not invent features.",
+    "hallucination": "No invented room types, payment methods, or roles."
+  }
+}

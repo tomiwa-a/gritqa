@@ -1,0 +1,11 @@
+{
+  "name": "11 — PM implicit: checkout and housekeeping",
+  "question": "When a guest checks out of their room, what actually happens in the system? Does housekeeping get notified or does someone have to manually assign it? I'm trying to understand the flow for our QA test.",
+  "category": "multi-file",
+  "expectedTools": ["search", "read_file"],
+  "rubric": {
+    "completeness": "Names the checkout endpoint/handler, the trigger (status change to checked_out), and whether a housekeeping task is created automatically or manually, with code evidence.",
+    "accuracy": "Trigger and table (housekeeping) match code (ReservationController checkOutBooking or HousekeepingController).",
+    "hallucination": "No invented housekeeping workflow."
+  }
+}

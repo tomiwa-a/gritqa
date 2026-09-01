@@ -114,6 +114,19 @@ func Launch(ctx context.Context, opts LaunchOptions) (*Stack, error) {
 		s.log("not joining " + d + ", because it belongs to something you are already running")
 	}
 
+	// A launch starts from nothing. Whatever an earlier session left behind —
+	// containers from one that died mid-boot, volumes still holding the rows its
+	// seeder wrote — would meet this boot's schema steps as if they were new data,
+	// and a seeder that assumes an empty copy fails on the ghost. Whether a launch
+	// worked would then depend on what happened last time, which is no way for a
+	// copy to behave: every run is its own.
+	if out, _ := s.compose(ctx, "ps", "-aq"); strings.TrimSpace(out) != "" {
+		s.log("clearing what an earlier copy left behind, so this one starts empty")
+		if downOut, err := s.compose(ctx, "down", "-v", "--remove-orphans"); err != nil {
+			return nil, fmt.Errorf("could not clear an earlier copy:\n%s", downOut)
+		}
+	}
+
 	s.ready = opts.Ready
 	if s.ready <= 0 {
 		s.ready = defaultReady

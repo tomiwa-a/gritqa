@@ -1,0 +1,16 @@
+{
+  "name": "14 — LoanApp conversation: 3-turn (PM voice)",
+  "question": "Can you explain how the loan application works from a customer's perspective?",
+  "category": "cross-verify",
+  "expectedTools": ["get_index", "read_file"],
+  "followUps": [
+    "Okay, what about the KYC part? A tester said they couldn't apply without being verified, is that expected?",
+    "And what about permissions — who is allowed to approve or reject a loan? A customer tried to approve their own loan and it failed, is that right?"
+  ],
+  "rubric": {
+    "completeness": "Turn 1 traces customer create -> staff approve/reject -> disbursement OTP -> repay. Turn 2 explains KYC gates (checklist, verified status). Turn 3 explains permission isolation (customer cannot approve, needs loan.application.approve). Each builds on prior.",
+    "accuracy": "Each turn grounded in code (LoanApplicationController, Customer checklists, RequirePermission). No invented flows.",
+    "hallucination": "No invented roles, permissions, or KYC steps."
+  },
+  "timeoutMs": 300000
+}

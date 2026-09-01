@@ -1,0 +1,19 @@
+{
+  "name": "18 — Conversation: push the limits (6 turns)",
+  "question": "Morning! Quick one before standup: if a guest calls and wants to change their booking dates, can our staff even do that today?",
+  "category": "cross-verify",
+  "expectedTools": ["get_index"],
+  "followUps": [
+    "Hmm okay. And while we're on bookings — how much money are we holding in unpaid reservations right now? Like an actual figure.",
+    "Interesting. What about walk-ins? If someone shows up at the desk with cash and wants the room right now, what has to happen in the system?",
+    "Last week a guest paid twice by accident. Where would I SEE that double payment in the system — is there anywhere payments and bookings don't line up?",
+    "Okay you're saying the data is consistent. Prove it differently: are there any bookings sitting there with zero payments at all?",
+    "Right. Final thing: if two people at two desks check the same guest in at the same time, what stops the room being double-booked?"
+  ],
+  "rubric": {
+    "completeness": "T1: date-change capability answered from endpoints. T2: live SUM/COUNT over pending amounts with real numbers. T3: walk-in = create booking + immediate successful transaction. T4: examines payment-vs-booking consistency honestly. T5: finds bookings with no payments via query. T6: explains concurrency guard (FOR UPDATE / unique constraint) without re-fetching earlier context.",
+    "accuracy": "Every turn grounded in tool results from that turn or earlier; builds on history instead of restarting.",
+    "hallucination": "No invented figures; refuses to guess numbers without querying."
+  },
+  "timeoutMs": 420000
+}

@@ -1,0 +1,11 @@
+{
+  "name": "08 — PM implicit validation: booking yesterday",
+  "question": "A tester tried to book a room for yesterday and it failed. Another tester tried to book a room where check-out is before check-in and that also failed. Is that expected? What are the rules for dates when booking?",
+  "category": "logic",
+  "expectedTools": ["search", "read_file"],
+  "rubric": {
+    "completeness": "Explains that check_in must be today or later, check_out must be after check_in, and cites where this is validated (ReservationController addToBag).",
+    "accuracy": "Rules match actual validation in code (today check, after check, room_type exists, availability).",
+    "hallucination": "No invented date rules or error messages."
+  }
+}

@@ -240,7 +240,12 @@ func Find(start string) (root string, hasConfig bool, err error) {
 		return "", false, err
 	}
 
-	manifests := []string{"go.mod", "package.json", "requirements.txt", "pyproject.toml"}
+	// composer.json is here because a PHP project has nothing else at its root:
+	// without it the walk reaches past the repo and roots at whatever manifest a
+	// parent directory happens to hold.
+	manifests := []string{
+		"go.mod", "package.json", "requirements.txt", "pyproject.toml", "composer.json",
+	}
 	var firstManifest string
 
 	for {

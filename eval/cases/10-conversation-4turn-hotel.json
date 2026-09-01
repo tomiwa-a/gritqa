@@ -1,0 +1,17 @@
+{
+  "name": "10 — Conversation: 4-turn hotel flow (PM voice)",
+  "question": "Hey, can you walk me through how a guest books a room, from start to finish, in simple terms?",
+  "category": "cross-verify",
+  "expectedTools": ["get_index", "read_file"],
+  "followUps": [
+    "Okay, what about the payment part? How does that work and what has to be true for it to succeed?",
+    "And how does the booking relate to housekeeping? Like when a guest checks out, does housekeeping get notified?",
+    "So if I'm testing this, what would happen if two guests try to book the last available room at the same time? Is that covered?"
+  ],
+  "rubric": {
+    "completeness": "Turn 1 traces addToBag -> verifyBag -> processBag; Turn 2 explains transaction must be successful, amount >= total, and what happens on overpay/failure; Turn 3 describes checkout -> housekeeping task; Turn 4 explains availability race and FOR UPDATE handling. Each turn builds on prior without re-asking.",
+    "accuracy": "Each turn's claims are grounded in tool results from that turn or prior; no invented flows.",
+    "hallucination": "No invented endpoints, tables, or housekeeping triggers."
+  },
+  "timeoutMs": 300000
+}

@@ -6,16 +6,20 @@ function score(n: number, max: number, notes: string): Score {
 
 /** Extract candidate claims (endpoints, files, permissions) from an answer. */
 function extractClaims(answer: string): string[] {
-  const claims: string[] = [];
+  const raw: string[] = [];
   // Endpoints: /index.php?controller=...&action=...
-  for (const m of answer.matchAll(/\/index\.php\?[^\s"'`]+/g)) claims.push(m[0]);
+  for (const m of answer.matchAll(/\/index\.php\?[^\s"'`]+/g)) raw.push(m[0]);
   // Permissions: create:booking etc.
-  for (const m of answer.matchAll(/[a-z]+:[a-z_]+/g)) claims.push(m[0]);
+  for (const m of answer.matchAll(/[a-z]+:[a-z_]+/g)) raw.push(m[0]);
   // Files: Something.php
-  for (const m of answer.matchAll(/\b[A-Za-z_]+\.php\b/g)) claims.push(m[0]);
+  for (const m of answer.matchAll(/\b[A-Za-z_]+\.php\b/g)) raw.push(m[0]);
   // Tables: `bookings` or bookings table
-  for (const m of answer.matchAll(/`([a-z_]+)`/g)) claims.push(m[1]);
-  return [...new Set(claims)];
+  for (const m of answer.matchAll(/`([a-z_]+)`/g)) raw.push(m[1]);
+
+  // Markdown dressing rides along on the regexes above: a bolded URL keeps its
+  // trailing **, which matches nothing in tool output and reads as an invention.
+  // Strip it before comparing.
+  return [...new Set(raw.map((c) => c.replace(/[\s]*[\*`_,.\)\]}'"]+$/g, "").replace(/^[\*`'"]+/g, "")))];
 }
 
 function toolNames(calls: ToolCall[]): string[] {
@@ -107,6 +111,15 @@ export function evaluate(testCase: TestCase, result: AgentResult): Evaluation {
   if (/as an ai|i don't have access|cannot access/i.test(answer)) {
     accuracyScore -= 5;
     accuracyNotes.push("generic refusal / 'as an AI' phrasing");
+  }
+
+  // An answer written with no tools on a case that demanded evidence is not a
+  // lean answer, it is an invented one: the model wrote from the question alone.
+  // Case 12 passed 6.9 this way while fabricating a whole product tour.
+  const demandsEvidence = (testCase.expectedTools?.length ?? 0) > 0 || !!testCase.minDbCalls;
+  if (calls.length === 0 && demandsEvidence) {
+    accuracyScore = Math.min(accuracyScore, 2);
+    accuracyNotes.push("answer written without reading anything — fabrication risk");
   }
 
   // Sandbox failure pattern from the original bug

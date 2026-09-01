@@ -45,6 +45,24 @@ func TestFindFallsBackToManifest(t *testing.T) {
 	}
 }
 
+// A PHP repo has no manifest on the old list, and without composer.json the walk
+// roots at a parent directory's stray package.json — indexing the home directory.
+func TestFindRecognisesComposerProject(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "composer.json"), "{}")
+
+	got, hasConfig, err := Find(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasConfig {
+		t.Error("did not expect hasConfig")
+	}
+	if got != root {
+		t.Errorf("got root %q, want %q", got, root)
+	}
+}
+
 // A config deeper in the tree wins over a manifest higher up.
 func TestFindPrefersConfigOverManifest(t *testing.T) {
 	outer := t.TempDir()

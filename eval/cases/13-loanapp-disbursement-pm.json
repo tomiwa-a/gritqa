@@ -1,0 +1,11 @@
+{
+  "name": "13 — LoanApp PM implicit: disbursement issue",
+  "question": "A staff member approved a loan but it didn't disburse. They said they clicked disburse and got a message about needing an OTP. What is the disbursement process supposed to be, and what could be the issue in simple terms?",
+  "category": "multi-file",
+  "expectedTools": ["search", "read_file"],
+  "rubric": {
+    "completeness": "Explains two-step disbursement: initiate (checks eligibility, sends OTP) -> execute (verifies OTP, disburses). Mentions what could fail (wrong OTP, expired, not eligible, missing permission).",
+    "accuracy": "Matches LoanApplicationController disbursement logic (initiate vs execute, OTP purpose, eligibility check).",
+    "hallucination": "No invented disbursement steps or error messages."
+  }
+}

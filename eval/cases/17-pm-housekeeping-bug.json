@@ -1,0 +1,12 @@
+{
+  "name": "17 — PM bug report: housekeeping never told",
+  "question": "The front desk keeps complaining that when a guest leaves and checkout happens, cleaning never seems to find out about the room. Is that true? Would housekeeping get told to clean the room after checkout? Look into whether this is a real gap or they're just missing something.",
+  "category": "cross-verify",
+  "expectedTools": ["search"],
+  "rubric": {
+    "completeness": "Traces checkout -> housekeeping task creation; states definitively whether a task is created on checkout vs some other trigger; if a gap exists, describes exactly when tasks ARE created.",
+    "accuracy": "Claims grounded in actual handler/service code and/or data.",
+    "hallucination": "Does not invent a notification mechanism that isn't there."
+  },
+  "timeoutMs": 240000
+}

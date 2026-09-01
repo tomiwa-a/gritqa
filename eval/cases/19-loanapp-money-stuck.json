@@ -1,0 +1,12 @@
+{
+  "name": "19 — LoanApp PM: where did the money go?",
+  "question": "A customer swears they got their loan paid out this morning but sees nothing in their account. Walk me through what happens after we say yes to a loan — how does money actually reach them, and where could it get stuck along the way?",
+  "category": "cross-verify",
+  "expectedTools": ["get_index", "search"],
+  "rubric": {
+    "completeness": "Traces approval -> disbursement (OTP/gateway step) -> provider callback/status; names the realistic stuck points (OTP unverified, gateway pending, callback missed); suggests where to look for THIS customer's state.",
+    "accuracy": "Controller/service names match the repo; steps match actual code.",
+    "hallucination": "No invented gateways or statuses."
+  },
+  "timeoutMs": 300000
+}

@@ -32,6 +32,14 @@ import type { AgentStep } from '@/lib/model';
  */
 const RESEARCH_STEPS = 40;
 
+/* One model request may take this long before it is judged hung and tried once
+   more. A healthy turn finishes well inside it; the cases that blew past were
+   silent the whole way. */
+const ATTEMPT_TIMEOUT_MS = 150_000;
+
+const FINAL_ANSWER_NUDGE =
+  'You have gathered enough. Stop calling tools and write your final answer now, in plain product language.';
+
 /**
  * What the agent is for on this path, and what it must not do.
  *
@@ -85,7 +93,20 @@ You do not write test plans and you do not run anything. When someone wants a pl
 
 Never repeat a credential you find in the code. Refer to it by name (e.g. $ADMIN_TOKEN).
 
-Audience: someone testing this API who often cannot read its source. Answer in behaviour: what a request sends, what comes back, what must be true first, what happens when it is not. Name a file or line only as evidence for a behaviour, never as the answer itself.
+Voice -- product first, plumbing second:
+- Lead with what the product does and what the person testing will see: "the guest
+  picks rooms into a bag, pays once, and gets a booking". Behaviour before mechanism,
+  always.
+- Plain words by default. A technical name (an endpoint, a table, a permission) earns
+  its place only as proof: give it once in brackets after the behaviour it backs --
+  never as a list dump, never instead of the story.
+- No SQL, no file trees, no schema tours unless the question asked for them. Live
+  numbers are product facts and get said plainly: "53 rooms, none occupied right now".
+- Structure answers the way a tester thinks: what happens, what must be true first,
+  what you see when it is not, where to poke next.
+
+Audience: someone testing this product who usually cannot read its source. Name a file
+or line only as evidence for a behaviour, never as the answer itself.
 When the question is genuinely ambiguous, ask one question -- the one whose answer changes what you would do -- not a list, and not a request for something you could have looked up. This is a conversation, so a question costs almost nothing here.
 `.trim();
 
@@ -160,22 +181,52 @@ export async function askAgent(input: {
 
   try {
     const systemWithMemory = goalTracking(input.history, input.question);
-    const answer = await generateText({
-      model,
-      system: systemWithMemory,
-      messages: [
-        ...input.history.map((turn) => ({
-          role: turn.author === 'human' ? ('user' as const) : ('assistant' as const),
-          content: turn.body,
-        })),
-        { role: 'user' as const, content: input.question },
-      ],
-      tools: research.tools,
-      stopWhen: isStepCount(RESEARCH_STEPS),
-      ...watching(watch, 'research'),
-    });
+    const baseMessages = [
+      ...input.history.map((turn) => ({
+        role: turn.author === 'human' ? ('user' as const) : ('assistant' as const),
+        content: turn.body,
+      })),
+      { role: 'user' as const, content: input.question },
+    ];
 
-    return { body: answer.text.trim(), steps: stepsOf(answer.content), modelLabel: label };
+    /* A request that hangs would spin this turn until something upstream gives up,
+       and gemini sometimes stops after tool calls with no prose at all. One hard
+       timeout per attempt, one retry -- nudged when the failure was silence. The
+       same guard lives in eval/src/agent.ts; keep the two in step. */
+    let body = '';
+    let steps: AgentStep[] | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ATTEMPT_TIMEOUT_MS);
+      try {
+        const result = await generateText({
+          model,
+          system: systemWithMemory,
+          messages: [
+            ...baseMessages,
+            ...(attempt > 0
+              ? [{ role: 'user' as const, content: FINAL_ANSWER_NUDGE }]
+              : []),
+          ],
+          tools: research.tools,
+          stopWhen: isStepCount(RESEARCH_STEPS),
+          abortSignal: controller.signal,
+          ...watching(watch, 'research'),
+        });
+        const trimmed = result.text.trim();
+        if (trimmed || attempt === 1) {
+          body = trimmed;
+          steps = stepsOf(result.content);
+          break;
+        }
+      } catch (e) {
+        if (attempt === 1) throw e instanceof Error ? e : new Error(String(e));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    return { body, steps: steps ?? [], modelLabel: label };
   } finally {
     /* Always, including on the throw. An open session holds the project's SQLite
        handle and possibly a sandbox on the developer's machine. */

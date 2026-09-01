@@ -1,0 +1,13 @@
+{
+  "name": "15 — PM real data: what is actually in there?",
+  "question": "Forget the code for a second. I want to know what's actually inside the system right now — how many rooms do we have, how many guests have booked, any reservations checked in at the moment? Give me real numbers from the live data, not what the app should show.",
+  "category": "db",
+  "expectedTools": ["db"],
+  "minDbCalls": 3,
+  "rubric": {
+    "completeness": "Queries the live store for rooms, bookings/reservations, and checked-in stays; reports concrete counts; notes if tables are empty.",
+    "accuracy": "Numbers come from db results, table names match the schema.",
+    "hallucination": "No invented counts; does not present code reading as live data."
+  },
+  "timeoutMs": 240000
+}

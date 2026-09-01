@@ -1,0 +1,11 @@
+{
+  "name": "12 — LoanApp PM simple: what does it do?",
+  "question": "Hi, I'm not technical. What does this loan platform actually do? If I'm a customer, how would I get a loan in simple terms?",
+  "category": "code-reading",
+  "expectedTools": ["get_index"],
+  "rubric": {
+    "completeness": "Explains in plain language: multi-tenant SaaS for lenders, customers sign up, submit KYC, apply for loan, staff approves, disbursement with OTP, repay. Mentions at least 2-3 key steps.",
+    "accuracy": "Matches actual controllers (LoanApplicationController, CustomerController, KycSubmissionController) and does not invent features.",
+    "hallucination": "No invented loan types, gateways, or roles."
+  }
+}
