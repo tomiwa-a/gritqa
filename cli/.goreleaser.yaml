@@ -15,7 +15,7 @@ before:
 
 builds:
   - id: gritqa
-    main: .
+    main: ./cmd/gritqa
     binary: gritqa
     env:
       - CGO_ENABLED=0
@@ -67,6 +67,6 @@ release:
 
     With Go:
 
-        go install github.com/tomiwa-a/gritqa/cli@latest
+        go install github.com/tomiwa-a/gritqa/cli/cmd/gritqa@latest
 
     Or download an archive below, unpack it, and put `gritqa` on your PATH.

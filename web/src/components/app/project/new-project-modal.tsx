@@ -49,7 +49,7 @@ export function NewProjectModal({ closeHref }: { closeHref: string }) {
             <p className="text-[13px] font-medium text-ink">Put the CLI on your machine</p>
             <CopyCommand
               className="mt-2"
-              command="go install github.com/tomiwa-a/gritqa/cli@latest"
+              command="go install github.com/tomiwa-a/gritqa/cli/cmd/gritqa@latest"
             />
           </div>
         </li>

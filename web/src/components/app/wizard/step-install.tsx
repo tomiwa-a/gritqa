@@ -5,7 +5,7 @@ import { PlatformPicker, type OsKey } from './platform-picker';
 export function StepInstall({ os, hrefFor }: { os: OsKey; hrefFor: (os: OsKey) => string }) {
   return (
     <div className="flex flex-col gap-4">
-      <CopyCommand label="With Go on your machine" command="go install github.com/tomiwa-a/gritqa/cli@latest" />
+      <CopyCommand label="With Go on your machine" command="go install github.com/tomiwa-a/gritqa/cli/cmd/gritqa@latest" />
 
       <PlatformPicker os={os} hrefFor={hrefFor} />
 
