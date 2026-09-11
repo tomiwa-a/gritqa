@@ -3,8 +3,8 @@ package js
 import (
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/lang/lexical"
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 var verbs = map[string]string{

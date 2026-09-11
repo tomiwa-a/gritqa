@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 type ExecutionStatus string

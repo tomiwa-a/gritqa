@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 // Routes returns the endpoints this file registers, in source order, plus the

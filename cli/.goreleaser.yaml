@@ -5,9 +5,8 @@ project_name: gritqa
 # Archive names and the bare `gritqa` binary are what the install guide in
 # web/src/components/app/wizard/platform-picker.tsx tells people to expect.
 #
-# Note: `go install github.com/gritqa/cli@latest` needs this module at the root
-# of its own repository. While it lives under cli/ in the monorepo, that command
-# will not resolve — split the module out before the first tag.
+# The module lives under cli/ in the monorepo, so the install command addresses
+# that subdirectory. Tag the repo and `go install` resolves it via the proxy.
 
 before:
   hooks:
@@ -68,6 +67,6 @@ release:
 
     With Go:
 
-        go install github.com/gritqa/cli@latest
+        go install github.com/tomiwa-a/gritqa/cli@latest
 
     Or download an archive below, unpack it, and put `gritqa` on your PATH.

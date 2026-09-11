@@ -11,10 +11,10 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
 // Backend is everything the tools reach that this package does not own. app

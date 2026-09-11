@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/mcp"
+	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
 )
 
 // dashboard is the four /api/cli routes the loop talks to, and it settles the test

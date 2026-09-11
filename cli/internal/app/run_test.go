@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 func writer() (*term.Writer, *bytes.Buffer) {

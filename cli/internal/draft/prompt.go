@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gritqa/cli/internal/model"
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 const system = `You write HTTP test plans for a backend API. You are given the files that just

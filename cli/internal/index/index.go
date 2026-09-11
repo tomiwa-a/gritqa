@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gritqa/cli/internal/index/golang"
-	"github.com/gritqa/cli/internal/index/js"
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/lang/lexical"
-	"github.com/gritqa/cli/internal/index/python"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/index/source"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/golang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/js"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/python"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
 )
 
 type File struct {

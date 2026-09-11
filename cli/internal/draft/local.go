@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gritqa/cli/internal/model"
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // attempts is how many replies are asked for before a plan that will not

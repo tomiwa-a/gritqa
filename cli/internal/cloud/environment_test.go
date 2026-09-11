@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
 // The one thing that must never travel. Compose expands ${MYSQL_ROOT_PASSWORD} to

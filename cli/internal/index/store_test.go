@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 func TestStoreRoundTripsASnapshot(t *testing.T) {

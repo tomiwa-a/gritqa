@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // fakeState hands out a reading per call, so a walk can be checked against a

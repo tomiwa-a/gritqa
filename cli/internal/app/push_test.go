@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // Both callers push unconditionally, so an unlinked project has to be the quiet

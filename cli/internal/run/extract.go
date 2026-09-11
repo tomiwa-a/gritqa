@@ -3,7 +3,7 @@ package run
 import (
 	"fmt"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // Extract binds a step's values into the variable map. Everything is stored as

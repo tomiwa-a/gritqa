@@ -6,7 +6,7 @@ package draft
 import (
 	"context"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 type Drafter interface {

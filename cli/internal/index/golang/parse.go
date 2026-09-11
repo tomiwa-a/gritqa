@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
 )
 
 type File struct {

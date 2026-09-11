@@ -3,8 +3,8 @@ package python
 import (
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
 )
 
 // A URLconf is a list, not a router: there is no receiver to gate on and no verb

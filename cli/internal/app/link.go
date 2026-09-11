@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/gitinfo"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/gitinfo"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // connect returns a client for this server, linking the machine first when there

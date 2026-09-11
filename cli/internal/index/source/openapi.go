@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 // fromSpec reads an OpenAPI or Swagger document. One parser covers every

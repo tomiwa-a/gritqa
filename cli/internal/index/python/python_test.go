@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/lang/lexical"
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 // Paths are only absolute once the whole project has been read, so every case

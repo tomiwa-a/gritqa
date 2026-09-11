@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
 
 const phpController = `<?php

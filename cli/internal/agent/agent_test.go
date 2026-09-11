@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 func before() plan.Step {

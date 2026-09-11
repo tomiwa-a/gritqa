@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
 
 // ErrRefused is a key the endpoint would not accept — the model's own or the

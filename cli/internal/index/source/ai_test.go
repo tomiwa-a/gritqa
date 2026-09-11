@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
 
 type fake struct {

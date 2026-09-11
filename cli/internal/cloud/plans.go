@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // A plan drafted on this machine, pushed so the dashboard holds it.

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // Change is one edit, in the PlanChange shape web/src/lib/mock/types.ts types.

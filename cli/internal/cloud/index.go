@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
 )
 
 // The index mirror.

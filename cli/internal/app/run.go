@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/agent"
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/sandbox"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/agent"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // handlerCap bounds the source sent with a repair. A 71 KB controller holds the

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
 
 const extractSystem = `You read one source file and list the HTTP endpoints it serves.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // The password is the developer's own now, read out of their compose file rather

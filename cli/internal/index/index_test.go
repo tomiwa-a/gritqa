@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/index/source"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
 )
 
 func TestReadIndexesGoSourceAndItsRoutes(t *testing.T) {

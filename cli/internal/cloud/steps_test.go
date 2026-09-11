@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // desk is the dashboard's half of the preview: it records every push in arrival order

@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn';
 export function InstallStep() {
   return (
     <div className="flex flex-col gap-4">
-      <CopyCommand label="If you have Go" command="go install github.com/gritqa/cli@latest" />
+      <CopyCommand label="If you have Go" command="go install github.com/tomiwa-a/gritqa/cli@latest" />
 
       <div className="flex items-start gap-3 rounded-lg border border-rule bg-app p-3">
         <Icon name="external" size={15} className="mt-0.5 shrink-0 text-ink-subtle" />
@@ -20,7 +20,7 @@ export function InstallStep() {
             <code className="font-mono text-[12px] text-ink">gritqa</code> somewhere on your PATH.
           </p>
           <a
-            href="https://github.com/gritqa/cli/releases"
+            href="https://github.com/tomiwa-a/gritqa/releases"
             target="_blank"
             rel="noreferrer"
             className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink underline decoration-rule-strong underline-offset-2 transition-colors duration-150 hover:decoration-ink"

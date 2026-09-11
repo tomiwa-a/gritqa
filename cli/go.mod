@@ -1,4 +1,4 @@
-module github.com/gritqa/cli
+module github.com/tomiwa-a/gritqa/cli
 
 go 1.25.0
 

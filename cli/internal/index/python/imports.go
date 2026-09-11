@@ -3,8 +3,8 @@ package python
 import (
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
 )
 
 // imported is one local name and the module it came from. name is what it is

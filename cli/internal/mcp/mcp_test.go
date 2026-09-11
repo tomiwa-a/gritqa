@@ -14,12 +14,12 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
 // stub is a Backend with no Docker and no project, which is the point of the

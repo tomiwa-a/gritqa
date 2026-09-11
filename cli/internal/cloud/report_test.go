@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 func TestReportedKeepsThePlansURL(t *testing.T) {

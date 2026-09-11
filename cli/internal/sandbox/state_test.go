@@ -3,7 +3,7 @@ package sandbox
 import (
 	"testing"
 
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 func mark(rows ...Row) *Watermark { return &Watermark{Units: rows} }

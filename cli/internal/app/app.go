@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/gitinfo"
-	"github.com/gritqa/cli/internal/mcp"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/gitinfo"
+	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 const defaultServer = "https://app.gritqa.dev"

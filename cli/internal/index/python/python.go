@@ -14,8 +14,8 @@ package python
 import (
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
 )
 
 // Extract reads one file, returning a graph fragment. Paths cannot be finished

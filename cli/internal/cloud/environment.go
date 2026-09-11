@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
 // The environment: the compose file goes up, the judgement comes back.

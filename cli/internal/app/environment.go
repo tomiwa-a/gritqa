@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/sandbox"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // environment sends the compose file up and takes down whatever a person approved

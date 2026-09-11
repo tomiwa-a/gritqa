@@ -5,12 +5,12 @@ import { PlatformPicker, type OsKey } from './platform-picker';
 export function StepInstall({ os, hrefFor }: { os: OsKey; hrefFor: (os: OsKey) => string }) {
   return (
     <div className="flex flex-col gap-4">
-      <CopyCommand label="With Go on your machine" command="go install github.com/gritqa/cli@latest" />
+      <CopyCommand label="With Go on your machine" command="go install github.com/tomiwa-a/gritqa/cli@latest" />
 
       <PlatformPicker os={os} hrefFor={hrefFor} />
 
       <a
-        href="https://github.com/gritqa/cli/releases"
+        href="https://github.com/tomiwa-a/gritqa/releases"
         target="_blank"
         rel="noreferrer"
         className="group flex items-center gap-2.5 rounded-lg border border-rule px-3 py-2.5 transition-colors duration-150 hover:border-ink/20 hover:bg-app"

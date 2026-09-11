@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gritqa/cli/internal/app"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/app"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // Set by goreleaser via -ldflags.

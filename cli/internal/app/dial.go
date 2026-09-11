@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // settled is how long a dial has to last before its ending counts as ordinary

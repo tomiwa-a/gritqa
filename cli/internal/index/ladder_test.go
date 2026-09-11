@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/source"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
 )
 
 // A project GritQA cannot parse still gets a real coverage grid, as long as it

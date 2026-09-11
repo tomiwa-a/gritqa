@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 // Every framework GritQA reads without a parser reduces to the same three

@@ -14,11 +14,11 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/sandbox"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
 // surface is the whole tool set. The scope column is the security boundary, and

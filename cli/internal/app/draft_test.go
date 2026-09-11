@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/draft"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/routes"
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/draft"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 func sample() *reading {

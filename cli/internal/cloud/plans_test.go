@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // The trap this whole file exists for. plan.Step carries Request by value with no

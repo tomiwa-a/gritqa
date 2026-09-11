@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
 )
 
 // ErrUnlinked is no token for this server. The same error creds reports, so a

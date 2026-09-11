@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/index/source"
-	"github.com/gritqa/cli/internal/model"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // isolate points creds at a temp home, so a real login on this machine cannot

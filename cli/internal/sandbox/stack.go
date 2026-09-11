@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // Stack is a running copy of the developer's project, brought up on their own

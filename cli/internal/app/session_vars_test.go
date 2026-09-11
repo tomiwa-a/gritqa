@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // The bug this closes: one stale mapping in run.variables refused every plan on the

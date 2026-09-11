@@ -10,13 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gritqa/cli/internal/cloud"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/mcp"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/run"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // Watcher takes the readings a run is measured against. It holds a connection and

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/index/routes"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 )
 
 func TestListIsTheEscapeHatch(t *testing.T) {

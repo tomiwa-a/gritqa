@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gritqa/cli/internal/model"
-	"github.com/gritqa/cli/internal/run"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/run"
 )
 
 // Confidence is what a green run is worth. Proved false is a warning, never a

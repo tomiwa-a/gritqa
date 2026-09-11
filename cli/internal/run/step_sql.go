@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // sqlStep runs a SQL step against the sandbox database -- GritQA's own copy of it,

@@ -13,11 +13,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/draft"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/plan"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/draft"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // fileCap bounds one drafting pass. A hand-rolled API can carry thirty endpoint

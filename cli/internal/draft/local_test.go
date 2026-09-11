@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
 
 // chatBody is only what these tests read back off the wire; the transport itself

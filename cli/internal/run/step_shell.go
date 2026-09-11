@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 // shellStep runs a shell command inside the sandbox container -- the setup no API

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gritqa/cli/internal/config"
-	"github.com/gritqa/cli/internal/creds"
-	"github.com/gritqa/cli/internal/index"
-	"github.com/gritqa/cli/internal/index/lang"
-	"github.com/gritqa/cli/internal/index/source"
-	"github.com/gritqa/cli/internal/model"
-	"github.com/gritqa/cli/internal/term"
+	"github.com/tomiwa-a/gritqa/cli/internal/config"
+	"github.com/tomiwa-a/gritqa/cli/internal/creds"
+	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
+	"github.com/tomiwa-a/gritqa/cli/internal/model"
+	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // reading is what one index pass produced: the snapshot, what changed since the

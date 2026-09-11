@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gritqa/cli/internal/plan"
+	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 )
 
 func step(id string) plan.Step {
