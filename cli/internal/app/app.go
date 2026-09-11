@@ -44,6 +44,11 @@ type Options struct {
 	// on its poll and heartbeat. Nil in one-shot flows, where nobody is listening.
 	Progress *progress.Progress
 
+	// ProgressPost, when set, runs once per finished index stage. The attach
+	// loop points it at the dashboard, so a pass phones home five times instead
+	// of going silent until the mirror. Never blocks the pass.
+	ProgressPost func()
+
 	// Serve is "stdio", or a loopback address for Streamable HTTP.
 	Serve string
 	// Execute advertises the tools that write. Off by default, so a local AI host

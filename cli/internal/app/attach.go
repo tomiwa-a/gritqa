@@ -82,6 +82,16 @@ func attach(ctx context.Context, s *session, srv *mcp.Server, token string) erro
 	prog := progress.New(nil)
 	a.prog.Store(prog)
 	a.opts.Progress = prog
+	a.opts.ProgressPost = func() {
+		// Fire-and-forget with its own deadline: a slow dashboard must never
+		// stall the pass it is narrating, and a lost post is just a skipped
+		// frame — the next stage, the next poll, the mirror all follow.
+		go func() {
+			out, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			defer cancel()
+			_ = c.Register(out, a.reporting())
+		}()
+	}
 	if err := c.Register(ctx, a.reporting()); err != nil {
 		w.Write(term.Line{Kind: term.Info, Text: "the dashboard is not answering, " +
 			"so this pass stays local: " + err.Error()})

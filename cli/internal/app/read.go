@@ -58,11 +58,18 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	// machine's poll answer carries the latest snapshot to the dashboard.
 	// An owner passed one in (the attach loop, quoting it mid-pass) keeps it:
 	// this only adds the terminal printer, never replaces the object.
+	printer := newStagePrinter(w, opts.JSON)
 	prog := opts.Progress
 	if prog == nil {
-		prog = progress.New(newStagePrinter(w, opts.JSON))
+		prog = progress.New(printer)
 	} else {
-		prog.Tap(newStagePrinter(w, opts.JSON))
+		prog.Tap(printer)
+	}
+	// Live posts for whoever asked: the attach loop phones each finished stage
+	// home, so the dashboard narrates the pass instead of meeting it at the
+	// mirror.
+	if post := opts.ProgressPost; post != nil {
+		printer.onStage = post
 	}
 	prog.SetTotal(progress.List, len(paths))
 	prog.Complete(progress.List)
@@ -84,8 +91,13 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 			reportCached(w, snap)
 			return &reading{snap: snap, first: false, progress: prog.Snapshot()}, nil
 		}
-		// Anything else — a change, a wobble reading a file — falls through to
-		// the full pass, which is the path that already knows how to fail well.
+		// A change, or a wobble reading a file: the hash check already counted
+		// those files once, so the counters restart clean for the full pass
+		// instead of reporting 254 of 127.
+		prog.Reset()
+		printer.reset()
+		// Anything else falls through to the full pass, which is the path that
+		// already knows how to fail well.
 	}
 
 	io := index.Options{List: ep.List, Spec: ep.Spec, AI: ep.AI, Progress: prog, Known: before}
@@ -209,42 +221,62 @@ func reportCached(w *term.Writer, snap *index.Snapshot) {
 // stagePrinter turns progress heartbeats into the human transcript: one line
 // per finished stage, never one per file. In --json it stays out of the way —
 // every heartbeat already goes out as its own JSON object.
+//
+// onStage fires once per finished stage, for whoever wants the news live: the
+// attach loop posts it to the dashboard, so a pass phones home five times
+// instead of going silent until the mirror.
 type stagePrinter struct {
 	mu      sync.Mutex
 	w       *term.Writer
 	json    bool
+	onStage func()
 	printed map[progress.Stage]bool
 	cached  map[progress.Stage]int
 }
 
-func newStagePrinter(w *term.Writer, json bool) progress.Sink {
+func newStagePrinter(w *term.Writer, json bool) *stagePrinter {
 	return &stagePrinter{w: w, json: json, printed: map[progress.Stage]bool{}, cached: map[progress.Stage]int{}}
+}
+
+// reset clears stage memory for a pass that restarts, alongside Progress.Reset:
+// without it the full pass's stages would read as already-printed and neither
+// the terminal lines nor the live posts would fire twice.
+func (s *stagePrinter) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.printed = map[progress.Stage]bool{}
+	s.cached = map[progress.Stage]int{}
 }
 
 func (s *stagePrinter) Emit(e progress.Event) {
 	s.w.Write(term.Line{Kind: term.Progress, Event: e})
-	if s.json {
-		return
-	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if e.File != "" && e.Failed == "" && e.Cached {
 		s.cached[e.Stage]++
 	}
-	if e.Total <= 0 || e.Done != e.Total || s.printed[e.Stage] {
-		return
+	done := e.Total > 0 && e.Done == e.Total && !s.printed[e.Stage]
+	if done {
+		s.printed[e.Stage] = true
 	}
-	s.printed[e.Stage] = true
-	switch e.Stage {
-	case progress.Hash:
-		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("hashed %s (%s unchanged)",
-			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
-	case progress.Static:
-		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("parsed %s (%s unchanged)",
-			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
-	case progress.AI:
-		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("model pass over %s (%s from cache)",
-			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+	hook := s.onStage
+	if !s.json && done {
+		switch e.Stage {
+		case progress.Hash:
+			s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("hashed %s (%s unchanged)",
+				term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+		case progress.Static:
+			s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("parsed %s (%s unchanged)",
+				term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+		case progress.AI:
+			s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("model pass over %s (%s from cache)",
+				term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+		}
+	}
+	s.mu.Unlock()
+	// Outside the lock: the hook posts over the network, and a slow dashboard
+	// must never stall the pass it is narrating.
+	if done && hook != nil {
+		hook()
 	}
 }
 

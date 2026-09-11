@@ -283,6 +283,7 @@ func scan(ctx context.Context, p pass, paths []string) ([]outcome, error) {
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 
+	p.progress.SetTotal(progress.Hash, len(paths))
 	p.progress.SetTotal(progress.Static, len(paths))
 
 	for range runtime.GOMAXPROCS(0) {
@@ -291,6 +292,12 @@ func scan(ctx context.Context, p pass, paths []string) ([]outcome, error) {
 			defer wg.Done()
 			for i := range jobs {
 				out[i] = p.inspect(paths[i])
+				// The hash is known the moment the file is read, ahead of the
+				// parse: two heartbeats per file, so the hash rung fills on
+				// full passes and not only on fast-path checks. Pulses, not
+				// files — cached-vs-fresh is the parse's story, and the static
+				// event below already tells it.
+				p.progress.Pulse(progress.Hash, paths[i])
 				// Cached means the content hash matches the last pass, so the
 				// answer is the same one it gave before — even though this pass
 				// re-read it. Unreadable files fail loudly instead of vanishing.

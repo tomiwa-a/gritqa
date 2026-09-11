@@ -158,6 +158,23 @@ func (p *Progress) File(stage Stage, file string, cached bool) {
 	p.emit(e)
 }
 
+// Pulse advances a stage without judging the file: the hash rung fills on
+// full passes, but cached-vs-fresh is the parse and model stages' story to
+// tell. (The fast-path hash check counts through File, because there it is
+// the only reporter.)
+func (p *Progress) Pulse(stage Stage, file string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.done[stage]++
+	p.file[stage] = file
+	p.stage = stage
+	e := p.event(stage)
+	p.mu.Unlock()
+	p.emit(e)
+}
+
 // Fail records one file that could not be read, with the reason. A failed file
 // still advances the stage — the pass continues past it, and the failure list
 // is what says the numbers do not add up. Reasons are capped: they travel to
@@ -191,6 +208,26 @@ func (p *Progress) Complete(stage Stage) {
 	e := p.event(stage)
 	p.mu.Unlock()
 	p.emit(e)
+}
+
+// Reset clears every counter for a pass that restarts: a fast-path hash check
+// that falls back to a full scan already counted those files once, and the
+// full pass counting them again would report 254 of 127. Watchers stay —
+// the terminal already printed true lines, and the dashboard replays.
+func (p *Progress) Reset() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.totals = map[Stage]int{}
+	p.done = map[Stage]int{}
+	p.file = map[Stage]string{}
+	p.cached = 0
+	p.fresh = 0
+	p.failures = nil
+	p.stage = ""
+	p.complete = false
 }
 
 // Finish marks the whole pass complete. The dashboard holds the last state,

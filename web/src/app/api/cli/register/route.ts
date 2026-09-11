@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     version?: unknown;
     mcpUrl?: unknown;
     mcpToken?: unknown;
+    progress?: unknown;
   } = {};
   try {
     body = (await request.json()) as typeof body;
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
     version: str(body.version, 64),
     mcpUrl: str(body.mcpUrl, 512),
     mcpToken: str(body.mcpToken, 255),
+    // A pass in flight narrates itself through this same call, one post per
+    // finished stage. Absent on plain registrations, which leave the last
+    // label alone.
+    progress: body.progress ?? undefined,
   });
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
