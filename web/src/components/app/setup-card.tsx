@@ -32,7 +32,7 @@ export function SetupCard() {
       </p>
 
       <Link
-        href="/dashboard/setup"
+        href="/onboarding"
         className={cn(buttonVariants({ variant: 'secondary', size: 'xs' }), 'mt-2.5 w-full')}
       >
         Show me how

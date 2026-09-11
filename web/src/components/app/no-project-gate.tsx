@@ -28,17 +28,11 @@ export function NoProjectGate({ icon, title }: { icon: IconName; title: string }
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
               <Link
-                href="/dashboard/setup"
+                href="/onboarding"
                 className={cn(buttonVariants({ variant: 'accent', size: 'sm' }))}
               >
                 <Icon name="terminal" size={14} />
                 Connect your first repo
-              </Link>
-              <Link
-                href="/onboarding"
-                className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
-              >
-                Back to setup guide
               </Link>
             </div>
           }

@@ -5,6 +5,8 @@ import { PageBody } from '@/components/app/page-body';
 import { AppPageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/app/panel';
 import { WorkPulse } from '@/components/app/work-pulse';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
@@ -88,8 +90,15 @@ function Line({ event }: { event: WorkEvent }) {
   );
 }
 
-export default async function WorkDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function WorkDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<PageParams>;
+}) {
   const { id } = await params;
+  const query = await searchParams;
   const project = await getCurrentProjectOrNull();
   if (!project) return <NoProjectGate icon="terminal" title="Work" />;
   const scope = await requireScope();
@@ -183,6 +192,7 @@ export default async function WorkDetailPage({ params }: { params: Promise<{ id:
           )}
         </Panel>
       </PageBody>
+      <OverlayHost params={query} pathname={`/dashboard/work/${id}`} />
     </>
   );
 }

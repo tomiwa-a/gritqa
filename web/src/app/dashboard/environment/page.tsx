@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { currentScope } from '@/lib/db/scope';
 import { NoProjectGate } from '@/components/app/no-project-gate';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 import { approvedEnvironment, currentCompose, proposedEnvironment } from '@/lib/db/environment';
 import { describe, reconcile } from '@/lib/environment';
 
@@ -24,7 +26,8 @@ import { describe, reconcile } from '@/lib/environment';
  */
 export const metadata = { title: 'Environment · GritQA' };
 
-export default async function EnvironmentPage() {
+export default async function EnvironmentPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const scope = await currentScope();
   if (!scope) return <NoProjectGate icon="shield" title="Environment" />;
   const [compose, approved, proposed] = await Promise.all([
@@ -131,6 +134,7 @@ export default async function EnvironmentPage() {
           </Panel>
         </div>
       </PageBody>
+      <OverlayHost params={params} pathname="/dashboard/environment" />
     </>
   );
 }

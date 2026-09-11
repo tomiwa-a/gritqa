@@ -66,7 +66,6 @@ export async function saveAiKeyAction(
     ip: await clientIp(),
   });
   revalidatePath('/dashboard/settings/ai');
-  revalidatePath('/dashboard/setup');
   revalidatePath('/dashboard/settings/activity');
   return { ok: true };
 }
@@ -84,6 +83,5 @@ export async function removeAiKeyAction(): Promise<void> {
     ip: await clientIp(),
   });
   revalidatePath('/dashboard/settings/ai');
-  revalidatePath('/dashboard/setup');
   revalidatePath('/dashboard/settings/activity');
 }

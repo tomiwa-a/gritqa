@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Icon } from '@/components/ui/icon';
 import { switchProjectAction } from '@/lib/actions/project';
 import { StatusDot } from '@/components/ui/badge';
+import { newProjectToken, withOverlayOn } from '@/lib/overlay';
 import type { ShellCurrentProject, ShellProject } from './shell-data';
 import { cn } from '@/lib/cn';
 
@@ -19,6 +21,7 @@ export function ProjectSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const pathname = usePathname() ?? '/dashboard';
 
   useEffect(() => {
     if (!open) return;
@@ -125,9 +128,13 @@ export function ProjectSwitcher({
 
           <div className="my-1.5 h-px bg-rule" />
 
-          {/* Nothing in the browser inserts a project row -- the CLI does, on approval. */}
+          {/* No project yet: the onboarding wizard is the creation flow. Otherwise
+              a box over the current page, because nothing typed here can create one. */}
           <Link
-            href="/dashboard/setup"
+            href={
+              currentProject === null ? '/onboarding' : withOverlayOn(pathname, newProjectToken())
+            }
+            scroll={false}
             role="menuitem"
             onClick={() => setOpen(false)}
             className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-ink-muted transition-colors duration-150 hover:bg-app-hover hover:text-ink"

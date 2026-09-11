@@ -7,6 +7,8 @@ import { DataTable, type Column } from '@/components/app/data-table';
 import { EmptyState } from '@/components/app/empty-state';
 import { GenerateMenu } from '@/components/app/generate-menu';
 import { WorkPulse } from '@/components/app/work-pulse';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { requireScope } from '@/lib/db/scope';
@@ -121,7 +123,8 @@ const columns: Column<WorkRow>[] = [
   },
 ];
 
-export default async function WorkPage() {
+export default async function WorkPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const project = await getCurrentProjectOrNull();
   if (!project) return <NoProjectGate icon="terminal" title="Work" />;
   const scope = await requireScope();
@@ -210,6 +213,7 @@ export default async function WorkPage() {
           />
         </Panel>
       </PageBody>
+      <OverlayHost params={params} pathname="/dashboard/work" />
     </>
   );
 }

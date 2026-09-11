@@ -6,6 +6,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getAuditLog } from '@/lib/data';
+import { OverlayHost } from '@/components/app/overlay-host';
 import type { AuditEntry, AuditTone } from '@/lib/model';
 
 export const metadata = { title: 'Activity · Settings · GritQA' };
@@ -70,13 +71,15 @@ export default async function ActivitySettingsPage({
   searchParams: Promise<{ scope?: string }>;
 }) {
   const { scope } = await searchParams;
+  const params = scope === undefined ? {} : { scope };
   const auditLog = await getAuditLog();
   const active: ScopeKey = isScope(scope) ? scope : 'all';
   const current = SCOPES.find((s) => s.key === active) ?? SCOPES[0];
   const entries = active === 'all' ? auditLog : auditLog.filter((e) => e.tone === active);
 
   return (
-    <SettingsShell
+    <>
+      <SettingsShell
       active="activity"
       title="Activity"
       description="Everything that has happened in this account: what was drafted, what you approved, and what ran. Entries are only ever added — nothing here can be edited or removed, including by you."
@@ -151,5 +154,7 @@ export default async function ActivitySettingsPage({
         />
       </Panel>
     </SettingsShell>
+    <OverlayHost params={params} pathname="/dashboard/settings/activity" />
+    </>
   );
 }

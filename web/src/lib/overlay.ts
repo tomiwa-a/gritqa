@@ -4,11 +4,11 @@
  * leaves the rest of the URL — and so the filter you were looking at — alone.
  */
 
-export type OverlayKind = 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'generate' | 'approve';
+export type OverlayKind = 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'generate' | 'approve' | 'new-project';
 
 export type OverlayToken =
   | { kind: 'plan' | 'run' | 'refine' | 'ask' | 'rule' | 'approve'; id: string }
-  | { kind: 'generate'; id: null };
+  | { kind: 'generate' | 'new-project'; id: null };
 
 /** Params an overlay owns. Everything else on the URL belongs to the page. */
 export const OVERLAY_PARAMS = [
@@ -28,6 +28,7 @@ export type PageParams = Record<string, string | string[] | undefined>;
 export function parseOverlay(open: string | undefined): OverlayToken | null {
   if (!open) return null;
   if (open === 'generate') return { kind: 'generate', id: null };
+  if (open === 'new-project') return { kind: 'new-project', id: null };
 
   const at = open.indexOf(':');
   if (at < 1) return null;
@@ -99,6 +100,15 @@ export function ruleToken(publicId: string) {
  */
 export function approveToken(planPublicId: string) {
   return `approve:${planPublicId}`;
+}
+
+/**
+ * The new-project explainer, opened from the project switcher. Bare like
+ * `generate`: there is no row to point at, because the point is that the row
+ * does not exist yet — it is born when the CLI is approved, not typed here.
+ */
+export function newProjectToken() {
+  return 'new-project';
 }
 
 /* ---------------------------------------------------------------------------

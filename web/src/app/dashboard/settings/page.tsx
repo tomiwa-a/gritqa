@@ -7,16 +7,20 @@ import { Avatar } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icon';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { getUser } from '@/lib/data';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Account · Settings · GritQA' };
 
 const PROVIDER_LABEL = { github: 'GitHub', gitlab: 'GitLab' } as const;
 
-export default async function AccountSettingsPage() {
+export default async function AccountSettingsPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const user = await getUser();
   const provider = PROVIDER_LABEL[user.provider];
 
   return (
+    <>
     <SettingsShell
       active="account"
       title="Account"
@@ -93,5 +97,7 @@ export default async function AccountSettingsPage() {
         />
       </DangerZone>
     </SettingsShell>
+    <OverlayHost params={params} pathname="/dashboard/settings" />
+    </>
   );
 }

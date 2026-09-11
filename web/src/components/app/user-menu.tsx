@@ -86,7 +86,7 @@ export function UserMenu({ user, collapsed = false }: { user: ShellUser; collaps
             onDone={() => setOpen(false)}
           />
           <MenuLink
-            href="/dashboard/setup"
+            href="/onboarding"
             icon="terminal"
             label="CLI setup"
             onDone={() => setOpen(false)}

@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
 import { getUser } from '@/lib/data';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 import { drafting } from '@/lib/agent';
 
 export const metadata = { title: 'AI drafting · Settings · GritQA' };
@@ -22,11 +24,13 @@ export const metadata = { title: 'AI drafting · Settings · GritQA' };
  * being true about where code goes. The key field below still reads the key,
  * because that is what it is about.
  */
-export default async function AiSettingsPage() {
+export default async function AiSettingsPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const [user, state] = await Promise.all([getUser(), drafting()]);
   const onDevCredentials = state.on && state.billsTo === 'server';
 
   return (
+    <>
     <SettingsShell
       active="ai"
       title="AI drafting"
@@ -107,5 +111,7 @@ export default async function AiSettingsPage() {
         </Link>
       </div>
     </SettingsShell>
+    <OverlayHost params={params} pathname="/dashboard/settings/ai" />
+    </>
   );
 }

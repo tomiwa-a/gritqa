@@ -6,6 +6,8 @@ import { Panel } from '@/components/app/panel';
 import { PlanEditor } from '@/components/app/plan/plan-editor';
 import { buttonVariants } from '@/components/ui/button';
 import { NoProjectGate } from '@/components/app/no-project-gate';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 import { Icon } from '@/components/ui/icon';
 import { getCurrentProjectOrNull, getLastBaseUrl, getObservedRoutes } from '@/lib/data';
 
@@ -18,7 +20,8 @@ export const metadata = { title: 'Write a plan · GritQA' };
  * than an overlay because there is no plan to go back to: half a plan and a navigation
  * away from it would be a lost afternoon.
  */
-export default async function NewPlanPage() {
+export default async function NewPlanPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const project = await getCurrentProjectOrNull();
   if (!project) return <NoProjectGate icon="plan" title="Write a plan" />;
   const [baseUrl, routes] = await Promise.all([getLastBaseUrl(), getObservedRoutes()]);
@@ -66,6 +69,7 @@ export default async function NewPlanPage() {
           />
         </Panel>
       </PageBody>
+      <OverlayHost params={params} pathname="/dashboard/test-plans/new" />
     </>
   );
 }

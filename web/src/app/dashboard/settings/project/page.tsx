@@ -8,10 +8,13 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getCurrentProjectOrNull } from '@/lib/data';
 import { EmptyState } from '@/components/app/empty-state';
+import { OverlayHost } from '@/components/app/overlay-host';
+import { type PageParams } from '@/lib/overlay';
 
 export const metadata = { title: 'Project · Settings · GritQA' };
 
-export default async function ProjectSettingsPage() {
+export default async function ProjectSettingsPage({ searchParams }: { searchParams: Promise<PageParams> }) {
+  const params = await searchParams;
   const currentProject = await getCurrentProjectOrNull();
   if (!currentProject) {
     return (
@@ -26,7 +29,7 @@ export default async function ProjectSettingsPage() {
           description="Run the CLI once in your project folder and approve the pairing — then its settings land here."
           action={
             <Link
-              href="/dashboard/setup"
+              href="/onboarding"
               className={buttonVariants({ variant: 'accent', size: 'sm' })}
             >
               Connect your first repo
@@ -38,6 +41,7 @@ export default async function ProjectSettingsPage() {
     );
   }
   return (
+    <>
     <SettingsShell
       active="project"
       title={currentProject.name}
@@ -122,5 +126,7 @@ export default async function ProjectSettingsPage() {
         />
       </DangerZone>
     </SettingsShell>
+    <OverlayHost params={params} pathname="/dashboard/settings/project" />
+    </>
   );
 }

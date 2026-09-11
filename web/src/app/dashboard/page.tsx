@@ -455,7 +455,7 @@ export default async function OverviewPage({
               hint="Run gritqa once in your project and this fills in"
               hintIcon="terminal"
               cta="Set up the CLI"
-              href="/dashboard/setup"
+              href="/onboarding"
             />
           )}
         </div>

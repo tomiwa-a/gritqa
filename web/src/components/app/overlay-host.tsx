@@ -1,6 +1,7 @@
 import { ApproveConfirm } from './plan/approve-confirm';
 import { AskPanel } from './ask/ask-panel';
 import { GenerateModal } from './generate/generate-modal';
+import { NewProjectModal } from './project/new-project-modal';
 import { PlanConversation } from './plan/plan-conversation';
 import { PlanPreview } from './plan/plan-preview';
 import { RunPreview } from './run-preview';
@@ -30,6 +31,10 @@ export async function OverlayHost({ params, pathname }: { params: PageParams; pa
 
   if (token.kind === 'generate') {
     return <GenerateModal params={params} pathname={pathname} closeHref={closeHref} />;
+  }
+
+  if (token.kind === 'new-project') {
+    return <NewProjectModal closeHref={closeHref} />;
   }
 
   if (token.kind === 'approve') {
@@ -70,12 +75,16 @@ export async function OverlayHost({ params, pathname }: { params: PageParams; pa
     return <RunPreview id={token.id} closeHref={closeHref} planDrawerHref={swapTo} />;
   }
 
-  return (
-    <PlanPreview
-      id={token.id}
-      closeHref={closeHref}
-      runDrawerHref={swapTo}
-      refineDrawerHref={swapTo}
-    />
-  );
+  if (token.kind === 'plan') {
+    return (
+      <PlanPreview
+        id={token.id}
+        closeHref={closeHref}
+        runDrawerHref={swapTo}
+        refineDrawerHref={swapTo}
+      />
+    );
+  }
+
+  return null;
 }

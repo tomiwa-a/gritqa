@@ -131,7 +131,7 @@ function Expired({ code }: { code: string }) {
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <DashboardLink />
         <Link
-          href="/dashboard/setup"
+          href="/onboarding"
           className={buttonVariants({ variant: 'secondary', size: 'sm' })}
         >
           CLI setup
