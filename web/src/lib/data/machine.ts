@@ -5,7 +5,7 @@ import { cliInstances } from '@/lib/db/schema';
 import { CONNECTED_WITHIN } from '@/lib/db/cli';
 import { currentScope } from '@/lib/db/scope';
 import { agoLabel } from '@/lib/when';
-import type { Machine, MachineStatus } from '@/lib/model';
+import type { IndexProgress, Machine, MachineStatus } from '@/lib/model';
 
 /**
  * Whether a machine is there, which four screens have been guessing at.
@@ -33,6 +33,7 @@ export const getMachineStatus = cache(async (): Promise<MachineStatus> => {
       hostname: cliInstances.hostname,
       version: cliInstances.version,
       lastSeenAt: cliInstances.lastSeenAt,
+      progress: cliInstances.progress,
       connected: sql<boolean>`${cliInstances.lastSeenAt} > now() - ${CONNECTED_WITHIN}::interval`,
     })
     .from(cliInstances)
@@ -47,6 +48,7 @@ export const getMachineStatus = cache(async (): Promise<MachineStatus> => {
     connected: row.connected,
     lastSeenLabel: agoLabel(row.lastSeenAt),
     lastSeenAt: row.lastSeenAt.toISOString(),
+    progress: toIndexProgress(row.progress),
   }));
 
   return { connected: machines.some((m) => m.connected), machines };
@@ -55,4 +57,50 @@ export const getMachineStatus = cache(async (): Promise<MachineStatus> => {
 /** The one question most callers have. */
 export async function isCliConnected(): Promise<boolean> {
   return (await getMachineStatus()).connected;
+}
+
+/**
+ * The stored label, read defensively. The CLI shapes it and nothing validates
+ * it, so anything unexpected — a string, a half-written object — reads as no
+ * label rather than taking the page down.
+ */
+function toIndexProgress(value: unknown): IndexProgress | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.stage !== 'string') return null;
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
+  const stages =
+    v.stages && typeof v.stages === 'object' && !Array.isArray(v.stages)
+      ? Object.fromEntries(
+          Object.entries(v.stages as Record<string, unknown>)
+            .filter(([, s]) => !!s && typeof s === 'object')
+            .map(([stage, s]) => {
+              const r = s as Record<string, unknown>;
+              return [stage, { done: num(r.done), total: num(r.total) }];
+            }),
+        )
+      : undefined;
+  const failures = Array.isArray(v.failures)
+    ? v.failures
+        .filter(
+          (f): f is { stage: string; file: string; reason: string } =>
+            !!f &&
+            typeof f === 'object' &&
+            typeof (f as Record<string, unknown>).file === 'string' &&
+            typeof (f as Record<string, unknown>).reason === 'string',
+        )
+        .slice(0, 20)
+    : undefined;
+  return {
+    stage: v.stage,
+    done: num(v.done),
+    total: num(v.total),
+    ...(stages ? { stages } : {}),
+    file: typeof v.file === 'string' ? v.file : null,
+    cached: num(v.cached),
+    fresh: num(v.fresh),
+    failed: num(v.failed),
+    ...(failures ? { failures } : {}),
+    complete: v.complete === true,
+  };
 }

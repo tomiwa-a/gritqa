@@ -12,6 +12,7 @@ import (
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
 	"github.com/tomiwa-a/gritqa/cli/internal/creds"
 	"github.com/tomiwa-a/gritqa/cli/internal/gitinfo"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
 	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
@@ -38,6 +39,11 @@ type Options struct {
 	// to the release that produced it.
 	Version string
 
+	// Progress, when set, is the index pass's live object: read() reports into
+	// it instead of a throwaway, so the attach loop can quote the latest label
+	// on its poll and heartbeat. Nil in one-shot flows, where nobody is listening.
+	Progress *progress.Progress
+
 	// Serve is "stdio", or a loopback address for Streamable HTTP.
 	Serve string
 	// Execute advertises the tools that write. Off by default, so a local AI host
@@ -60,7 +66,11 @@ func (o Options) server() string {
 
 func Run(ctx context.Context, opts Options) error {
 	w := term.New(os.Stdout)
-	if opts.Verbose || opts.JSON {
+	// --json is the machine surface: one JSON object per line, transcript and
+	// progress heartbeats alike. --verbose stays human, flattened for logs.
+	if opts.JSON {
+		w = w.UseJSON()
+	} else if opts.Verbose {
 		w = w.Plain()
 	}
 

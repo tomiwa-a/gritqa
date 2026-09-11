@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 	"github.com/tomiwa-a/gritqa/cli/internal/model"
 )
@@ -83,13 +84,23 @@ func Gateway(files []File) int {
 
 // FromAI is the last rung of the ladder, and the only one that sends source off
 // the machine. A file the model cannot read is skipped.
-func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Result, error) {
+//
+// Prog is an optional progress watcher: cache hits, uploads and failures land
+// on it per file. Callers without one pass nothing — every method tolerates a
+// nil *Progress — and the pass behaves exactly as before.
+func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File, prog ...*progress.Progress) (Result, error) {
 	if len(files) == 0 {
 		return Result{}, nil
 	}
 
+	var p *progress.Progress
+	if len(prog) > 0 {
+		p = prog[0]
+	}
+
 	found := make([][]routes.Route, len(files))
 	todo := make([]int, 0, len(files))
+	hits := 0
 
 	for i, f := range files {
 		if cache != nil {
@@ -99,6 +110,8 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 			}
 			if ok {
 				found[i] = stamp(rs, f.Path)
+				hits++
+				p.File(progress.AI, f.Path, true)
 				continue
 			}
 		}
@@ -111,7 +124,7 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 	var failed []Failure
 	if ex != nil {
 		var err error
-		sent, failed, uncached, err = run(ctx, ex, cache, files, todo, found)
+		sent, failed, uncached, err = run(ctx, ex, cache, files, todo, found, p)
 		if err != nil {
 			return Result{}, err
 		}
@@ -122,9 +135,9 @@ func FromAI(ctx context.Context, ex Extractor, cache Cache, files []File) (Resul
 		out = append(out, rs...)
 	}
 	if len(out) == 0 {
-		return Result{Uploaded: sent, Failed: failed, Uncached: uncached}, nil
+		return Result{Uploaded: sent, Hits: hits, Failed: failed, Uncached: uncached}, nil
 	}
-	return Result{Kind: AI, Routes: out, Uploaded: sent, Failed: failed, Uncached: uncached}, nil
+	return Result{Kind: AI, Routes: out, Uploaded: sent, Hits: hits, Failed: failed, Uncached: uncached}, nil
 }
 
 // attempts is per file: a reply that failed once is worth asking for again, and
@@ -239,9 +252,10 @@ func again(ctx context.Context, err error) bool {
 }
 
 // run returns how many files went to the model, which of them it could not read,
-// and how many were read but could not be cached.
+// and how many were read but could not be cached. Progress lands per file:
+// uploads as fresh, failures with their reason.
 func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []int,
-	found [][]routes.Route) (int, []Failure, int, error) {
+	found [][]routes.Route, p *progress.Progress) (int, []Failure, int, error) {
 
 	if len(todo) == 0 {
 		return 0, nil, 0, nil
@@ -260,8 +274,10 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 		return 0, nil, 0, fmt.Errorf("could not read %s with the model: %w", first.Path, err)
 	case err != nil:
 		failed = append(failed, Failure{Path: first.Path, Attempts: tries, Reason: err.Error()})
+		p.Fail(progress.AI, first.Path, err.Error())
 	default:
 		found[todo[0]] = keep(rs, first.Path)
+		p.File(progress.AI, first.Path, false)
 		if err := save(cache, first, found[todo[0]]); err != nil {
 			uncached++
 		}
@@ -296,11 +312,13 @@ func run(ctx context.Context, ex Extractor, cache Cache, files []File, todo []in
 						refused = fmt.Errorf("could not read %s with the model: %w", f.Path, err)
 					}
 					mu.Unlock()
+					p.Fail(progress.AI, f.Path, err.Error())
 					continue
 				}
 				mu.Unlock()
 
 				found[i] = keep(rs, f.Path)
+				p.File(progress.AI, f.Path, false)
 				mu.Lock()
 				if err := save(cache, f, found[i]); err != nil {
 					uncached++

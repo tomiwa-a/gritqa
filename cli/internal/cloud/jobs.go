@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 )
 
 // Job types, as the queue names them.
@@ -16,12 +18,16 @@ const (
 
 // Identity is who is polling. The instance id is the only required part, because
 // without it the dashboard has no row to move; the rest decorates the machine.
+// Progress is the latest index-pass label, when a pass has run since the last
+// poll — the poll is already a liveness signal every two seconds, so it carries
+// the counters rather than inventing a second timer to send the same news.
 type Identity struct {
-	InstanceID string `json:"instanceId"`
-	Hostname   string `json:"hostname,omitempty"`
-	Version    string `json:"version,omitempty"`
-	MCPUrl     string `json:"mcpUrl,omitempty"`
-	MCPToken   string `json:"mcpToken,omitempty"`
+	InstanceID string          `json:"instanceId"`
+	Hostname   string          `json:"hostname,omitempty"`
+	Version    string          `json:"version,omitempty"`
+	MCPUrl     string          `json:"mcpUrl,omitempty"`
+	MCPToken   string          `json:"mcpToken,omitempty"`
+	Progress   *progress.State `json:"progress,omitempty"`
 }
 
 type Job struct {
@@ -87,12 +93,15 @@ func (c *Client) Claim(ctx context.Context, id Identity) (*Claimed, error) {
 }
 
 // Heartbeat says the job is still being worked on. Every reply other than success
-// means this machine no longer owns it.
-func (c *Client) Heartbeat(ctx context.Context, job, instanceID string) error {
+// means this machine no longer owns it. Progress rides along when given —
+// a machine deep in a reindex is not polling, so this is the only sighting
+// the dashboard gets until the job settles.
+func (c *Client) Heartbeat(ctx context.Context, job, instanceID string, prog *progress.State) error {
 	path := jobPath(job, "heartbeat")
 	r, err := c.call(ctx, http.MethodPost, path, struct {
-		InstanceID string `json:"instanceId"`
-	}{instanceID})
+		InstanceID string          `json:"instanceId"`
+		Progress   *progress.State `json:"progress,omitempty"`
+	}{instanceID, prog})
 	if err != nil {
 		return err
 	}

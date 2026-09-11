@@ -87,12 +87,18 @@ export async function cliScope(request: Request): Promise<CliScope | null> {
 }
 
 export type InstanceIdentity = {
-  instanceId: string;
-  hostname?: string | null;
-  version?: string | null;
-  mcpUrl?: string | null;
-  mcpToken?: string | null;
-};
+    instanceId: string;
+    hostname?: string | null;
+    version?: string | null;
+    mcpUrl?: string | null;
+    mcpToken?: string | null;
+    /**
+     * Latest index-pass label from the machine, when a pass has run. Passed
+     * through unwatched — it is narration, validated nowhere, read only for
+     * display. Shaped by `cli/internal/index/progress`.
+     */
+    progress?: unknown;
+  };
 
 /**
  * Record that this machine was here.
@@ -107,25 +113,29 @@ export type InstanceIdentity = {
  */
 export async function touchInstance(projectId: number, identity: InstanceIdentity): Promise<void> {
   await db
-    .insert(cliInstances)
-    .values({
-      projectId,
-      instanceId: identity.instanceId,
-      hostname: identity.hostname ?? null,
-      version: identity.version ?? null,
-      mcpUrl: identity.mcpUrl ?? null,
-      mcpToken: identity.mcpToken ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [cliInstances.projectId, cliInstances.instanceId],
-      set: {
-        lastSeenAt: sql`now()`,
+      .insert(cliInstances)
+      .values({
+        projectId,
+        instanceId: identity.instanceId,
         hostname: identity.hostname ?? null,
         version: identity.version ?? null,
         mcpUrl: identity.mcpUrl ?? null,
         mcpToken: identity.mcpToken ?? null,
-      },
-    });
+        progress: identity.progress ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [cliInstances.projectId, cliInstances.instanceId],
+        set: {
+          lastSeenAt: sql`now()`,
+          hostname: identity.hostname ?? null,
+          version: identity.version ?? null,
+          mcpUrl: identity.mcpUrl ?? null,
+          mcpToken: identity.mcpToken ?? null,
+          // Absent progress leaves the last label alone: an idle poll carries
+          // none, and wiping the finished pass would blink the codebase page.
+          ...(identity.progress === undefined ? {} : { progress: identity.progress }),
+        },
+      });
 }
 
 /** One file as the CLI mirrors it. The three jsonb columns are NOT NULL, so none is optional. */

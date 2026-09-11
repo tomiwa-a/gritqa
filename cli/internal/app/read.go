@@ -6,23 +6,27 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
 	"github.com/tomiwa-a/gritqa/cli/internal/creds"
 	"github.com/tomiwa-a/gritqa/cli/internal/index"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
 	"github.com/tomiwa-a/gritqa/cli/internal/model"
 	"github.com/tomiwa-a/gritqa/cli/internal/term"
 )
 
 // reading is what one index pass produced: the snapshot, what changed since the
-// last pass, and whether there was a last pass at all.
+// last pass, whether there was a last pass at all, and the pass's live state
+// for anyone watching past the run — the machine's poll answer, the dashboard.
 type reading struct {
-	snap  *index.Snapshot
-	delta index.Delta
-	first bool
+	snap     *index.Snapshot
+	delta    index.Delta
+	first    bool
+	progress progress.State
 }
 
 // read indexes the project and renders the READ transcript from
@@ -48,13 +52,43 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	if err != nil {
 		return nil, err
 	}
+
+	// The pass's live state. Every stage reports into it; the terminal renders
+	// stage summaries in human modes and every heartbeat in --json, and the
+	// machine's poll answer carries the latest snapshot to the dashboard.
+	// An owner passed one in (the attach loop, quoting it mid-pass) keeps it:
+	// this only adds the terminal printer, never replaces the object.
+	prog := opts.Progress
+	if prog == nil {
+		prog = progress.New(newStagePrinter(w, opts.JSON))
+	} else {
+		prog.Tap(newStagePrinter(w, opts.JSON))
+	}
+	prog.SetTotal(progress.List, len(paths))
+	prog.Complete(progress.List)
+
 	w.Write(term.Line{
 		Kind: term.Info,
 		Text: fmt.Sprintf("reading %s — %s", cfg.Path, term.Count(len(paths), "file", "files")),
 	})
 
 	ep := cfg.EndpointOpts()
-	io := index.Options{List: ep.List, Spec: ep.Spec, AI: ep.AI}
+
+	// The steady-state shortcut: hash everything, and when every hash matches
+	// the last pass with no overrides configured, the stored snapshot already
+	// is the answer. No parse, no model calls, no waiting — an unchanged repo
+	// reports in the time it takes to hash.
+	if len(before) > 0 && len(ep.List) == 0 && ep.Spec == "" {
+		if snap, ok := unchanged(ctx, cfg, store, before, paths, prog); ok {
+			prog.Finish()
+			reportCached(w, snap)
+			return &reading{snap: snap, first: false, progress: prog.Snapshot()}, nil
+		}
+		// Anything else — a change, a wobble reading a file — falls through to
+		// the full pass, which is the path that already knows how to fail well.
+	}
+
+	io := index.Options{List: ep.List, Spec: ep.Spec, AI: ep.AI, Progress: prog, Known: before}
 	if ep.AI {
 		io.Extract, io.Cache = extractor(w, opts, cfg), store
 	}
@@ -84,11 +118,13 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 		w.Write(term.Line{Kind: term.Info, Text: "from here on it only re-reads what you change"})
 	}
 	if snap.Uploaded > 0 {
-		w.Write(term.Line{
-			Kind: term.Info,
-			Text: fmt.Sprintf("%s went to the model to be read",
-				term.Count(snap.Uploaded, "file", "files")),
-		})
+		text := fmt.Sprintf("%s went to the model to be read",
+			term.Count(snap.Uploaded, "file", "files"))
+		if snap.AICached > 0 {
+			text += fmt.Sprintf(" (%s answered from cache)",
+				term.Count(snap.AICached, "file", "files"))
+		}
+		w.Write(term.Line{Kind: term.Info, Text: text})
 	}
 	if n := len(snap.Failed); n > 0 {
 		w.Write(term.Line{
@@ -117,7 +153,99 @@ func read(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 				term.Count(n, "file", "files"), plural(n, "it", "them")),
 		})
 	}
-	return &reading{snap: snap, delta: delta, first: len(before) == 0}, nil
+	prog.Finish()
+	return &reading{snap: snap, delta: delta, first: len(before) == 0, progress: prog.Snapshot()}, nil
+}
+
+// unchanged answers the cheap question with the stored snapshot: every current
+// hash matches the last pass. The caller has already established this is a
+// steady repo — a previous pass exists and no list or spec override could
+// answer from elsewhere — so the stored routes, frameworks and source are the
+// current answer without parsing a thing.
+func unchanged(ctx context.Context, cfg *config.Config, store *index.Store, before map[string]string, paths []string, prog *progress.Progress) (*index.Snapshot, bool) {
+	hashes, err := index.HashPaths(ctx, cfg.Root(), paths, before, prog)
+	if err != nil || !hashesEqual(before, hashes) {
+		return nil, false
+	}
+	snap, err := store.Load(cfg.Root())
+	if err != nil || snap == nil {
+		return nil, false
+	}
+	return snap, true
+}
+
+// hashesEqual says two trees hold the same files at the same versions: same
+// paths, same hashes. Anything else — an addition, a deletion, a single
+// changed byte — is a difference the full pass has to look at.
+func hashesEqual(before, now map[string]string) bool {
+	if len(before) != len(now) {
+		return false
+	}
+	for path, hash := range before {
+		if now[path] != hash {
+			return false
+		}
+	}
+	return true
+}
+
+// reportCached tells the steady story: nothing parsed, nothing uploaded,
+// because nothing changed. Findings and summary read off the stored snapshot
+// exactly the way they read off a fresh one.
+func reportCached(w *term.Writer, snap *index.Snapshot) {
+	w.Write(term.Line{Kind: term.Blank})
+	w.Write(term.Line{
+		Kind: term.Info,
+		Text: fmt.Sprintf("all %s unchanged — served from the last pass, nothing re-read",
+			term.Count(len(snap.Files), "file", "files")),
+	})
+	w.Write(term.Line{Kind: term.Blank})
+	w.Write(term.Line{Kind: term.Out, Text: "what it found"})
+	w.All(findings(snap)...)
+	w.Write(term.Line{Kind: term.Blank})
+	w.Write(term.Line{Kind: term.OK, Text: "nothing changed since last time"})
+}
+
+// stagePrinter turns progress heartbeats into the human transcript: one line
+// per finished stage, never one per file. In --json it stays out of the way —
+// every heartbeat already goes out as its own JSON object.
+type stagePrinter struct {
+	mu      sync.Mutex
+	w       *term.Writer
+	json    bool
+	printed map[progress.Stage]bool
+	cached  map[progress.Stage]int
+}
+
+func newStagePrinter(w *term.Writer, json bool) progress.Sink {
+	return &stagePrinter{w: w, json: json, printed: map[progress.Stage]bool{}, cached: map[progress.Stage]int{}}
+}
+
+func (s *stagePrinter) Emit(e progress.Event) {
+	s.w.Write(term.Line{Kind: term.Progress, Event: e})
+	if s.json {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e.File != "" && e.Failed == "" && e.Cached {
+		s.cached[e.Stage]++
+	}
+	if e.Total <= 0 || e.Done != e.Total || s.printed[e.Stage] {
+		return
+	}
+	s.printed[e.Stage] = true
+	switch e.Stage {
+	case progress.Hash:
+		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("hashed %s (%s unchanged)",
+			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+	case progress.Static:
+		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("parsed %s (%s unchanged)",
+			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+	case progress.AI:
+		s.w.Write(term.Line{Kind: term.Info, Text: fmt.Sprintf("model pass over %s (%s from cache)",
+			term.Count(e.Total, "file", "files"), term.Count(s.cached[e.Stage], "file", "files"))})
+	}
 }
 
 // extractor is the AI source's client: the user's own credentials when they

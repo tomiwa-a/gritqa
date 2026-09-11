@@ -22,20 +22,20 @@ Goal: 2-minute demo, seamless connect, watchable indexing, minimal brain.
 - [x] Allow leave and resume without redo
 - [x] Add skip option that still creates project — skip lands on browsable dashboard with gates
 
-## 5. Defer model key
-- [ ] Remove key requirement before first draft view
-- [ ] Prompt for key only when running agent job
-- [ ] Link directly to Settings AI from prompt
+## 5. Defer model key — DONE (dev bypass via service account; fail-closed kept, prompt only fires where it should)
+- [x] Remove key requirement before first draft view
+- [x] Prompt for key only when running agent job
+- [x] Link directly to Settings AI from prompt
 
-## 6. Indexing progress from CLI
-- [ ] Stream stage counts: list, hash, fast pass, AI pass, link
-- [ ] Show current file and cached vs fresh
-- [ ] Report per-file failures with reasons
+## 6. Indexing progress from CLI — DONE
+- [x] Stream stage counts: list, hash, fast pass, AI pass, link — progress events + NDJSON + human stage lines
+- [x] Show current file and cached vs fresh — per-file events, unchanged hashes + extraction hits
+- [x] Report per-file failures with reasons — unreadable/unparseable/model failures with capped reasons
 
-## 7. Indexing progress in dashboard
-- [ ] Show live status on codebase page
-- [ ] Show cached instant for unchanged repos
-- [ ] Handle resume after crash without restart
+## 7. Indexing progress in dashboard — DONE
+- [x] Show live status on codebase page — 5-rung stage list, 4s pulse, mirror counts, failure list
+- [x] Show cached instant for unchanged repos — hash fast path serves stored snapshot, no parse/model
+- [x] Handle resume after crash without restart — reindex heartbeat + claim reap + chunked mirror
 
 ## 8. Endpoint states
 - [ ] Use Indexed, Tested, Invalid only

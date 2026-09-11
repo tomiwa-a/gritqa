@@ -3,6 +3,7 @@
 package term
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"golang.org/x/term"
 )
 
@@ -23,6 +25,7 @@ const (
 	Info       // dimmed, unmarked
 	Out        // unmarked, full contrast
 	Tree       // ├── / └──
+	Progress   // index stage heartbeat, NDJSON only
 )
 
 type Status int
@@ -40,6 +43,8 @@ type Line struct {
 	Meta   string // pushed to the right edge
 	Last   bool   // tree only: └── instead of ├──
 	Status Status
+	// Set for Progress lines only: the stage heartbeat this line carries.
+	Event progress.Event
 }
 
 // Palette from the --color-term-* tokens in web/src/app/globals.css. Tree
@@ -65,12 +70,14 @@ func (c rgb) wrap(s string, on bool) string {
 const maxWidth = 96
 
 // Writer renders lines to a stream: the full design on a colour TTY, glyphs
-// without colour on a pipe, and flat prefixed lines in Plain mode.
+// without colour on a pipe, flat prefixed lines in Plain mode, and one JSON
+// object per line in JSON mode.
 type Writer struct {
 	out   io.Writer
 	color bool
 	width int
 	plain bool
+	json  bool
 }
 
 func New(out io.Writer) *Writer {
@@ -101,6 +108,15 @@ func (w *Writer) Plain() *Writer {
 	return w
 }
 
+// UseJSON switches to one JSON object per line, for --json. Progress heartbeats
+// and transcript lines share the shape: {"kind": ..., ...}. A blank line still
+// writes nothing, so the stream stays parseable.
+func (w *Writer) UseJSON() *Writer {
+	w.json = true
+	w.color = false
+	return w
+}
+
 func fdOf(out io.Writer) (int, bool) {
 	f, ok := out.(*os.File)
 	if !ok {
@@ -110,6 +126,17 @@ func fdOf(out io.Writer) (int, bool) {
 }
 
 func (w *Writer) Write(l Line) {
+	if w.json {
+		if out := jsonOf(l); out != "" {
+			fmt.Fprintln(w.out, out)
+		}
+		return
+	}
+	// Progress heartbeats are NDJSON-only: in human modes the stage summaries
+	// carry the same news without a line per file.
+	if l.Kind == Progress {
+		return
+	}
 	if w.plain {
 		fmt.Fprintln(w.out, plainOf(l))
 		return
@@ -128,7 +155,7 @@ func (w *Writer) All(lines ...Line) {
 }
 
 func (w *Writer) render(l Line) string {
-	if l.Kind == Blank {
+	if l.Kind == Blank || l.Kind == Progress {
 		return ""
 	}
 
@@ -200,7 +227,7 @@ func glyphOf(s Status) (string, rgb, bool) {
 }
 
 func plainOf(l Line) string {
-	if l.Kind == Blank {
+	if l.Kind == Blank || l.Kind == Progress {
 		return ""
 	}
 
@@ -232,6 +259,53 @@ func plainOf(l Line) string {
 		line += " (" + l.Meta + ")"
 	}
 	return line
+}
+
+// jsonOf renders one line as one JSON object. Transcript lines carry kind,
+// text and meta; progress heartbeats carry the stage counters. A line the
+// stream has no shape for writes nothing rather than something unparseable.
+func jsonOf(l Line) string {
+	if l.Kind == Blank {
+		return ""
+	}
+	if l.Kind == Progress {
+		raw, err := json.Marshal(struct {
+			Kind string `json:"kind"`
+			progress.Event
+		}{Kind: "progress", Event: l.Event})
+		if err != nil {
+			return ""
+		}
+		return string(raw)
+	}
+	raw, err := json.Marshal(struct {
+		Kind string `json:"kind"`
+		Text string `json:"text"`
+		Meta string `json:"meta,omitempty"`
+	}{Kind: kindName(l.Kind), Text: l.Text, Meta: l.Meta})
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func kindName(k Kind) string {
+	switch k {
+	case Cmd:
+		return "cmd"
+	case OK:
+		return "ok"
+	case Fail:
+		return "fail"
+	case Info:
+		return "info"
+	case Out:
+		return "out"
+	case Tree:
+		return "tree"
+	default:
+		return "info"
+	}
 }
 
 // visible counts printable columns, discarding SGR escapes.

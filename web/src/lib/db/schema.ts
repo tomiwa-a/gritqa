@@ -207,8 +207,14 @@ export const cliInstances = pgTable(
     version: varchar('version', { length: 64 }),
     /** The CLI's MCP server address, auto-registered on every poll. */
     mcpUrl: varchar('mcp_url', { length: 512 }),
-    /** The CLI's MCP bearer token, auto-registered on every poll. */
-    mcpToken: varchar('mcp_token', { length: 255 }),
+      /** The CLI's MCP bearer token, auto-registered on every poll. */
+      mcpToken: varchar('mcp_token', { length: 255 }),
+      /**
+       * Latest index-pass label from this machine (stage, counters, current
+       * file, failures). Narration only — overwritten on every sighting, never
+       * read for correctness. See `drizzle/0014_index_progress.sql`.
+       */
+      progress: jsonb('progress'),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -13,6 +13,7 @@ import (
 	"github.com/tomiwa-a/gritqa/cli/internal/index/js"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/lang"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/lang/lexical"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/python"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/source"
@@ -34,6 +35,14 @@ type Options struct {
 
 	Extract source.Extractor // nil until the user opts in
 	Cache   source.Cache
+
+	// Progress receives per-file stage events. Nil turns reporting off; the
+	// pass behaves identically either way.
+	Progress *progress.Progress
+	// Known maps paths to the content hash of the last pass. Files whose hash
+	// matches are reported as cached — same answer as last time — even though
+	// the pass re-reads them.
+	Known map[string]string
 }
 
 type Snapshot struct {
@@ -44,6 +53,7 @@ type Snapshot struct {
 	Frameworks []lang.ID
 	Unparsed   []string
 	Uploaded   int              // files sent to the model to be read
+	AICached   int              // files the model stage answered from cache
 	Failed     []source.Failure // the ones it could not read, named and with a reason
 	Uncached   int              // files read but not cached, so they will be read again
 
@@ -67,6 +77,8 @@ type pass struct {
 	project    []lang.ID
 	wantRoutes bool
 	wantAI     bool
+	progress   *progress.Progress
+	known      map[string]string
 }
 
 // List returns the source files worth indexing, repo-relative and in path
@@ -83,6 +95,55 @@ func Read(ctx context.Context, root string, opts Options) (*Snapshot, error) {
 		return nil, err
 	}
 	return ReadPaths(ctx, root, paths, opts)
+}
+
+// HashPaths reads and hashes every file without parsing anything. It is the
+// cheap question — "did anything change?" — asked before the expensive one.
+// Files report cached when their hash matches known, which is how a steady
+// repo proves it has nothing new to read.
+func HashPaths(ctx context.Context, root string, paths []string, known map[string]string, prog *progress.Progress) (map[string]string, error) {
+	out := make(map[string]string, len(paths))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+
+	prog.SetTotal(progress.Hash, len(paths))
+
+	for range runtime.GOMAXPROCS(0) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				_, hash, _, err := read(filepath.Join(root, filepath.FromSlash(paths[i])))
+				mu.Lock()
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					prog.Fail(progress.Hash, paths[i], "unreadable")
+				} else {
+					out[paths[i]] = hash
+					old, seen := known[paths[i]]
+					prog.File(progress.Hash, paths[i], seen && old == hash)
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+	for i := range paths {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return nil, ctx.Err()
+		case jobs <- i:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return out, firstErr
 }
 
 // ReadPaths hashes and parses the given files concurrently, assembling the
@@ -109,6 +170,8 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 		// and overwrites the ones it already had.
 		wantRoutes: res.Empty(),
 		wantAI:     res.Empty() && opts.AI && (opts.Extract != nil || opts.Cache != nil),
+		progress:   opts.Progress,
+		known:      opts.Known,
 	}, paths)
 	if err != nil {
 		return nil, err
@@ -134,7 +197,7 @@ func ReadPaths(ctx context.Context, root string, paths []string, opts Options) (
 		}
 	}
 	snap.Frameworks = lang.Order(ids)
-	resolve(snap, graph, paths)
+	resolve(snap, graph, paths, opts.Progress)
 
 	switch {
 	case !res.Empty():
@@ -165,7 +228,6 @@ func extract(ctx context.Context, snap *Snapshot, opts Options, root string, out
 			Path: o.file.Path, Language: o.file.Language, Hash: o.file.Hash, Content: body,
 		})
 	}
-
 	// The gateway routes to the rest, so it goes with each of them: neither half
 	// of a front-controller URL is in one file.
 	if g := source.Gateway(files); g >= 0 {
@@ -177,11 +239,12 @@ func extract(ctx context.Context, snap *Snapshot, opts Options, root string, out
 		}
 	}
 
-	res, err := source.FromAI(ctx, opts.Extract, opts.Cache, files)
+	opts.Progress.SetTotal(progress.AI, len(files))
+	res, err := source.FromAI(ctx, opts.Extract, opts.Cache, files, opts.Progress)
 	if err != nil {
 		return err
 	}
-	snap.Uploaded, snap.Failed, snap.Uncached = res.Uploaded, res.Failed, res.Uncached
+	snap.Uploaded, snap.AICached, snap.Failed, snap.Uncached = res.Uploaded, res.Hits, res.Failed, res.Uncached
 
 	if len(res.Routes) > 0 {
 		snap.Routes = groupByFile(append(snap.Routes, res.Routes...))
@@ -195,7 +258,9 @@ func extract(ctx context.Context, snap *Snapshot, opts Options, root string, out
 // resolve finishes the paths a single file could not: an Express router or a
 // Django URLconf is usually mounted from somewhere else, so the mount graph is
 // only complete once every file has been read.
-func resolve(snap *Snapshot, graph *lexical.Graph, paths []string) {
+func resolve(snap *Snapshot, graph *lexical.Graph, paths []string, prog *progress.Progress) {
+	prog.SetTotal(progress.Link, 1)
+	prog.Complete(progress.Link)
 	if graph.Empty() {
 		return
 	}
@@ -218,12 +283,26 @@ func scan(ctx context.Context, p pass, paths []string) ([]outcome, error) {
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 
+	p.progress.SetTotal(progress.Static, len(paths))
+
 	for range runtime.GOMAXPROCS(0) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
 				out[i] = p.inspect(paths[i])
+				// Cached means the content hash matches the last pass, so the
+				// answer is the same one it gave before — even though this pass
+				// re-read it. Unreadable files fail loudly instead of vanishing.
+				switch {
+				case out[i].file == nil:
+					p.progress.Fail(progress.Static, paths[i], "unreadable")
+				case out[i].unparsed:
+					p.progress.Fail(progress.Static, paths[i], "would not parse")
+				default:
+					old, seen := p.known[paths[i]]
+					p.progress.File(progress.Static, paths[i], seen && old == out[i].file.Hash)
+				}
 			}
 		}()
 	}

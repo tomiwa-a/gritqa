@@ -60,6 +60,26 @@ export type Machine = {
   connected: boolean;
   lastSeenLabel: string;
   lastSeenAt: string;
+  /**
+   * Latest index-pass label from this machine, when a pass has run since it
+   * was last seen without one. Narration only — shaped by
+   * `cli/internal/index/progress`, validated nowhere.
+   */
+  progress: IndexProgress | null;
+};
+
+/** The dashboard's reading of one `progress.State` from the CLI. */
+export type IndexProgress = {
+  stage: string;
+  done: number;
+  total: number;
+  stages?: Record<string, { done: number; total: number }>;
+  file?: string | null;
+  cached: number;
+  fresh: number;
+  failed: number;
+  failures?: { stage: string; file: string; reason: string }[];
+  complete: boolean;
 };
 
 export type MachineStatus = {

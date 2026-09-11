@@ -34,6 +34,7 @@ type Result struct {
 	Routes     []routes.Route
 	Unresolved []routes.Route
 	Uploaded   int       // files sent to the model for extraction
+	Hits       int       // files answered from the extraction cache, no call made
 	Failed     []Failure // the ones it could not read, so their endpoints are missing
 	Uncached   int       // files read but not cached, so they will be read again
 }

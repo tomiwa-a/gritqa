@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: NO_STORE });
   }
 
-  let body: { instanceId?: unknown } = {};
+  let body: { instanceId?: unknown; progress?: unknown } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -42,7 +42,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   // A heartbeat is also a sighting. A machine deep in a thirty-second run would
   // otherwise look disconnected on the dashboard for the whole time it was working.
-  await touchInstance(scope.projectId, { instanceId });
+  // A reindex in flight narrates itself the same way, when it has anything to say.
+  await touchInstance(scope.projectId, { instanceId, progress: body.progress ?? undefined });
 
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }

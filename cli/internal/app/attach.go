@@ -13,6 +13,7 @@ import (
 	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
 	"github.com/tomiwa-a/gritqa/cli/internal/creds"
 	"github.com/tomiwa-a/gritqa/cli/internal/index"
+	"github.com/tomiwa-a/gritqa/cli/internal/index/progress"
 	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
 	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 	"github.com/tomiwa-a/gritqa/cli/internal/run"
@@ -38,6 +39,9 @@ type attached struct {
 	id  cloud.Identity
 	srv *mcp.Server
 	tok string
+	// prog is the index pass's live object while a reindex job runs it. Nil
+	// the rest of the time, so the poll carries no stale label.
+	prog atomic.Pointer[progress.Progress]
 }
 
 func attach(ctx context.Context, s *session, snap *index.Snapshot, srv *mcp.Server, token string) error {
@@ -116,6 +120,10 @@ func (a *attached) reporting() cloud.Identity {
 			id.MCPUrl, id.MCPToken = "http://"+addr, a.tok
 		}
 	}
+	if prog := a.prog.Load(); prog != nil {
+		snap := prog.Snapshot()
+		id.Progress = &snap
+	}
 	return id
 }
 
@@ -164,13 +172,34 @@ func (a *attached) mirror(ctx context.Context, snap *index.Snapshot) {
 
 // reindex answers an index_codebase job with a fresh pass and a push.
 func (a *attached) reindex(ctx context.Context, job *cloud.Job) {
+	// The heartbeat is the dashboard's only sighting mid-pass: without it a
+	// model-heavy reindex outlasts the reap's patience and gets handed to
+	// another machine while this one is doing it perfectly well.
+	walk, stop := context.WithCancel(ctx)
+	defer stop()
+	var taken atomic.Bool
+	go a.beat(walk, job.PublicID, func() { taken.Store(true); stop() })
+
+	prog := progress.New(nil)
+	a.prog.Store(prog)
+	a.opts.Progress = prog
+	defer func() {
+		a.prog.Store(nil)
+		a.opts.Progress = nil
+	}()
+
 	a.mu.Lock()
-	got, err := read(ctx, a.w, a.cfg, a.opts)
+	got, err := read(walk, a.w, a.cfg, a.opts)
 	if err == nil {
 		a.snap = got.snap
 	}
 	a.mu.Unlock()
 	if err != nil {
+		// Lost to another machine: the walk is already stopped, and the job
+		// is theirs to report. Anything else goes back with its reason.
+		if taken.Load() {
+			return
+		}
 		a.giveBack(ctx, job, err.Error())
 		return
 	}
@@ -358,7 +387,12 @@ func (a *attached) beat(ctx context.Context, job string, lost func()) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := a.c.Heartbeat(ctx, job, a.id.InstanceID); errors.Is(err, cloud.ErrLostJob) {
+			var prog *progress.State
+			if p := a.prog.Load(); p != nil {
+				snap := p.Snapshot()
+				prog = &snap
+			}
+			if err := a.c.Heartbeat(ctx, job, a.id.InstanceID, prog); errors.Is(err, cloud.ErrLostJob) {
 				a.w.Write(term.Line{Kind: term.Info, Text: "the dashboard has handed this job to " +
 					"another machine, so this run is being abandoned"})
 				lost()

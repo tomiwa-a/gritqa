@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     version?: unknown;
     mcpUrl?: unknown;
     mcpToken?: unknown;
+    progress?: unknown;
   } = {};
   try {
     body = (await request.json()) as typeof body;
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
     version: str(body.version, 64),
     mcpUrl: str(body.mcpUrl, 512),
     mcpToken: str(body.mcpToken, 255),
+    progress: body.progress ?? undefined,
   });
 
   // Before handing out new work, take back work nobody is doing. A machine that

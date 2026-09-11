@@ -34,7 +34,11 @@ export async function GET() {
   const { connected, machines } = await getMachineStatus();
 
   return Response.json(
-    { connected, lastSeenAt: machines[0]?.lastSeenAt ?? null },
+    {
+      connected,
+      lastSeenAt: machines[0]?.lastSeenAt ?? null,
+      progress: machines[0]?.progress ?? null,
+    },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
