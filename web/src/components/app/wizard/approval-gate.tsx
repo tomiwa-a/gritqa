@@ -20,31 +20,51 @@ export async function ApprovalGate() {
   return (
     <div className="flex h-full flex-col justify-center">
       <div className="rounded-lg border border-rule-dark bg-surface-dark-raised p-3">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-[10.5px] tracking-[0.16em] text-term-dim uppercase">
-            plan · draft
-          </span>
-          <span className="nums font-mono text-[10.5px] text-term-dim">
-            {plan.assertionCount} assertions
-          </span>
-        </div>
+        {plan ? (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[10.5px] tracking-[0.16em] text-term-dim uppercase">
+                plan · draft
+              </span>
+              <span className="nums font-mono text-[10.5px] text-term-dim">
+                {plan.assertionCount} assertions
+              </span>
+            </div>
 
-        <p className="mt-1.5 text-[12.5px] leading-snug font-medium text-ink-inverse">
-          {plan.name}
-        </p>
+            <p className="mt-1.5 text-[12.5px] leading-snug font-medium text-ink-inverse">
+              {plan.name}
+            </p>
 
-        <ul className="mt-3 flex flex-col gap-1.5">
-          {STEPS.map((step, i) => (
-            <li key={step.path} className="flex items-baseline gap-2 font-mono text-[11px]">
-              <span className="nums w-3 shrink-0 text-term-dim">{i + 1}</span>
-              <span className={METHOD_TONE[step.method]}>{step.method}</span>
-              <span className="truncate text-ink-dim">{step.path}</span>
-              {step.carries && (
-                <span className="ml-auto shrink-0 text-term-dim">→ {step.carries}</span>
-              )}
-            </li>
-          ))}
-        </ul>
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {STEPS.map((step, i) => (
+                <li key={step.path} className="flex items-baseline gap-2 font-mono text-[11px]">
+                  <span className="nums w-3 shrink-0 text-term-dim">{i + 1}</span>
+                  <span className={METHOD_TONE[step.method]}>{step.method}</span>
+                  <span className="truncate text-ink-dim">{step.path}</span>
+                  {step.carries && (
+                    <span className="ml-auto shrink-0 text-term-dim">→ {step.carries}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[10.5px] tracking-[0.16em] text-term-dim uppercase">
+                plan · draft
+              </span>
+              <span className="nums font-mono text-[10.5px] text-term-dim">0 drafts</span>
+            </div>
+
+            <p className="mt-1.5 text-[12.5px] leading-snug font-medium text-ink-inverse">
+              Nothing waiting yet
+            </p>
+            <p className="mt-1 text-[11.5px] leading-snug text-term-dim">
+              Your first draft lands here once the helper has read your project.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="mt-4 flex gap-3">

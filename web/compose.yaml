@@ -1,0 +1,33 @@
+# Local database for the GritQA dashboard.
+#
+# Start only the database (not the web app):
+#   docker compose up -d db
+#
+# Then point the app at it in web/.env.local:
+#   DATABASE_URL=postgresql://gritqa:gritqa@localhost:5432/gritqa
+#
+# Stop it with: docker compose down
+# Wipe its data with: docker compose down -v
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gritqa-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gritqa
+      POSTGRES_USER: gritqa
+      POSTGRES_PASSWORD: gritqa
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - gritqa-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gritqa -d gritqa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  gritqa-pgdata:

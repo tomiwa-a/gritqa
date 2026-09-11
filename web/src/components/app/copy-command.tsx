@@ -30,7 +30,7 @@ export function CopyCommand({
         <span aria-hidden className="font-mono text-[12px] text-term-dim select-none">
           $
         </span>
-        <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12.5px] whitespace-nowrap text-ink-inverse">
+        <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12.5px] whitespace-nowrap text-ink-inverse [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {command}
         </code>
         <button

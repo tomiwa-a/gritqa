@@ -2,10 +2,10 @@
 
 Goal: 2-minute demo, seamless connect, watchable indexing, minimal brain.
 
-## 1. Instant demo
-- [ ] Open review queue with sample data, no account
-- [ ] Add clear Try demo button on landing
-- [ ] Preserve guest actions and convert to real project on signup
+## 1. Instant demo — CUT, landing page is the pitch
+- [x] Open review queue with sample data, no account — cut, static demo felt hollow
+- [x] Add clear Try demo button on landing — cut with the page
+- [x] Preserve guest actions and convert to real project on signup — cut
 
 ## 2. GitHub login polish
 - [ ] Keep next destination after login

@@ -92,6 +92,12 @@ export default async function AuthCallbackPage({
         >
           Email support
         </Link>
+        <Link
+          href="/login"
+          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+        >
+          Back to login
+        </Link>
       </div>
 
       <p className="mt-5 border-t border-rule-soft pt-4 font-mono text-[11.5px] text-ink-subtle">
