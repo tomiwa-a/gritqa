@@ -8,8 +8,9 @@ import { QueueKeys } from '@/components/app/plan/queue-keys';
 import { PlanReader } from '@/components/app/plan/plan-reader';
 import { StepInspector } from '@/components/app/plan/step-inspector';
 import { buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { Icon } from '@/components/ui/icon';
-import { isCliConnected, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
+import { isCliConnected, getCurrentProjectOrNull, getPlanDetail, getPlansAwaitingReview } from '@/lib/data';
 import { stepIsHeavy } from '@/lib/model';
 import {
   approveToken,
@@ -25,6 +26,8 @@ const QUEUE = '/dashboard/queue';
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="queue" title="Review queue" />;
   const [cliConnected, plansAwaitingReview] = await Promise.all([
     isCliConnected(),
     getPlansAwaitingReview(),

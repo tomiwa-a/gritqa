@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon';
 import { CodeBlock } from '@/components/ui/code-block';
 import { buttonVariants } from '@/components/ui/button';
 import { CopyCommand } from '../copy-command';
-import { getCurrentProject, getMachineStatus } from '@/lib/data';
+import { getCurrentProjectOrNull, getMachineStatus } from '@/lib/data';
 import { cn } from '@/lib/cn';
 
 export function InstallStep() {
@@ -51,7 +51,7 @@ branch: main
  * but that belongs to `SetupFlow`, not to this pill, so the prop is gone.
  */
 export async function ConnectStep() {
-  const [currentProject, machine] = await Promise.all([getCurrentProject(), getMachineStatus()]);
+  const [currentProject, machine] = await Promise.all([getCurrentProjectOrNull(), getMachineStatus()]);
   const connected = machine.connected;
   /* Has any machine ever polled -- which is a different question from whether the
      project has ever been indexed, and the only one this pill can answer honestly. */
@@ -98,7 +98,7 @@ export async function ConnectStep() {
           />
         </span>
         {connected
-          ? `Connected — ${known?.hostname ?? currentProject.name}, polling now`
+            ? `Connected — ${known?.hostname ?? currentProject?.name ?? 'your project'}, polling now`
           : known
             ? `Last seen ${known.lastSeenLabel} — start the CLI again to run anything`
             : 'Waiting for your first run on this machine'}

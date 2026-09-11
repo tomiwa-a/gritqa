@@ -20,7 +20,9 @@ export type ShellCurrentProject = Pick<Project, 'publicId' | 'name' | 'defaultBr
 export type ShellData = {
   user: ShellUser;
   projects: ShellProject[];
-  currentProject: ShellCurrentProject;
+  /** Null for a signed-in developer who owns no project yet — the shell loads,
+      and each project-scoped page renders its own create-first gate. */
+  currentProject: ShellCurrentProject | null;
   /** Drives the badge on Review queue. */
   reviewCount: number;
   /**
@@ -38,7 +40,7 @@ export type ShellData = {
 export function shellDataOf(input: {
   user: User;
   projects: Project[];
-  currentProject: Project;
+  currentProject: Project | null;
   reviewCount: number;
   workCount: number;
 }): ShellData {
@@ -54,11 +56,13 @@ export function shellDataOf(input: {
       status: project.status,
       lastIndexedLabel: project.lastIndexedLabel,
     })),
-    currentProject: {
-      publicId: input.currentProject.publicId,
-      name: input.currentProject.name,
-      defaultBranch: input.currentProject.defaultBranch,
-    },
+    currentProject: input.currentProject
+      ? {
+          publicId: input.currentProject.publicId,
+          name: input.currentProject.name,
+          defaultBranch: input.currentProject.defaultBranch,
+        }
+      : null,
     reviewCount: input.reviewCount,
     workCount: input.workCount,
   };

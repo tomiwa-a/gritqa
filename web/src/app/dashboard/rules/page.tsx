@@ -10,8 +10,9 @@ import { CATEGORY, CATEGORY_ORDER } from '@/components/app/rules/categories';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { Icon } from '@/components/ui/icon';
-import { getRules } from '@/lib/data';
+import { getCurrentProjectOrNull, getRules } from '@/lib/data';
 import { ruleToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { RuleCategory } from '@/lib/model';
 
@@ -25,6 +26,8 @@ function isCategory(value: string | undefined): value is RuleCategory {
 
 export default async function RulesPage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="rules" title="Rules" />;
   const rules = await getRules();
   const categoryParam = typeof params.category === 'string' ? params.category : undefined;
   /* `category` is not an overlay param, so opening a rule keeps the filter and

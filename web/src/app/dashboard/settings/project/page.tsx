@@ -6,12 +6,37 @@ import { DangerZone } from '@/components/app/settings/danger-zone';
 import { Panel } from '@/components/app/panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { getCurrentProject } from '@/lib/data';
+import { getCurrentProjectOrNull } from '@/lib/data';
+import { EmptyState } from '@/components/app/empty-state';
 
 export const metadata = { title: 'Project · Settings · GritQA' };
 
 export default async function ProjectSettingsPage() {
-  const currentProject = await getCurrentProject();
+  const currentProject = await getCurrentProjectOrNull();
+  if (!currentProject) {
+    return (
+      <SettingsShell
+        active="project"
+        title="Project"
+        description="How GritQA finds this project and what it watches. The path and the reading are set by the CLI on your machine."
+      >
+        <EmptyState
+          icon="projects"
+          title="Create a project first"
+          description="Run the CLI once in your project folder and approve the pairing — then its settings land here."
+          action={
+            <Link
+              href="/dashboard/setup"
+              className={buttonVariants({ variant: 'accent', size: 'sm' })}
+            >
+              Connect your first repo
+              <Icon name="arrowRight" size={13} />
+            </Link>
+          }
+        />
+      </SettingsShell>
+    );
+  }
   return (
     <SettingsShell
       active="project"

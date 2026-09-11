@@ -10,6 +10,8 @@ import { WorkPulse } from '@/components/app/work-pulse';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { requireScope } from '@/lib/db/scope';
+import { getCurrentProjectOrNull } from '@/lib/data';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { listWork, workMark, type WorkRow } from '@/lib/db/work';
 import { resumeWork } from '@/lib/work/resume';
 import { WORK_KIND, WORK_TONE, WORK_WORD, inFlight } from '@/lib/work/words';
@@ -120,6 +122,8 @@ const columns: Column<WorkRow>[] = [
 ];
 
 export default async function WorkPage() {
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="terminal" title="Work" />;
   const scope = await requireScope();
 
   /* Before the read, so a job that was abandoned is already being picked up by the

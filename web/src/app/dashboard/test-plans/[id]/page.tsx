@@ -15,11 +15,13 @@ import { GenerateMenu } from '@/components/app/generate-menu';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { CodeBlock } from '@/components/ui/code-block';
 import { Icon } from '@/components/ui/icon';
 import {
-  getAllPlans,
-  isCliConnected,
+    getAllPlans,
+    getCurrentProjectOrNull,
+    isCliConnected,
   getObservedRoutes,
   getPlanDetail,
   getRecentRuns,
@@ -185,6 +187,8 @@ export default async function PlanDetailPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="plan" title="Test plan" />;
   const tabParam = typeof query.tab === 'string' ? query.tab : undefined;
   const stepParam = typeof query.step === 'string' ? query.step : undefined;
   const versionParam = typeof query.v === 'string' ? query.v : undefined;

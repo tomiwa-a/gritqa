@@ -9,6 +9,8 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
 import { requireScope } from '@/lib/db/scope';
+import { getCurrentProjectOrNull } from '@/lib/data';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { workDetail, workMark, type WorkEvent } from '@/lib/db/work';
 import { resumeWork } from '@/lib/work/resume';
 import { WORK } from '@/lib/work/where';
@@ -88,6 +90,8 @@ function Line({ event }: { event: WorkEvent }) {
 
 export default async function WorkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="terminal" title="Work" />;
   const scope = await requireScope();
 
   const detail = await workDetail(scope.projectId, id);

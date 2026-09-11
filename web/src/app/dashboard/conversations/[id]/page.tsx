@@ -10,7 +10,8 @@ import { AskFooter } from '@/components/app/ask/ask-footer';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
-import { getConversation, getLastBaseUrl, getUser } from '@/lib/data';
+import { NoProjectGate } from '@/components/app/no-project-gate';
+import { getConversation, getCurrentProjectOrNull, getLastBaseUrl, getUser } from '@/lib/data';
 import { pulse } from '@/lib/work/pulse';
 import { NEW_CONVERSATION, askToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { ConversationDetail } from '@/lib/model';
@@ -109,6 +110,8 @@ export default async function ConversationPage({
   searchParams: Promise<PageParams>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="sparkle" title="Conversation" />;
   const detail = await getConversation(id);
   if (!detail) notFound();
 

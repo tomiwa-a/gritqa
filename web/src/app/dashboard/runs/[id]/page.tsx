@@ -8,9 +8,10 @@ import { RunTriage } from '@/components/app/run-triage';
 import { RunCells } from '@/components/app/run-cells';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { Icon } from '@/components/ui/icon';
 import { runPlanAction } from '@/lib/actions/plans';
-import { getAllPlans, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
+import { getAllPlans, getCurrentProjectOrNull, isCliConnected, getRecentRuns, getRunHistory } from '@/lib/data';
 import { kindPhrase, kindsIn, RUN_TONE, RUN_WORD } from '@/lib/plan';
 import {
   brokeAt,
@@ -49,6 +50,8 @@ export default async function RunDetailPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="runs" title="Run" />;
 
   const [allPlans, cliConnected, history, recent] = await Promise.all([
     getAllPlans(),

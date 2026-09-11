@@ -14,7 +14,7 @@ export function ProjectSwitcher({
   collapsed = false,
 }: {
   projects: ShellProject[];
-  currentProject: ShellCurrentProject;
+  currentProject: ShellCurrentProject | null;
   collapsed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -48,17 +48,17 @@ export function ProjectSwitcher({
         )}
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-ink text-[13px] font-semibold text-ink-inverse">
-          {currentProject.name[0].toUpperCase()}
+          {currentProject ? currentProject.name[0].toUpperCase() : '+'}
         </span>
 
         {!collapsed && (
           <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13.5px] font-medium leading-tight text-ink">
-                {currentProject.name}
+                {currentProject ? currentProject.name : 'No project yet'}
               </span>
               <span className="block truncate font-mono text-[11px] leading-tight text-ink-subtle">
-                {currentProject.defaultBranch}
+                {currentProject ? currentProject.defaultBranch : 'connect one to begin'}
               </span>
             </span>
             <Icon name="chevronUpDown" size={14} className="text-ink-subtle" />
@@ -79,7 +79,7 @@ export function ProjectSwitcher({
             still switches with JavaScript off.
           */}
           {projects.map((p) => {
-            const active = p.publicId === currentProject.publicId;
+            const active = currentProject !== null && p.publicId === currentProject.publicId;
             const row = (
               <>
                 <StatusDot tone={p.status === 'active' ? 'live' : 'draft'} label={p.status} />

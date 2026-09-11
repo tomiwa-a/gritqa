@@ -9,9 +9,10 @@ import { EmptyState } from '@/components/app/empty-state';
 import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { Icon } from '@/components/ui/icon';
 import { MethodBadge } from '@/components/ui/method-badge';
-import { getAllPlans, getCoverage, getPlansAwaitingReview } from '@/lib/data';
+import { getAllPlans, getCoverage, getCurrentProjectOrNull, getPlansAwaitingReview } from '@/lib/data';
 import {
   coverageFileFor,
   endpointFocusFor,
@@ -197,6 +198,8 @@ export default async function TestPlansPage({
   searchParams: Promise<PageParams>;
 }) {
   const params = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="plan" title="Test plans" />;
   const [allPlans, coverage, plansAwaitingReview] = await Promise.all([
     getAllPlans(),
     getCoverage(),

@@ -1,5 +1,5 @@
 import { Icon } from '@/components/ui/icon';
-import { getCoverage, getCurrentProject, getMachineStatus } from '@/lib/data';
+import { getCoverage, getCurrentProjectOrNull, getMachineStatus } from '@/lib/data';
 import type { CoverageFile } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -59,7 +59,7 @@ function Beacon({ connected }: { connected: boolean }) {
 export async function WaitingBeacon() {
   const [coverage, currentProject, machine] = await Promise.all([
     getCoverage(),
-    getCurrentProject(),
+    getCurrentProjectOrNull(),
     getMachineStatus(),
   ]);
   const methodMix = methodMixOf(coverage);
@@ -70,7 +70,7 @@ export async function WaitingBeacon() {
      the second one, so a project indexed in March said a laptop was standing by. */
   const connected = machine.connected;
   const known = machine.machines[0] ?? null;
-  const indexed = currentProject.lastIndexedLabel !== null;
+  const indexed = currentProject?.lastIndexedLabel != null;
 
   return (
     <div className="flex h-full flex-col justify-center">

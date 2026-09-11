@@ -5,8 +5,9 @@ import { AppPageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/app/panel';
 import { PlanEditor } from '@/components/app/plan/plan-editor';
 import { buttonVariants } from '@/components/ui/button';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { Icon } from '@/components/ui/icon';
-import { getLastBaseUrl, getObservedRoutes } from '@/lib/data';
+import { getCurrentProjectOrNull, getLastBaseUrl, getObservedRoutes } from '@/lib/data';
 
 export const metadata = { title: 'Write a plan · GritQA' };
 
@@ -18,6 +19,8 @@ export const metadata = { title: 'Write a plan · GritQA' };
  * away from it would be a lost afternoon.
  */
 export default async function NewPlanPage() {
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="plan" title="Write a plan" />;
   const [baseUrl, routes] = await Promise.all([getLastBaseUrl(), getObservedRoutes()]);
 
   return (

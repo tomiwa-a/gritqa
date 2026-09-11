@@ -4,7 +4,7 @@ import { PageBody } from '@/components/app/page-body';
 import { AppPageHeader } from '@/components/app/page-header';
 import { SetupFlow } from '@/components/app/setup/setup-flow';
 import { Icon } from '@/components/ui/icon';
-import { getCoverageTotals, getCurrentProject, getUser } from '@/lib/data';
+import { getCoverageTotals, getCurrentProjectOrNull, getUser } from '@/lib/data';
 
 export const metadata = { title: 'CLI setup · GritQA' };
 
@@ -39,13 +39,14 @@ const SNAGS = [
 export default async function SetupPage() {
   const [user, currentProject, coverageTotals] = await Promise.all([
     getUser(),
-    getCurrentProject(),
+    getCurrentProjectOrNull(),
     getCoverageTotals(),
   ]);
 
-  /* How far the setup has actually got, read off the record rather than stored. */
+  /* How far the setup has actually got, read off the record rather than stored.
+     No project yet means nothing is done — which is exactly when this page matters. */
   const done =
-    (currentProject.lastIndexedLabel !== null ? 2 : 0) +
+    (currentProject?.lastIndexedLabel ? 2 : 0) +
     (user.hasAiKey ? 1 : 0) +
     (coverageTotals.approved > 0 ? 1 : 0);
   return (

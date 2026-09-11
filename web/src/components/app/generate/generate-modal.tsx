@@ -23,7 +23,7 @@ import {
   getCommits,
   getCoverage,
   getCoverageTotals,
-  getCurrentProject,
+  getCurrentProjectOrNull,
   getLastBaseUrl,
   getLastDraftedFrom,
 } from '@/lib/data';
@@ -202,7 +202,7 @@ export async function GenerateModal({
       getCommits(),
       getCoverage(),
       getCoverageTotals(),
-      getCurrentProject(),
+      getCurrentProjectOrNull(),
       getLastDraftedFrom(),
       getLastBaseUrl(),
     ]);
@@ -224,7 +224,7 @@ export async function GenerateModal({
    * read in advance -- and blocking it meant the one door that works before the
    * first index was the one behind a screen saying nothing could be drafted yet.
    */
-  const indexed = currentProject.lastIndexedLabel !== null;
+  const indexed = currentProject !== null && currentProject.lastIndexedLabel !== null;
   const source: Source = isSource(askedSource) ? askedSource : indexed ? 'changes' : 'blank';
   const step: Step = isStep(askedStep) ? askedStep : askedSource ? 'scope' : 'source';
 

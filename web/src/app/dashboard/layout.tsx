@@ -2,7 +2,7 @@ import { AppShell } from '@/components/app/app-shell';
 import { MachinePulse } from '@/components/app/machine-pulse';
 import { shellDataOf } from '@/components/app/shell-data';
 import {
-  getCurrentProject,
+  getCurrentProjectOrNull,
   getMachineStatus,
   getPlansAwaitingReview,
   getProjects,
@@ -26,7 +26,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     await Promise.all([
       getUser(),
       getProjects(),
-      getCurrentProject(),
+      getCurrentProjectOrNull(),
       getPlansAwaitingReview(),
       getMachineStatus(),
       scope ? workRunning(scope.projectId) : 0,

@@ -5,7 +5,8 @@ import { Panel } from '@/components/app/panel';
 import { EnvironmentForm } from '@/components/app/environment/environment-form';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
-import { requireScope } from '@/lib/db/scope';
+import { currentScope } from '@/lib/db/scope';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { approvedEnvironment, currentCompose, proposedEnvironment } from '@/lib/db/environment';
 import { describe, reconcile } from '@/lib/environment';
 
@@ -24,7 +25,8 @@ import { describe, reconcile } from '@/lib/environment';
 export const metadata = { title: 'Environment · GritQA' };
 
 export default async function EnvironmentPage() {
-  const scope = await requireScope();
+  const scope = await currentScope();
+  if (!scope) return <NoProjectGate icon="shield" title="Environment" />;
   const [compose, approved, proposed] = await Promise.all([
     currentCompose(scope.projectId),
     approvedEnvironment(scope.projectId),

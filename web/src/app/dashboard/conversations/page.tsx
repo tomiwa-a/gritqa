@@ -7,7 +7,8 @@ import { EmptyState } from '@/components/app/empty-state';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { Icon } from '@/components/ui/icon';
 import { buttonVariants } from '@/components/ui/button';
-import { getConversations } from '@/lib/data';
+import { NoProjectGate } from '@/components/app/no-project-gate';
+import { getConversations, getCurrentProjectOrNull } from '@/lib/data';
 import { NEW_CONVERSATION, askToken, withOverlay, type PageParams } from '@/lib/overlay';
 import type { Conversation } from '@/lib/model';
 
@@ -93,6 +94,8 @@ export default async function ConversationsPage({
   searchParams: Promise<PageParams>;
 }) {
   const params = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="sparkle" title="Conversations" />;
   const conversations = await getConversations();
   const askHref = withOverlay(PATH, params, askToken(NEW_CONVERSATION));
   const withPlans = conversations.filter((conversation) => conversation.planCount > 0).length;

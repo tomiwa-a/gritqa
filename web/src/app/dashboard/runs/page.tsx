@@ -13,7 +13,8 @@ import { Segmented } from '@/components/ui/segmented';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import { StepBadge } from '@/components/ui/step-badge';
-import { getAllPlans, getRecentRuns, getRunHistory, getRunStripStats } from '@/lib/data';
+import { getAllPlans, getCurrentProjectOrNull, getRecentRuns, getRunHistory, getRunStripStats } from '@/lib/data';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 import { RUN_TONE, RUN_WORD } from '@/lib/plan';
 import {
   brokeAt,
@@ -155,6 +156,8 @@ const runColumns = (openRun: (publicId: string) => string): Column<RunRow>[] => 
 
 export default async function RunsPage({ searchParams }: { searchParams: Promise<PageParams> }) {
   const params = await searchParams;
+  const project = await getCurrentProjectOrNull();
+  if (!project) return <NoProjectGate icon="runs" title="Runs" />;
   const statusParam = typeof params.status === 'string' ? params.status : undefined;
   const planParam = typeof params.plan === 'string' ? params.plan : undefined;
   const filter: Filter = isFilter(statusParam) ? statusParam : 'all';

@@ -22,7 +22,7 @@ import { buttonVariants } from '@/components/ui/button';
 import {
   getAllPlans,
   getCoverageTotals,
-  getCurrentProject,
+  getCurrentProjectOrNull,
   getPeriod,
   getPlansAwaitingReview,
   getRecentRuns,
@@ -34,6 +34,7 @@ import {
 import type { Project, TestExecution, TestPlan } from '@/lib/model';
 import { cn } from '@/lib/cn';
 import { planToken, runToken, withOverlay, type PageParams } from '@/lib/overlay';
+import { NoProjectGate } from '@/components/app/no-project-gate';
 
 export const metadata = { title: 'Overview · GritQA' };
 
@@ -334,10 +335,11 @@ export default async function OverviewPage({
   searchParams: Promise<PageParams>;
 }) {
   const params = await searchParams;
+  const currentProject = await getCurrentProjectOrNull();
+  if (!currentProject) return <NoProjectGate icon="overview" title="Overview" />;
   const [
     allPlans,
     coverageTotals,
-    currentProject,
     period,
     plansAwaitingReview,
     recentRuns,
@@ -345,7 +347,6 @@ export default async function OverviewPage({
   ] = await Promise.all([
     getAllPlans(),
     getCoverageTotals(),
-    getCurrentProject(),
     getPeriod(),
     getPlansAwaitingReview(),
     getRecentRuns(),
