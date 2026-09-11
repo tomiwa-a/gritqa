@@ -7,6 +7,7 @@ import { Panel } from '@/components/app/panel';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getCurrentProjectOrNull } from '@/lib/data';
+import { requestReindexAction } from '@/lib/actions/reindex';
 import { EmptyState } from '@/components/app/empty-state';
 import { OverlayHost } from '@/components/app/overlay-host';
 import { type PageParams } from '@/lib/overlay';
@@ -96,10 +97,12 @@ export default async function ProjectSettingsPage({ searchParams }: { searchPara
           label="Read it again"
           hint="Runs on your machine, so the CLI has to be the one to do it — this asks it to."
           control={
-            <Button variant="secondary" size="sm">
-              <Icon name="refresh" size={13} />
-              Ask for a fresh read
-            </Button>
+            <form action={requestReindexAction}>
+              <Button type="submit" variant="secondary" size="sm">
+                <Icon name="refresh" size={13} />
+                Ask for a fresh read
+              </Button>
+            </form>
           }
         />
       </Panel>

@@ -75,6 +75,26 @@ type RunPayload struct {
 	Plan              json.RawMessage `json:"plan"`
 }
 
+// Register announces the machine without asking for work. The attach loop
+// calls it before its first pass so the dashboard narrates that pass live;
+// claiming instead would hold a job through a pass that might take minutes.
+// A dashboard too old to know this route answers 404, which is information,
+// not failure: the pass still runs, only silently.
+func (c *Client) Register(ctx context.Context, id Identity) error {
+	const path = "/api/cli/register"
+	r, err := c.call(ctx, http.MethodPost, path, id)
+	if err != nil {
+		return err
+	}
+	if r.Status == http.StatusNotFound {
+		return OldDashboard
+	}
+	if !r.ok() {
+		return c.fail(path, r)
+	}
+	return nil
+}
+
 // Claim records that this machine is alive and asks for one job.
 func (c *Client) Claim(ctx context.Context, id Identity) (*Claimed, error) {
 	const path = "/api/cli/jobs/claim"

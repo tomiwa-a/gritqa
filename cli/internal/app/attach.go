@@ -42,9 +42,16 @@ type attached struct {
 	// prog is the index pass's live object while a reindex job runs it. Nil
 	// the rest of the time, so the poll carries no stale label.
 	prog atomic.Pointer[progress.Progress]
+	// last is the latest finished pass, held so idle polls keep narrating it.
+	// The dashboard holds the last label the same way it holds last_seen: a
+	// quiet machine still has something true to show.
+	last atomic.Pointer[progress.State]
 }
 
-func attach(ctx context.Context, s *session, snap *index.Snapshot, srv *mcp.Server, token string) error {
+// attach is the poll loop: one machine, one project, one job at a time. It
+// registers the machine and runs the first pass itself, so the dashboard
+// narrates the initial read live instead of meeting the project at the mirror.
+func attach(ctx context.Context, s *session, srv *mcp.Server, token string) error {
 	w, cfg, opts := s.w, s.cfg, s.opts
 
 	c, err := connect(ctx, w, cfg, opts)
@@ -64,12 +71,30 @@ func attach(ctx context.Context, s *session, snap *index.Snapshot, srv *mcp.Serv
 		srv:     srv,
 		tok:     token,
 	}
-	a.snap = snap
 	s.sync = a.environment
 
 	go a.dialOut(ctx)
 
-	a.mirror(ctx, snap)
+	// The row first, then the pass: the poll below quotes the live object, so
+	// the dashboard watches this read happen instead of learning about it at
+	// the mirror. Best-effort — an unreachable dashboard still gets a local
+	// index, exactly like before.
+	prog := progress.New(nil)
+	a.prog.Store(prog)
+	a.opts.Progress = prog
+	if err := c.Register(ctx, a.reporting()); err != nil {
+		w.Write(term.Line{Kind: term.Info, Text: "the dashboard is not answering, " +
+			"so this pass stays local: " + err.Error()})
+	}
+
+	got, err := read(ctx, w, cfg, a.opts)
+	if err != nil {
+		return err
+	}
+	a.snap = got.snap
+	a.keep(prog.Snapshot())
+
+	a.mirror(ctx, got.snap)
 	a.environment(ctx)
 	w.Write(term.Line{Kind: term.Blank})
 	w.Write(term.Line{Kind: term.Info, Text: "waiting for approved plans — Ctrl-C to stop"})
@@ -120,11 +145,20 @@ func (a *attached) reporting() cloud.Identity {
 			id.MCPUrl, id.MCPToken = "http://"+addr, a.tok
 		}
 	}
+	// A pass in flight first, then the latest finished one, then silence: an
+	// idle poll carries no label rather than a stale one it cannot defend.
 	if prog := a.prog.Load(); prog != nil {
 		snap := prog.Snapshot()
 		id.Progress = &snap
+	} else if last := a.last.Load(); last != nil {
+		id.Progress = last
 	}
 	return id
+}
+
+// keep holds a finished pass for idle polls to quote.
+func (a *attached) keep(state progress.State) {
+	a.last.Store(&state)
 }
 
 func slower(d time.Duration) time.Duration {
@@ -203,6 +237,7 @@ func (a *attached) reindex(ctx context.Context, job *cloud.Job) {
 		a.giveBack(ctx, job, err.Error())
 		return
 	}
+	a.keep(prog.Snapshot())
 
 	sent, err := a.c.PushIndex(ctx, cloud.Mirror(a.id.InstanceID, got.snap))
 	if err != nil {

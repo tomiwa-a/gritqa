@@ -112,15 +112,16 @@ func Run(ctx context.Context, opts Options) error {
 		opts.Draft = true
 	}
 
-	got, err := read(ctx, w, cfg, opts)
-	if err != nil {
-		return err
-	}
-
-	if opts.Draft {
-		return draftPlans(ctx, w, cfg, got, opts)
-	}
-	if opts.Once {
+	// The one-shot flows read here. The attach loop reads for itself after
+	// registering, so the dashboard narrates the initial pass live.
+	if opts.Draft || opts.Once {
+		got, err := read(ctx, w, cfg, opts)
+		if err != nil {
+			return err
+		}
+		if opts.Draft {
+			return draftPlans(ctx, w, cfg, got, opts)
+		}
 		return nil
 	}
 
@@ -128,11 +129,10 @@ func Run(ctx context.Context, opts Options) error {
 	// and the loop that runs what it approved. Two would mean two sandboxes and two
 	// handles on one cache for one project.
 	s := newSession(cfg, opts, w)
-	s.snap = got.snap
 	defer s.close(context.WithoutCancel(ctx))
 
 	srv, token := startMCP(ctx, w, s)
-	return attach(ctx, s, got.snap, srv, token)
+	return attach(ctx, s, srv, token)
 }
 
 // bindWithin bounds the wait for a listener. Long enough that a slow machine

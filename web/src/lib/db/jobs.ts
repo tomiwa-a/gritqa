@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { currentScope } from '@/lib/db/scope';
 import { jobs, testExecutions, testPlans } from '@/lib/db/schema';
 import type { TestPlanRow } from '@/lib/db/schema';
 
@@ -140,4 +141,61 @@ export async function enqueueRun(
       created: true,
     };
   });
+}
+
+/**
+ * Queue a fresh read of the codebase.
+ *
+ * A person's errand, unlike the poller's own: `requestedBy` says who asked, so
+ * the work page can show it. Queueing twice is not an error — a pending or
+ * claimed pass already answers the click, and the second click reports that
+ * instead of stacking a duplicate the machine would just run twice.
+ */
+export async function enqueueIndex(
+  projectId: number,
+  userId: number,
+): Promise<{ created: boolean }> {
+  const [live] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.projectId, projectId),
+        eq(jobs.type, 'index_codebase'),
+        inArray(jobs.status, ['pending', 'claimed']),
+      ),
+    )
+    .limit(1);
+  if (live) return { created: false };
+
+  await db.insert(jobs).values({
+    projectId,
+    type: 'index_codebase',
+    status: 'pending',
+    requestedBy: userId,
+  });
+  return { created: true };
+}
+
+/** Whether a re-read is already queued or running for the current project. */
+export async function pendingIndexForScope(): Promise<boolean> {
+  const scope = await currentScope();
+  if (!scope) return false;
+  return pendingIndex(scope.projectId);
+}
+
+/** Whether a re-read is already queued or running for this project. */
+export async function pendingIndex(projectId: number): Promise<boolean> {
+  const [live] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.projectId, projectId),
+        eq(jobs.type, 'index_codebase'),
+        inArray(jobs.status, ['pending', 'claimed']),
+      ),
+    )
+    .limit(1);
+  return !!live;
 }

@@ -9,6 +9,8 @@ import { NoProjectGate } from '@/components/app/no-project-gate';
 import { buttonVariants } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { getCurrentProjectOrNull, getMachineStatus } from '@/lib/data';
+import { pendingIndexForScope } from '@/lib/db/jobs';
+import { requestReindexAction } from '@/lib/actions/reindex';
 import type { IndexProgress } from '@/lib/model';
 import { cn } from '@/lib/cn';
 
@@ -39,6 +41,7 @@ export default async function CodebasePage() {
   const newest = machine.machines[0] ?? null;
   const progress = newest?.progress ?? null;
   const mark = `${machine.connected}:${JSON.stringify(progress)}`;
+  const reindexPending = await pendingIndexForScope();
 
   return (
     <>
@@ -137,8 +140,7 @@ export default async function CodebasePage() {
 
             <aside className="flex flex-col gap-4">
               <div className="rounded-xl border border-rule bg-app-panel p-4 shadow-panel">
-                <h3 className="text-[13px] font-medium text-ink">Mirror</h3>
-                <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-rule-soft bg-rule-soft">
+                <h3 className="text-[13px] font-medium text-ink">Mirror</h3>                <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-rule-soft bg-rule-soft">
                   {[
                     { value: String(project.fileCount), label: 'files tracked' },
                     { value: String(project.endpointCount), label: 'endpoints found' },
@@ -155,6 +157,25 @@ export default async function CodebasePage() {
                   Counted from the mirror rows, so the numbers cannot disagree with what they
                   describe. A project the CLI has never indexed reports zero, which is true.
                 </p>
+                {reindexPending ? (
+                  <p className="mt-3 flex items-center gap-1.5 border-t border-rule-soft pt-3 text-[12px] text-ink-muted">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inset-0 animate-ping rounded-full bg-ink opacity-60" />
+                      <span className="relative h-1.5 w-1.5 rounded-full bg-ink" />
+                    </span>
+                    Re-read requested — your machine picks it up on its next poll.
+                  </p>
+                ) : (
+                  <form action={requestReindexAction} className="mt-3 border-t border-rule-soft pt-3">
+                    <button
+                      type="submit"
+                      className={cn(buttonVariants({ variant: 'secondary', size: 'xs' }), 'w-full')}
+                    >
+                      <Icon name="refresh" size={13} />
+                      Re-read now
+                    </button>
+                  </form>
+                )}
               </div>
             </aside>
           </div>

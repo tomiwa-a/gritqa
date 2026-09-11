@@ -25,6 +25,10 @@ var ErrUnlinked = creds.ErrNoToken
 // ours: reaped, released, or already reported. Either way, stop.
 var ErrLostJob = errors.New("the server has this job as someone else's now")
 
+// OldDashboard is a 404 from a route newer than the server. The pass still
+// runs, only silently: presence reporting degrades to the mirror and the poll.
+var OldDashboard = errors.New("the dashboard predates this route")
+
 type Client struct {
 	Server string
 	Token  string

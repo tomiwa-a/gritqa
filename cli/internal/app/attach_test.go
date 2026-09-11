@@ -13,7 +13,7 @@ import (
 	"github.com/tomiwa-a/gritqa/cli/internal/cloud"
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
 	"github.com/tomiwa-a/gritqa/cli/internal/creds"
-	"github.com/tomiwa-a/gritqa/cli/internal/index"
+
 	"github.com/tomiwa-a/gritqa/cli/internal/mcp"
 )
 
@@ -132,7 +132,7 @@ func TestAttachRunsAClaimedPlan(t *testing.T) {
 	w, out := writer()
 	cfg := conf(t, &config.Run{})
 	linked(t, srv.URL, cfg.Root())
-	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,7 +174,7 @@ func TestAttachGivesBackWhatItCannotDo(t *testing.T) {
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
 	linked(t, srv.URL, cfg.Root())
-	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -203,7 +203,7 @@ func TestAttachSettlesAnUnreadablePayload(t *testing.T) {
 	w, _ := writer()
 	cfg := conf(t, &config.Run{})
 	linked(t, srv.URL, cfg.Root())
-	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), &index.Snapshot{Root: cfg.Root()}, nil, ""); err != nil {
+	if err := attach(ctx, newSession(cfg, Options{Server: srv.URL}, w), nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
