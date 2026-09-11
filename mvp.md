@@ -7,20 +7,20 @@ Goal: 2-minute demo, seamless connect, watchable indexing, minimal brain.
 - [x] Add clear Try demo button on landing — cut with the page
 - [x] Preserve guest actions and convert to real project on signup — cut
 
-## 2. GitHub login polish
-- [ ] Keep next destination after login
-- [ ] Show friendly errors on callback fail
-- [ ] Land new users in onboarding, old users in dashboard
+## 2. GitHub login polish — DONE
+- [x] Keep next destination after login
+- [x] Show friendly errors on callback fail
+- [x] Land new users in onboarding, old users in dashboard
 
-## 3. Device pairing without typing
-- [ ] Auto-open browser from CLI on connect
-- [ ] Allow copy-link approve for remote terminals
-- [ ] Allow code entry page with short expiry and refresh
+## 3. Device pairing without typing — DONE
+- [x] Auto-open browser from CLI on connect — best-effort, skips silently on SSH/CI
+- [x] Allow copy-link approve for remote terminals — verification URI already carried ?code=
+- [x] Allow code entry page with short expiry and refresh — 10-min single-use + pending/expiry copy
 
-## 4. Onboarding that detects reality
-- [ ] Advance steps only when link, index, draft actually happen
-- [ ] Allow leave and resume without redo
-- [ ] Add skip option that still creates project
+## 4. Onboarding that detects reality — DONE (skip fix + gates; step auto-advance cut as overkill)
+- [x] Advance steps only when link, index, draft actually happen — cut, gates + skip cover it
+- [x] Allow leave and resume without redo
+- [x] Add skip option that still creates project — skip lands on browsable dashboard with gates
 
 ## 5. Defer model key
 - [ ] Remove key requirement before first draft view

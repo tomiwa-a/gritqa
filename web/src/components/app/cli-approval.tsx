@@ -211,7 +211,9 @@ function Pending({
           : 'A CLI wants to link to your account'}
       </Title>
       <Body>
-        Only approve this if you started it. Check the code below against the one in your terminal.
+        Only approve this if you started it. Check the code below against the one in your
+        terminal. Codes last ten minutes — if this one expires, run{' '}
+        <span className="font-mono text-ink">gritqa login</span> again for a fresh one.
       </Body>
 
       <div className="mt-5 rounded-lg border border-rule bg-app px-4 py-3.5 text-center">

@@ -47,6 +47,10 @@ func link(ctx context.Context, w *term.Writer, cfg *config.Config, opts Options)
 	w.Write(term.Line{Kind: term.Info, Text: "open " + dev.VerificationURI})
 	w.Write(term.Line{Kind: term.Info, Text: "and approve this machine with the code " + dev.UserCode})
 
+	// Best-effort: the link above is the flow, this just saves a copy-paste on
+	// machines with a screen. Silent on servers and CI, silent on failure.
+	openBrowser(dev.VerificationURI)
+
 	got, err := approved(ctx, w, server, dev)
 	if err != nil {
 		return nil, err
