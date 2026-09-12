@@ -37,25 +37,25 @@ Goal: 2-minute demo, seamless connect, watchable indexing, minimal brain.
 - [x] Show cached instant for unchanged repos — hash fast path serves stored snapshot, no parse/model
 - [x] Handle resume after crash without restart — reindex heartbeat + claim reap + chunked mirror
 
-## 8. Endpoint states
-- [ ] Use Indexed, Tested, Invalid only
-- [ ] Show state chips in coverage grid
-- [ ] Keep history correct when endpoint changes
+## 8. Endpoint states — DONE (six states, derived; tested = proven but uncovered)
+- [x] Use Indexed, Tested, Invalid only — extended to six: invalid, failing, approved, tested, draft, none
+- [x] Show state chips in coverage grid — inherited via shared fill/label/tone maps + new dot tones
+- [x] Keep history correct when endpoint changes — contradiction yields to newer passing runs
 
-## 9. Recheck endpoint hand
-- [ ] Add Look again button per endpoint and plan step
-- [ ] Re-read only that route chain plus last trial result
-- [ ] Save note of what was re-read and what changed
+## 9. Recheck endpoint hand — DONE (step-first Look-again, merged revisions)
+- [x] Add Look again button per endpoint and plan step — doubt rows + step drawer (spine stays navigation)
+- [x] Re-read only that route chain plus last trial result — focused 12-call turn, trial evidence attached
+- [x] Save note of what was re-read and what changed — merged verdict + revision row, version-locked
 
-## 10. Trial-call promotion
-- [ ] Trial-call indexed endpoints in sandbox
-- [ ] Promote to Tested on real response
-- [ ] Mark Invalid on 404 or contradiction
+## 10. Trial-call promotion — DONE (read-scoped probe, fail-closed guards)
+- [x] Trial-call indexed endpoints in sandbox — trial_call tool, auto-boot, no reset/repair/ledger
+- [x] Promote to Tested on real response — proof table feeds the grid
+- [x] Mark Invalid on 404 or contradiction — fake verdicts, disproved by newer passes
 
-## 11. Delete invalid endpoints
-- [ ] Allow fix invalid into correct shape
-- [ ] Allow delete invalid with confirm
-- [ ] Remove all references without litter
+## 11. Delete invalid endpoints — DONE (no graveyard)
+- [x] Allow fix invalid into correct shape — Look-again re-proves; proof row overwrites in place
+- [x] Allow delete invalid with confirm — focus action with explicit consequences
+- [x] Remove all references without litter — proof row + covers stripped via versioned revisions
 
 ## 12. Brain storage base
 - [ ] Store facts per project with kind and source

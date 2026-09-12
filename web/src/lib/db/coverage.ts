@@ -1,60 +1,29 @@
 import { asc, eq } from 'drizzle-orm';
 import { db, sql as raw } from '@/lib/db';
 import { codebaseIndex } from '@/lib/db/schema';
+import { proofsOf } from '@/lib/db/endpoint-checks';
 import type { CoverageFile, CoverageState, EndpointCoverage } from '@/lib/model';
 import type { Method } from '@/components/ui/method-badge';
 
 /**
  * Coverage: the endpoints a project has, and what testing says about each one.
  *
- * `state` is not stored anywhere, and should not be -- it is a reading of three
- * other tables, and a stored copy would be a fourth thing to keep in step. The
- * endpoints come from `codebase_index`, which the CLI writes when it indexes; the
- * verdicts come from the plans that claim each endpoint and the runs that exercised
- * it. So a square goes red because a run failed, not because anyone marked it.
+ * `state` is not stored anywhere, and should not be -- it is a reading of four
+ * other tables, and a stored copy would be a fifth thing to keep in step. The
+ * endpoints come from `codebase_index`, which the CLI writes when it indexes;
+ * the verdicts come from the plans that claim each endpoint, the runs that
+ * exercised it, and the proofs that probed whether it exists at all.
  *
- * Precedence is failing, then approved, then draft. A failure outranks an approval
- * because the approval is a statement about the plan and the failure is a statement
- * about the code. An endpoint only archived plans touch counts as uncovered:
- * archived plans never run, so they are not evidence of anything.
+ * Precedence is invalid, then failing, then approved, then tested, then draft.
+ * Invalid outranks failing because a failure is a statement about code that
+ * exists and a contradiction is a statement that it does not -- fixing the plan
+ * comes before fixing the code. Tested sits below approved on purpose: it means
+ * proven real but covered by no approved plan, which is the gap to close, not a
+ * rank above intent that already closed it. An endpoint only archived plans
+ * touch counts as uncovered: archived plans never run, so they are not evidence
+ * of anything.
  */
 type EndpointJson = { method: string; path: string };
-
-/**
- * Which endpoints are failing, judged by their most recent settled result.
- *
- * "Most recent" and "settled" are both doing work here. Reading every result would
- * mean an endpoint that broke once in June stays red through six weeks of passing
- * runs, which is a memory of a bug rather than a report on the code. And a `skipped`
- * step is not evidence either way -- it says an earlier step aborted the run, not
- * anything about this endpoint -- so the newest pass or failure wins, looking past
- * however many skips sit on top of it.
- */
-async function failingEndpoints(projectId: number): Promise<Set<string>> {
-  const rows = (await raw`
-    SELECT DISTINCT ON (r.request_method, r.route_pattern)
-      r.request_method AS method,
-      r.route_pattern AS path,
-      r.status
-    FROM test_results r
-    JOIN test_executions e ON e.id = r.execution_id
-    WHERE e.project_id = ${projectId}
-      -- Which is also what keeps the grid HTTP-only. Both columns are null for a sql
-      -- or shell step, so those rows are not here, and that is a limit worth naming:
-      -- a plan whose real verification is a query leaves this endpoint's square green
-      -- off the 201 it got, even on a run the query failed. The run report says so;
-      -- the grid does not. Linking a query to the endpoint it proves is a feature, and
-      -- it is not this one -- inventing a square for a SELECT would be worse.
-      AND r.route_pattern IS NOT NULL
-      AND r.request_method IS NOT NULL
-      AND r.status IN ('passed', 'failed', 'error')
-    ORDER BY r.request_method, r.route_pattern, e.started_at DESC, r.id DESC
-  `) as unknown as { method: string; path: string; status: string }[];
-
-  return new Set(
-    rows.filter((row) => row.status !== 'passed').map((row) => `${row.method} ${row.path}`),
-  );
-}
 
 /** The endpoints each plan status claims, so a square can say who claimed it. */
 async function claimedEndpoints(projectId: number): Promise<Map<string, Set<string>>> {
@@ -72,23 +41,81 @@ async function claimedEndpoints(projectId: number): Promise<Map<string, Set<stri
   return byStatus;
 }
 
+/**
+ * Newest settled verdict per endpoint, pass or fail alike. "Most recent" and
+ * "settled" are both doing work here. Reading every result would mean an
+ * endpoint that broke once in June stays red through six weeks of passing
+ * runs, which is a memory of a bug rather than a report on the code. And a
+ * `skipped` step is not evidence either way -- it says an earlier step aborted
+ * the run, not anything about this endpoint -- so the newest pass or failure
+ * wins, looking past however many skips sit on top of it.
+ *
+ * Failing reads the failures off this; invalid reads the passes, so a
+ * contradiction cannot outlive the run that disproved it.
+ *
+ * Which is also what keeps the grid HTTP-only. Both columns are null for a sql
+ * or shell step, so those rows are not here, and that is a limit worth naming:
+ * a plan whose real verification is a query leaves this endpoint's square green
+ * off the 201 it got, even on a run the query failed. The run report says so;
+ * the grid does not. Linking a query to the endpoint it proves is a feature, and
+ * it is not this one -- inventing a square for a SELECT would be worse.
+ */
+async function settledVerdicts(
+  projectId: number,
+): Promise<Map<string, { status: string; at: Date }>> {
+  const rows = (await raw`
+    SELECT DISTINCT ON (r.request_method, r.route_pattern)
+      r.request_method AS method,
+      r.route_pattern AS path,
+      r.status AS status,
+      e.started_at AS at
+    FROM test_results r
+    JOIN test_executions e ON e.id = r.execution_id
+    WHERE e.project_id = ${projectId}
+      AND r.route_pattern IS NOT NULL
+      AND r.request_method IS NOT NULL
+      AND r.status IN ('passed', 'failed', 'error')
+    ORDER BY r.request_method, r.route_pattern, e.started_at DESC, r.id DESC
+  `) as unknown as { method: string; path: string; status: string; at: Date }[];
+
+  const out = new Map<string, { status: string; at: Date }>();
+  for (const row of rows) out.set(`${row.method} ${row.path}`, { status: row.status, at: row.at });
+  return out;
+}
+
 export async function listCoverage(projectId: number): Promise<CoverageFile[]> {
-  const [files, failing, claimed] = await Promise.all([
+  const [files, settled, claimed, proofs] = await Promise.all([
     db
       .select({ filePath: codebaseIndex.filePath, endpoints: codebaseIndex.endpoints })
       .from(codebaseIndex)
       .where(eq(codebaseIndex.projectId, projectId))
       .orderBy(asc(codebaseIndex.filePath)),
-    failingEndpoints(projectId),
+    settledVerdicts(projectId),
     claimedEndpoints(projectId),
+    proofsOf(projectId),
   ]);
 
   const approved = claimed.get('approved') ?? new Set<string>();
   const draft = claimed.get('draft') ?? new Set<string>();
 
+  const failing = new Set<string>();
+  const passedSince = new Map<string, Date>();
+  for (const [sig, v] of settled) {
+    if (v.status === 'passed') passedSince.set(sig, v.at);
+    else failing.add(sig);
+  }
+
   const stateOf = (signature: string): CoverageState => {
+    const proof = proofs.get(signature);
+    // A contradiction stands until a run disproves it with a pass newer than
+    // the probe. The probe alone never gets the last word over traffic.
+    if (proof?.verdict === 'fake') {
+      const passedAt = passedSince.get(signature);
+      if (!passedAt || passedAt <= proof.checkedAt) return 'invalid';
+    }
     if (failing.has(signature)) return 'failing';
     if (approved.has(signature)) return 'approved';
+    if (proof?.verdict === 'real') return 'tested';
     if (draft.has(signature)) return 'draft';
     return 'none';
   };

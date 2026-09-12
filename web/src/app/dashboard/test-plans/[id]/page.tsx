@@ -479,6 +479,7 @@ export default async function PlanDetailPage({
           nextHref={nextStep ? stepHrefFor(nextStep.id) : undefined}
           failure={detail.previousFailure}
           check={detail.checks.find((c) => c.stepId === step.id)}
+          planPublicId={plan.publicId}
         />
       )}
 

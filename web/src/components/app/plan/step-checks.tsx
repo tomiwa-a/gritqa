@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Icon, type IconName } from '@/components/ui/icon';
 import { Prose } from '@/components/ui/prose';
+import { LookAgainButton } from './look-again';
 import { checkIsDoubt } from '@/lib/model';
 import type { PlanStepSpec, StepCheck, StepCheckVerdict } from '@/lib/model';
 import { cn } from '@/lib/cn';
@@ -78,10 +79,12 @@ export function StepChecks({
   steps,
   checks,
   hrefFor,
+  planPublicId,
 }: {
   steps: PlanStepSpec[];
   checks: StepCheck[];
   hrefFor: (stepId: string) => string;
+  planPublicId: string;
 }) {
   const at = new Map(steps.map((step, i) => [step.id, i]));
   const named = new Map(steps.map((step) => [step.id, step.name]));
@@ -106,10 +109,13 @@ export function StepChecks({
         const verdict = VERDICT[check.verdict];
 
         return (
-          <li key={check.stepId} className="border-b border-rule-soft last:border-b-0">
+          <li
+            key={check.stepId}
+            className="flex items-start gap-2 border-b border-rule-soft px-4 py-2.5 last:border-b-0"
+          >
             <Link
               href={hrefFor(check.stepId)}
-              className="flex gap-2.5 px-4 py-2.5 transition-colors duration-150 hover:bg-app-hover"
+              className="flex min-w-0 flex-1 gap-2.5 transition-colors duration-150 hover:bg-app-hover"
             >
               <Icon
                 name={verdict.icon}
@@ -119,7 +125,7 @@ export function StepChecks({
               <div className="min-w-0 flex-1">
                 <p className="text-[12.5px] leading-snug">
                   <span className={cn('font-medium', verdict.tone)}>{verdict.label}</span>
-                  <span className="text-ink-subtle"> · </span>
+                  <span className="text-ink-subtle"> — </span>
                   <span className="nums text-ink">
                     {index === undefined ? check.stepId : `step ${index + 1}`}
                   </span>
@@ -132,6 +138,11 @@ export function StepChecks({
                 </Prose>
               </div>
             </Link>
+            <LookAgainButton
+              planPublicId={planPublicId}
+              stepId={check.stepId}
+              className="mt-1 shrink-0"
+            />
           </li>
         );
       })}
@@ -153,7 +164,13 @@ export function CheckMark({ check }: { check: StepCheck | undefined }) {
 }
 
 /** And in the drawer, where the note has room to be read. */
-export function CheckNote({ check }: { check: StepCheck | undefined }) {
+export function CheckNote({
+  check,
+  planPublicId,
+}: {
+  check: StepCheck | undefined;
+  planPublicId: string;
+}) {
   if (!check || !checkIsDoubt(check)) return null;
   const verdict = VERDICT[check.verdict];
 
@@ -167,11 +184,12 @@ export function CheckNote({ check }: { check: StepCheck | undefined }) {
       )}
     >
       <Icon name={verdict.icon} size={14} className={cn('mt-px shrink-0', verdict.tone)} />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-[12.5px] leading-snug font-medium text-ink">{verdict.heading}</p>
         <Prose size="sm" className="mt-1">
           {check.note}
         </Prose>
+        <LookAgainButton planPublicId={planPublicId} stepId={check.stepId} className="mt-2" />
       </div>
     </div>
   );

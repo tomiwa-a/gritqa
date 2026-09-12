@@ -54,6 +54,8 @@ const TONE = {
   review: { fill: 'bg-warn', label: 'Waiting for review' },
   approved: { fill: 'bg-pass', label: 'Approved' },
   running: { fill: 'bg-info', label: 'Running' },
+  tested: { fill: 'bg-info', label: 'Proven' },
+  invalid: { fill: 'bg-series-4', label: 'Not real' },
 } as const;
 
 export function StatusDot({

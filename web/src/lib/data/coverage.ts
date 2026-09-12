@@ -22,6 +22,6 @@ export async function getCoverageTotals(): Promise<CoverageTotals> {
         [endpoint.state]: totals[endpoint.state] + 1,
         total: totals.total + 1,
       }),
-      { approved: 0, draft: 0, failing: 0, none: 0, total: 0 },
+      { approved: 0, draft: 0, failing: 0, none: 0, tested: 0, invalid: 0, total: 0 },
     );
 }

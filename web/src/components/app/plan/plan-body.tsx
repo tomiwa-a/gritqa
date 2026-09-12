@@ -106,7 +106,12 @@ export function PlanBody({
           bodyClassName="p-0"
           className={detail.checks.some(checkIsDoubt) ? 'border-warn/30' : undefined}
         >
-          <StepChecks steps={detail.steps} checks={detail.checks} hrefFor={stepHrefFor} />
+          <StepChecks
+            steps={detail.steps}
+            checks={detail.checks}
+            hrefFor={stepHrefFor}
+            planPublicId={detail.publicId}
+          />
         </Panel>
       )}
 

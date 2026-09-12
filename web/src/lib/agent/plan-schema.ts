@@ -296,6 +296,16 @@ export const checkSchema = z.object({
     .describe(
       'What you read and what it said, in one or two lines, naming the file or the query. For `wrong`, say what the code has instead so the developer can fix it in one edit. Empty string for a plain confirmation with nothing to add.',
     ),
+  trial: z
+    .object({
+      method: z.string().describe('The method you passed to trial_call'),
+      path: z.string().describe('The path you passed to trial_call, as served'),
+      code: z.number().describe('The status code that came back'),
+    })
+    .nullish()
+    .describe(
+      'When you called trial_call for this step: what you asked and what answered. Omit it when you did not call it -- most steps settle off the code alone, and an invented trial is worse than none.',
+    ),
 });
 
 export const checksSchema = z.object({
@@ -322,6 +332,7 @@ export function checksFor(draft: ChecksDraft, stepIds: string[]): StepCheck[] {
       stepId: check.stepId,
       verdict: check.verdict,
       note: check.note.trim(),
+      ...(check.trial ? { trial: check.trial } : {}),
     });
   }
 
@@ -330,6 +341,22 @@ export function checksFor(draft: ChecksDraft, stepIds: string[]): StepCheck[] {
      as a shorter plan, and "every step held up" is a claim that has to be true. */
   return stepIds.map(
     (stepId) => given.get(stepId) ?? { stepId, verdict: 'unsupported' as const, note: '' },
+  );
+}
+
+/**
+ * The trial evidence buried in a set of checks: what was probed and what
+ * answered. The caller records each one as proof and names the source — a bulk
+ * verification probes, a Look-again re-proves.
+ */
+export function trialsOf(checks: StepCheck[]): { method: string; path: string; code: number }[] {
+  return checks.flatMap((check) =>
+    check.trial &&
+    typeof check.trial.method === 'string' &&
+    typeof check.trial.path === 'string' &&
+    typeof check.trial.code === 'number'
+      ? [{ method: check.trial.method, path: check.trial.path, code: check.trial.code }]
+      : [],
   );
 }
 

@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { Icon } from '@/components/ui/icon';
 import { Badge, StatusDot } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { MethodBadge } from '@/components/ui/method-badge';
+import { deleteInvalidEndpointAction } from '@/lib/actions/endpoints';
 import {
   COVERAGE_FILL,
   COVERAGE_LABEL,
@@ -72,6 +73,23 @@ async function NextAction({
         </Link>
       );
     }
+  }
+
+  if (state === 'invalid') {
+    return (
+      <form action={deleteInvalidEndpointAction} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="method" value={method} />
+        <input type="hidden" name="path" value={path} />
+        <Button type="submit" variant="danger" size="sm">
+          <Icon name="archive" size={14} />
+          Delete this endpoint
+        </Button>
+        <span className="text-[12px] text-ink-subtle">
+          Removes the proof and stops {plans.length === 1 ? 'the plan touching' : 'the plans touching'} it
+          from claiming it.
+        </span>
+      </form>
+    );
   }
 
   if (state === 'draft') {

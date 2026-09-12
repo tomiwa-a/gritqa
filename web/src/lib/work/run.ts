@@ -10,9 +10,14 @@ import {
   NoModelKeyError,
   askAgent,
   draftPlan,
+  openResearch,
   priorFindingsOf,
+  recheckStep,
   refinePlan,
+  resolveModel,
 } from '@/lib/agent';
+import { trialsOf } from '@/lib/agent/plan-schema';
+import { recordCheck } from '@/lib/db/endpoint-checks';
 import type { Session } from '@/lib/session';
 import type { Held, Recorder } from '@/lib/db/work';
 
@@ -170,6 +175,17 @@ async function draftJob(
     checks: draft.checks,
   });
 
+  // Trial evidence from the verification pass becomes proof with source
+  // 'trial': probes the bulk pass made, distinct from Look-again re-proofs.
+  for (const trial of trialsOf(draft.checks ?? [])) {
+    await recordCheck(job.projectId, {
+      method: trial.method,
+      path: trial.path,
+      statusCode: trial.code,
+      source: 'trial',
+    });
+  }
+
   await record({
     userId,
     action: 'test_plan.drafted',
@@ -211,6 +227,12 @@ async function refineJob(
   userId: number,
   session?: Session | null,
 ): Promise<Done> {
+  // A Look-again is a refine job with a step pinned to it: one verdict, merged
+  // into the existing checks, rather than a rewritten plan. Same queue, same
+  // version lock, a narrower turn.
+  if (typeof payload.recheckStep === 'string' && payload.recheckStep) {
+    return recheckJob(job, watch, payload, userId, session);
+  }
   const publicId = text(payload, 'plan');
   const instruction = text(payload, 'instruction');
 
@@ -234,6 +256,15 @@ async function refineJob(
     checks: draft.checks,
   });
 
+  for (const trial of trialsOf(draft.checks ?? [])) {
+    await recordCheck(job.projectId, {
+      method: trial.method,
+      path: trial.path,
+      statusCode: trial.code,
+      source: 'trial',
+    });
+  }
+
   await record({
     userId,
     action: 'test_plan.revised',
@@ -247,6 +278,119 @@ async function refineJob(
   return {
     href: `/dashboard/test-plans/${publicId}`,
     note: `Wrote v${written.version} of "${draft.name}".`,
+    revalidate: [
+      '/dashboard',
+      '/dashboard/queue',
+      '/dashboard/test-plans',
+      `/dashboard/test-plans/${publicId}`,
+      '/dashboard/settings/activity',
+    ],
+  };
+}
+
+/**
+ * One step, looked at again.
+ *
+ * Read at work time, not enqueue time, for the same reason refineJob reads
+ * then: `fromVersion` has to be the version the agent was actually shown, so
+ * a plan revised twice in a row refuses the second write instead of stacking
+ * it. The fresh verdict replaces that step's old one; every other check
+ * stands, including verdicts on steps that moved — hand-edit carry-over
+ * already dropped those, and this must not resurrect them.
+ *
+ * Trial evidence becomes proof with source 'recheck': a probe this hand made,
+ * distinct from the bulk verification's probes.
+ */
+async function recheckJob(
+  job: Held,
+  watch: Recorder,
+  payload: Record<string, unknown>,
+  userId: number,
+  session?: Session | null,
+): Promise<Done> {
+  const publicId = text(payload, 'plan');
+  const stepId = text(payload, 'recheckStep');
+
+  /* Read here rather than carried in the payload, and that is the load-bearing part:
+     `fromVersion` has to be the version the agent was actually shown, so a plan
+     revised twice in a row refuses the second write instead of overwriting the
+     first. Enqueue-time state would make the check pass and the plan wrong. */
+  const detail = await planDetail(job.projectId, publicId);
+  if (!detail) throw new Error('That plan is not in this project any more.');
+  const step = detail.steps.find((s) => s.id === stepId);
+  if (!step) throw new Error('That step is not in this plan any more.');
+
+  const prior = detail.checks.find((c) => c.stepId === stepId) ?? null;
+
+  const { model, label } = await resolveModel(session);
+  const research = await openResearch();
+  let check;
+  try {
+    ({ check } = await recheckStep({
+      model,
+      tools: research.tools,
+      step,
+      variables: detail.variables,
+      baseUrl: detail.baseUrl,
+      priorNote: prior?.note || null,
+      watch,
+    }));
+  } finally {
+    await research.close().catch(() => {});
+  }
+
+  for (const trial of trialsOf([check])) {
+    await recordCheck(job.projectId, {
+      method: trial.method,
+      path: trial.path,
+      statusCode: trial.code,
+      source: 'recheck',
+      note: check.note || null,
+    });
+  }
+
+  const checks = detail.checks.some((c) => c.stepId === stepId)
+    ? detail.checks.map((c) => (c.stepId === stepId ? check : c))
+    : [...detail.checks, check];
+
+  const written = await writeRevision({
+    projectId: job.projectId,
+    userId,
+    planPublicId: publicId,
+    fromVersion: detail.version,
+    instruction: `Look again at step "${step.name}".`,
+    draft: {
+      name: detail.name,
+      description: detail.description,
+      variables: detail.variables,
+      covers: detail.covers,
+      steps: detail.steps,
+      assumptions: detail.assumptions,
+      summary: `Re-checked "${step.name}": ${check.verdict}.`,
+      changes: [
+        {
+          kind: 'value_changed',
+          stepName: step.name,
+          detail: `Re-check: ${check.verdict}${check.note ? ` — ${check.note}` : ''}`,
+        },
+      ],
+    },
+    checks,
+  });
+
+  await record({
+    userId,
+    action: 'test_plan.rechecked',
+    entityType: 'test_plans',
+    entityId: written.planId,
+    values: { name: detail.name, version: written.version, step: step.name, model: label },
+    ip: askedFrom(payload),
+    at: job.requestedAt,
+  });
+
+  return {
+    href: `/dashboard/test-plans/${publicId}`,
+    note: `Re-checked "${step.name}" — ${check.verdict} (v${written.version}).`,
     revalidate: [
       '/dashboard',
       '/dashboard/queue',

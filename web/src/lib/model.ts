@@ -230,6 +230,12 @@ export type StepCheck = {
   verdict: StepCheckVerdict;
   /** Why, in the developer's terms, naming what was read. Empty for a plain confirmation. */
   note: string;
+  /**
+   * What a trial_call answered for this step, when one was made. Evidence, not
+   * verdict: the grid reads it as proof the route is real, whatever the verdict
+   * says about the fields around it.
+   */
+  trial?: { method: string; path: string; code: number };
 };
 
 /** Whether a check is worth a developer's attention. A confirmation is not. */
@@ -478,7 +484,7 @@ export type TestingRule = {
   detail: string;
 };
 
-export type CoverageState = 'approved' | 'draft' | 'failing' | 'none';
+export type CoverageState = 'approved' | 'draft' | 'failing' | 'none' | 'tested' | 'invalid';
 
 export type EndpointCoverage = {
   method: Method;

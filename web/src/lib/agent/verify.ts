@@ -119,9 +119,15 @@ Check what the plan asserts about the code, not whether it is a good test:
   return the ones the assertions read? \`read_file\` on the handler settles it. For a
   \`sql\` step, do those columns exist -- \`start_sandbox\` then \`db\` against
   information_schema is how you find out, and it is worth the two calls.
-- the status codes. Does the handler have a path that returns what the step expects?
-  A step asserting 401 against a handler that answers 400 for a bad credential is a
-  step that will fail for the wrong reason.
+ - the status codes. Does the handler have a path that returns what the step expects?
+   A step asserting 401 against a handler that answers 400 for a bad credential is a
+   step that will fail for the wrong reason.
+ - the live answer, sparingly. \`trial_call\` asks one endpoint whether it is real
+   and comes back with the status code. Reach for it only where the code cannot
+   settle the route -- a dynamic mount, a gateway rewrite, a path nobody has ever
+   called -- and report what you asked and what answered in the trial field, so the
+   verdict carries its own evidence. Never trial a guarded route you cannot supply
+   a configured {{name}} for: a probe with an invented credential proves nothing.
 
 Use the tools. A verdict you reasoned out without reading anything is exactly the
 mistake this pass exists to catch, and \`unsupported\` is the honest answer where you
@@ -220,5 +226,94 @@ export async function verifyPlan(input: {
       detail: { why },
     });
     return { checks: [], findings: '' };
+  }
+}
+
+/**
+ * One step, looked at again: the Look-again hand behind the doubt rows.
+ *
+ * Same two turns as the full pass and same rules — investigate with tools,
+ * then one verdict — but scoped to the step somebody pointed at, on a budget
+ * of a dozen calls. Judging still never fixes: a fresh verdict merges into the
+ * plan's existing checks, and the steps it did not touch keep theirs.
+ *
+ * Never fatal, like the pass it narrows: no verdict reads as unverified for
+ * that step, and the plan is otherwise untouched.
+ */
+export async function recheckStep(input: {
+  model: LanguageModel;
+  tools: ToolSet;
+  step: PlanStepSpec;
+  variables: Record<string, string>;
+  baseUrl: string;
+  priorNote: string | null;
+  /** Where to narrate the reading, when this is queued work. */
+  watch?: Watcher;
+}): Promise<{ check: StepCheck; findings: string }> {
+  const watch = input.watch ?? unwatched;
+
+  const routes = await recorded();
+  const plan = [
+    `One step to re-check, because a developer asked for a second look${input.priorNote ? ' after this verdict' : ''}:`,
+    input.priorNote ? `"${input.priorNote}"` : '',
+    '',
+    'The step, with its url relative to',
+    `${input.baseUrl}, and {{name}} referring to one of these values the run supplies:`,
+    JSON.stringify(input.variables),
+    '',
+    stepsPrompt([input.step]),
+    '',
+    evidencePrompt(routes),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  try {
+    const investigation = await generateText({
+      model: input.model,
+      system: CHECK_RULES,
+      prompt: [
+        plan,
+        '',
+        'Go and read what settles this step: the route in the index, the handler,',
+        'the columns in information_schema. Call trial_call when the code alone',
+        'cannot settle whether the route is real. Report what you found and where',
+        'you could not establish anything. Do not give a verdict yet.',
+      ].join('\n'),
+      tools: input.tools,
+      stopWhen: isStepCount(12),
+      ...watching(watch, 'verify'),
+    });
+
+    const out = await generateObject({
+      model: input.model,
+      schema: checksSchema,
+      system: CHECK_RULES,
+      prompt: [
+        plan,
+        '',
+        'What you found when you looked:',
+        investigation.text,
+        '',
+        'Now the one verdict for this step, using its id exactly as written.',
+        'A step you did not manage to establish anything about is `unsupported`.',
+      ].join('\n'),
+    });
+
+    const [check] = checksFor(out.object, [input.step.id]);
+    return { check, findings: investigation.text };
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    console.warn(`verify: recheck failed: ${why}`);
+    watch.note({
+      phase: 'verify',
+      kind: 'note',
+      label: 'Could not re-check the step, so its verdict stands.',
+      detail: { why },
+    });
+    return {
+      check: { stepId: input.step.id, verdict: 'unsupported', note: '' },
+      findings: '',
+    };
   }
 }

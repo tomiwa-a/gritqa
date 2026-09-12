@@ -183,6 +183,58 @@ func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) 
 	return engine.Run(ctx, p)
 }
 
+// TrialCall answers whether one endpoint is real: a single request against the
+// sandbox as it stands, with no reset, no repair, and no ledger settling. A
+// probe is evidence for verification, not a run — it must never soften what it
+// finds, fix it, or clean up after it. Guarded names resolve from run
+// variables exactly like a run; a name with no value refuses before boot,
+// which is what keeps a probe from inventing a credential.
+func (b *serve) TrialCall(ctx context.Context, method, path string, headers, query map[string]string, body map[string]any) (*run.StepResult, error) {
+	p := &plan.Plan{
+		Name: "trial",
+		Steps: []plan.Step{{
+			ID:   "probe",
+			Name: method + " " + path,
+			Request: plan.Request{
+				Method: method, URL: path,
+				Headers: headers, Query: query, Body: body,
+			},
+		}},
+	}
+	vars := b.cfg.Run.ResolvedVariables()
+	if missing := unset(p, vars.Missing); len(missing) > 0 {
+		return nil, fmt.Errorf("run.variables reads %s from the environment, and there is nothing there",
+			strings.Join(missing, ", "))
+	}
+
+	b.mu.Lock()
+	st, err := b.staged(ctx)
+	if err != nil {
+		b.mu.Unlock()
+		return nil, err
+	}
+	base := st.BaseURL()
+	engine := &run.Engine{
+		BaseURL:   base,
+		Variables: vars.Values,
+		Secrets:   secrets(vars, st),
+		State:     st,
+		SandboxDB: st.DB(),
+	}
+	b.mu.Unlock()
+
+	b.w.Write(term.Line{Kind: term.Info,
+		Text: fmt.Sprintf("probing %s %s against %s", method, path, base)})
+	res, err := engine.Run(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Steps) == 0 {
+		return nil, errors.New("the probe ran nothing, so there is no answer")
+	}
+	return &res.Steps[0], nil
+}
+
 func (b *serve) Teardown(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

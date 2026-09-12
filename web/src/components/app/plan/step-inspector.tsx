@@ -82,6 +82,7 @@ export function StepInspector({
   nextHref,
   failure,
   check,
+  planPublicId,
 }: {
   step: PlanStepSpec;
   index: number;
@@ -91,6 +92,7 @@ export function StepInspector({
   nextHref?: string;
   failure?: PlanFailureSeed | null;
   check?: StepCheck;
+  planPublicId: string;
 }) {
   const broke = failure?.stepId === step.id;
   const uses = variablesUsedBy(step);
@@ -131,7 +133,7 @@ export function StepInspector({
         </div>
       )}
 
-      <CheckNote check={check} />
+      <CheckNote check={check} planPublicId={planPublicId} />
 
       <DrawerBlock label="What it does">
         <Prose>{step.description}</Prose>

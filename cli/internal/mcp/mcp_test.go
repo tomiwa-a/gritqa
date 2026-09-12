@@ -72,6 +72,10 @@ func (s *stub) RunPlan(_ context.Context, p *plan.Plan) (*run.Result, error) {
 	return &run.Result{Plan: p.Name, Status: run.RunPassed}, nil
 }
 
+func (s *stub) TrialCall(_ context.Context, method, path string, _ map[string]string, _ map[string]string, _ map[string]any) (*run.StepResult, error) {
+	return &run.StepResult{Method: method, URL: path, Code: 200}, nil
+}
+
 func (s *stub) Teardown(context.Context) error {
 	s.down = true
 	return nil

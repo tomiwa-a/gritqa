@@ -820,9 +820,33 @@ export const mockEndpoints = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     ...stamps,
   },
-  /** One mock per route: two rows for the same one is an ambiguity to guess at. */
-  (t) => [uniqueIndex('mock_endpoints_route_idx').on(t.projectId, t.method, t.path)],
-);
+    /** One mock per route: two rows for the same one is an ambiguity to guess at. */
+    (t) => [uniqueIndex('mock_endpoints_route_idx').on(t.projectId, t.method, t.path)],
+  );
+
+/**
+ * Latest proof per endpoint. Trial calls and rechecks overwrite; runs and
+ * plans only read. History would be a second ledger nobody opens — the note
+ * says where the verdict came from. See `drizzle/0015_endpoint_checks.sql`.
+ */
+export const endpointChecks = pgTable(
+    'endpoint_checks',
+    {
+      ...identity,
+      projectId: bigint('project_id', { mode: 'number' })
+        .notNull()
+        .references(() => projects.id, { onDelete: 'cascade' }),
+      method: varchar('method', { length: 16 }).notNull(),
+      path: text('path').notNull(),
+      verdict: varchar('verdict', { length: 16 }).notNull(),
+      statusCode: integer('status_code'),
+      source: varchar('source', { length: 16 }).notNull(),
+      note: text('note'),
+      checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+      ...stamps,
+    },
+    (t) => [uniqueIndex('endpoint_checks_proof_idx').on(t.projectId, t.method, t.path)],
+  );
 
 /**
  * The developer's compose file, as a fact.

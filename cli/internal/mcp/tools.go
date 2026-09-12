@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -86,6 +87,14 @@ var surface = []struct {
 				"information_schema (or equivalent) describes what the project created, and you can make " +
 				"multiple calls to join, filter, and cross-check. For non-SQL stores (MongoDB, Redis, " +
 				"Kafka, etc.) this has no data to query — use search + read_file on the code instead."}, s.db)
+	}},
+	{Read, func(m *sdk.Server, s *Server) {
+		sdk.AddTool(m, &sdk.Tool{Name: "trial_call",
+			Description: "Ask one endpoint whether it is real: a single request against the sandbox " +
+				"as it stands, and back comes the status code. No reset, no repair, no plan file " +
+				"— a probe is evidence for verification, not a run. Copy the path as served, query " +
+				"string included when routing uses it. Guarded names like {{ADMIN_TOKEN}} resolve " +
+				"from run variables; a name with no value refuses rather than sending nothing."}, s.trialCall)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "derive_environment",
@@ -847,6 +856,76 @@ func movedList(ms []run.Moved) []movedOut {
 		out[i] = movedOut{Unit: m.Unit, Rows: m.Rows, From: m.From, To: m.To}
 	}
 	return out
+}
+
+// trial_call
+
+type trialIn struct {
+	Method  string            `json:"method" jsonschema:"GET, POST, PUT, PATCH or DELETE"`
+	Path    string            `json:"path" jsonschema:"endpoint path as served, query string included when routing uses it"`
+	Headers map[string]string `json:"headers,omitempty" jsonschema:"extra headers; {{names}} from run variables resolve, missing names refuse"`
+	Query   map[string]string `json:"query,omitempty" jsonschema:"extra query parameters beyond what the path carries"`
+	Body    string            `json:"body,omitempty" jsonschema:"JSON object text for POST/PUT/PATCH, empty when the call carries none"`
+}
+
+type trialOut struct {
+	Method    string `json:"method"`
+	Path      string `json:"path"`
+	Status    string `json:"status"`
+	Code      int    `json:"code"`
+	ElapsedMs int64  `json:"elapsed_ms"`
+	Body      string `json:"body,omitempty"`
+	Clipped   bool   `json:"body_clipped,omitempty"`
+	Err       string `json:"error,omitempty"`
+}
+
+func (s *Server) trialCall(ctx context.Context, _ *sdk.CallToolRequest, in trialIn) (*sdk.CallToolResult, trialOut, error) {
+	out := trialOut{Method: in.Method, Path: in.Path}
+	switch in.Method {
+	case "GET", "POST", "PUT", "PATCH", "DELETE":
+	default:
+		return nil, out, fmt.Errorf("method is %q — GET, POST, PUT, PATCH or DELETE", in.Method)
+	}
+	if strings.TrimSpace(in.Path) == "" {
+		return nil, out, errors.New("path is empty — copy the URL as served")
+	}
+	var body map[string]any
+	if strings.TrimSpace(in.Body) != "" {
+		if err := json.Unmarshal([]byte(in.Body), &body); err != nil {
+			return nil, out, fmt.Errorf("body is not a JSON object: %w", err)
+		}
+	}
+
+	if _, err := s.live(); err != nil {
+		began := time.Now()
+		s.log("trial_call: no sandbox running, auto-starting")
+		if _, serr := s.back.StartSandbox(ctx); serr != nil {
+			return nil, out, fmt.Errorf("no sandbox was running and auto-start failed: %w", serr)
+		}
+		if s.back.Sandbox() == nil {
+			return nil, out, errors.New("sandbox auto-start reported success but no sandbox is available")
+		}
+		s.log(fmt.Sprintf("trial_call: sandbox up in %s", time.Since(began).Round(time.Millisecond)))
+	}
+
+	res, err := s.back.TrialCall(ctx, in.Method, in.Path, in.Headers, in.Query, body)
+	if err != nil {
+		out.Err = err.Error()
+		return nil, out, nil
+	}
+	out.Status, out.Code, out.ElapsedMs = string(res.Status), res.Code, res.Elapsed.Milliseconds()
+	out.Body, out.Clipped = clipBody(res.Body)
+	return nil, out, nil
+}
+
+// clipBody keeps evidence readable: the verdict rides on the status, and a
+// 200 KB listing page teaches verification nothing a truncated one does not.
+func clipBody(body []byte) (string, bool) {
+	const max = 4096
+	if len(body) <= max {
+		return string(body), false
+	}
+	return string(body[:max]), true
 }
 
 // snapshot, restore, teardown

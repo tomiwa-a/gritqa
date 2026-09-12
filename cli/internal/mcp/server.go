@@ -43,6 +43,10 @@ type Backend interface {
 	// RunPlan executes an approved plan, with repair and the state ledger wired
 	// exactly as --plan wires them.
 	RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error)
+	// TrialCall probes one endpoint against the sandbox as it stands: no
+	// reset, no repair, no ledger settling. Evidence for verification, never
+	// a run — which is why it is read-scoped while run_plan is not.
+	TrialCall(ctx context.Context, method, path string, headers, query map[string]string, body map[string]any) (*run.StepResult, error)
 	Teardown(ctx context.Context) error
 }
 

@@ -358,6 +358,8 @@ export function coverageTotalsOf(endpoints: { state: CoverageState }[]) {
     draft: 0,
     failing: 0,
     none: 0,
+    tested: 0,
+    invalid: 0,
   } as Record<CoverageState, number>);
 }
 
