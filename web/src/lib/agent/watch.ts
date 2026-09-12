@@ -147,6 +147,8 @@ function reading(tool: string, input: unknown): string {
       return 'Took the sandbox down';
     case 'derive_environment':
       return 'Worked out how the project boots';
+    case 'environment_status':
+      return 'Read how the project boots';
     default:
       return `Called ${tool}`;
   }

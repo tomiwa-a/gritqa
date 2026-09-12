@@ -1,8 +1,6 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -10,39 +8,52 @@ import (
 	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 )
 
-// The block handed back for approval has to be one Load accepts, or the human
-// pastes it and the next run still says nothing knows how this project boots.
-func TestTheBlockThatApprovesAProposalLoads(t *testing.T) {
-	want := sandbox.Environment{
-		App: "app", Port: 8080, Database: "db", DBPort: 3306, Driver: "mysql",
-		Login:    sandbox.Login{User: "$MYSQL_USER", Password: "$MYSQL_PASSWORD", Name: "$MYSQL_DATABASE"},
-		Schema:   []sandbox.SchemaStep{{Service: "migrate"}, {Service: "app", Run: []string{"sh", "-c", "seed"}}},
-		Writable: []string{"/app/api/uploads"},
-		Author:   sandbox.AuthorConfig,
-	}
-	block := config.EnvironmentBlock(toConfig(want))
-
+// The verdicts a human writes have to be the verdicts a boot reads, or the
+// config is decoration. Services in, classifications out, through a save and
+// a load so the YAML shape is covered too.
+func TestServiceVerdictsBecomeTheBootEnvironment(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, config.Dir), 0o755); err != nil {
-		t.Fatal(err)
+	cfg := config.New(root, "main")
+	cfg.Run = &config.Run{
+		Sandbox: &config.Sandbox{
+			Compose:  []string{"compose.yaml"},
+			Egress:   "deny",
+			Writable: []string{"/app/api/uploads"},
+			Services: map[string]config.Service{
+				"app":    {Role: "tested", Port: 8080},
+				"db":     {Role: "support", Port: 3306, Measure: "sql", Driver: "mysql"},
+				"migrate": {Role: "schema"},
+				"seed":   {Role: "schema", Run: []string{"sh", "-c", "seed"}},
+				"tunnel": {Role: "ignore", Why: "reaches live infra"},
+			},
+		},
 	}
-	path := filepath.Join(root, config.Dir, config.Name)
-	if err := os.WriteFile(path, []byte("project: hotel-api\n"+block), 0o644); err != nil {
+	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.Load(root)
+	loaded, err := config.Load(root)
 	if err != nil {
-		t.Fatalf("the block does not load: %v\n%s", err, block)
+		t.Fatal(err)
 	}
-	e := cfg.Run.SandboxOpts().Environment
-	if e == nil {
-		t.Fatalf("the block loaded and set no environment:\n%s", block)
+	got := fromConfig(*loaded.Run.Sandbox)
+
+	want := sandbox.Environment{
+		Author:   sandbox.AuthorConfig,
+		Egress:   "deny",
+		Writable: []string{"/app/api/uploads"},
+		Services: []sandbox.Classification{
+			{Service: "app", Role: sandbox.RoleTested, Port: 8080},
+			{Service: "db", Role: sandbox.RoleSupport, Port: 3306, Measure: sandbox.MeasureSQL, Driver: "mysql"},
+			{Service: "migrate", Role: sandbox.RoleSchema},
+			{Service: "seed", Role: sandbox.RoleSchema, Run: []string{"sh", "-c", "seed"}},
+			{Service: "tunnel", Role: sandbox.RoleIgnore, Why: "reaches live infra"},
+		},
 	}
-	if got := fromConfig(*e); !reflect.DeepEqual(got, want) {
-		t.Errorf("the block round-trips to\n%+v\nwant\n%+v\nfrom\n%s", got, want, block)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("config became\n%+v\nwant\n%+v", got, want)
 	}
-	if len(cfg.Retired()) != 0 {
-		t.Errorf("the block uses keys nothing reads: %v", cfg.Retired())
+	if len(loaded.Retired()) != 0 {
+		t.Errorf("a config of only live keys reports %v as retired", loaded.Retired())
 	}
 }

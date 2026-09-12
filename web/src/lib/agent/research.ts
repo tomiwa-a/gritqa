@@ -192,8 +192,8 @@ export async function openResearch(): Promise<Research> {
  * The CLI's tool schemas, in the dialect every provider can actually read.
  *
  * A model provider's function-calling schema is a *subset* of JSON Schema, and the
- * subsets disagree. The CLI writes valid JSON Schema -- `derive_environment.recipe`
- * is `type: ["null", "object"]`, an optional object -- and the Google provider turns
+ * subsets disagree. The CLI writes valid JSON Schema -- an optional object is
+ * `type: ["null", "object"]` -- and the Google provider turns
  * a nullable type array into `anyOf` while leaving `properties`, `required` and
  * `description` beside it. Vertex rejects the request outright: when `anyOf` is
  * present it must be the only field set. The 400 names the CLI's tool, which sends
@@ -205,11 +205,9 @@ export async function openResearch(): Promise<Research> {
  * to whatever it is thinking with today.
  *
  * `["null", T]` becomes `T`, which for an argument that is not in `required` says
- * the same thing: leave it out. `derive_environment`'s own description already
- * words it that way -- "omit to read the current one" -- so nothing is lost that
- * the model was using. Applied for every provider rather than only for Vertex,
- * because one code path that is always exercised beats a second one that is right
- * only until nobody looks at it.
+ * the same thing: leave it out. Applied for every provider rather than only for
+ * Vertex, because one code path that is always exercised beats a second one that
+ * is right only until nobody looks at it.
  */
 type ToolSet = Awaited<ReturnType<MCPClient['tools']>>;
 

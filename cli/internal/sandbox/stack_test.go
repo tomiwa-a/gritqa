@@ -90,7 +90,6 @@ volumes:
 	e := Environment{
 		App: "web", Port: 8080,
 		Database: "store", DBPort: 5432, Driver: "postgres",
-		Login:    Login{User: "$POSTGRES_USER", Password: "$POSTGRES_PASSWORD", Name: "$POSTGRES_DB"},
 		Schema:   []SchemaStep{{Service: "migrate"}},
 		Writable: []string{"/www/uploads"},
 		Author:   AuthorAgent,
@@ -250,6 +249,7 @@ services:
   store:
     image: postgres:16
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: reset-fixture
       POSTGRES_DB: shop
     volumes:
@@ -280,7 +280,6 @@ volumes:
 	e := Environment{
 		App: "web", Port: 8080,
 		Database: "store", DBPort: 5432, Driver: "postgres",
-		Login:    Login{User: "postgres", Password: "reset-fixture", Name: "$POSTGRES_DB"},
 		Schema:   []SchemaStep{{Service: "migrate"}},
 		Writable: []string{"/data/uploads"},
 		Author:   AuthorAgent,

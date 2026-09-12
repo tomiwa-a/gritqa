@@ -14,7 +14,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/tomiwa-a/gritqa/cli/internal/config"
 	"github.com/tomiwa-a/gritqa/cli/internal/index"
 	"github.com/tomiwa-a/gritqa/cli/internal/index/routes"
 	"github.com/tomiwa-a/gritqa/cli/internal/plan"
@@ -27,8 +26,7 @@ import (
 type stub struct {
 	root     string
 	compose  *sandbox.Compose
-	env      *sandbox.Environment
-	proposed *sandbox.Environment
+	status   StatusReport
 	ran      string
 	down     bool
 }
@@ -56,16 +54,8 @@ func (s *stub) Compose(context.Context) (*sandbox.Compose, error) {
 	return s.compose, nil
 }
 
-func (s *stub) Environment(context.Context) (*sandbox.Environment, error) { return s.env, nil }
 
-func (s *stub) Propose(_ context.Context, e sandbox.Environment) (string, error) {
-	s.proposed = &e
-	return acceptBlock, nil
-}
-
-// What the real backend renders for a human to paste. It is asserted here because
-// a proposal recorded and never shown is a proposal nobody can approve.
-const acceptBlock = "run:\n  sandbox:\n    environment:\n      app: web\n"
+func (s *stub) Status(context.Context) (StatusReport, error) { return s.status, nil }
 
 func (s *stub) RunPlan(_ context.Context, p *plan.Plan) (*run.Result, error) {
 	s.ran = p.Name
@@ -87,6 +77,8 @@ type errStr string
 
 func (e errStr) Error() string { return string(e) }
 
+// What the real backend renders for a human to paste. It is asserted here because
+// a proposal recorded and never shown is a proposal nobody can approve.
 func connect(t *testing.T, scope Scope) (*sdk.ClientSession, *stub) {
 	t.Helper()
 	root := t.TempDir()
@@ -143,7 +135,7 @@ func TestAnExecuteToolIsNotAdvertisedToAReadClient(t *testing.T) {
 	got := names(t, read)
 
 	for _, want := range []string{"get_index", "read_file", "search", "db", "start_sandbox",
-		"teardown", "read_compose", "derive_environment"} {
+		"teardown", "read_compose", "environment_status"} {
 		if !has(got, want) {
 			t.Errorf("a read client cannot reach %s: %v", want, got)
 		}
@@ -154,7 +146,7 @@ func TestAnExecuteToolIsNotAdvertisedToAReadClient(t *testing.T) {
 		}
 	}
 
-	// And calling one anyway is not a refusal with a hint — the server has no such
+	// And calling one anyway is not a refusal with a hint ΓÇö the server has no such
 	// tool at all.
 	res, err := read.CallTool(context.Background(), &sdk.CallToolParams{
 		Name: "run_plan", Arguments: map[string]any{"file": "x.json"}})
@@ -340,7 +332,7 @@ func TestDBRefusesAnythingThatWrites(t *testing.T) {
 		t.Errorf("the trailing semicolon survived: %q", got)
 	}
 
-	// A CTE puts the write past a verb check — `WITH x AS (...) DELETE FROM t` reads
+	// A CTE puts the write past a verb check ΓÇö `WITH x AS (...) DELETE FROM t` reads
 	// as WITH. The READ ONLY transaction in db() is what actually refuses it, and
 	// only OUTFILE, which writes outside the transaction, is caught here.
 	for _, sql := range []string{
@@ -416,137 +408,37 @@ func fixture(root string) *sandbox.Compose {
 
 // Reading says plainly that nothing is known, because nothing is: the whole point
 // of the seam is that GritQA stopped answering this for itself.
-func TestDeriveEnvironmentKnowsNothingUntilToldOnce(t *testing.T) {
+
+// environment_status is read-only: it reports what is configured, never records
+// anything. An unconfigured project names the fix; a configured one names the
+// verdicts and whether a run could boot.
+func TestEnvironmentStatusNamesTheFixWhenUnconfigured(t *testing.T) {
 	cs, back := connect(t, Read)
-	back.compose = fixture(back.root)
+	back.status = StatusReport{Configured: false, Reason: "no service verdicts"}
 
-	got := call[envOut](t, cs, "derive_environment", nil)
-	if got.Environment != nil || got.Proposed {
-		t.Fatalf("something was on record before anyone said anything: %+v", got)
-	}
-	if !strings.Contains(got.Note, "read_compose") {
-		t.Errorf("the note does not say how to answer: %q", got.Note)
-	}
-
-	got = call[envOut](t, cs, "derive_environment", map[string]any{
-		"environment": map[string]any{
-			"app": "web", "port": 3000,
-			"database": "store", "db_port": 5432, "driver": "postgres",
-			"login": map[string]any{"user": "postgres", "password": "$POSTGRES_PASSWORD",
-				"name": "$POSTGRES_DB"},
-			"schema":   []map[string]any{{"service": "web", "run": []string{"npm", "run", "migrate"}}},
-			"writable": []string{"/app/uploads"},
-		},
-		"why": "web is the only service publishing a port, and store is what its config reads",
-	})
-	if !got.Proposed || back.proposed == nil {
-		t.Fatal("the proposal was not recorded")
-	}
-	if back.proposed.Author != sandbox.AuthorAgent {
-		t.Errorf("author = %q, want the agent credited", back.proposed.Author)
-	}
-	// The fingerprint is bookkeeping, not a judgement: it is not in the input schema
-	// and GritQA stamps it, which is what makes a later compose edit detectable.
-	if back.proposed.Fingerprint != "9f2c" {
-		t.Errorf("fingerprint = %q, want the compose it was read from", back.proposed.Fingerprint)
-	}
-	if back.proposed.Why == "" {
-		t.Error("the reasoning is the part a human reviews")
-	}
-	if !strings.Contains(got.Note, "not in effect") {
-		t.Errorf("the note does not say a run still ignores it: %q", got.Note)
+	got := call[StatusReport](t, cs, "environment_status", nil)
+	if got.Configured || got.Reason == "" {
+		t.Errorf("unconfigured status reads %+v, want it to say what is missing", got)
 	}
 }
 
-// Shape is checked against their own declaration; judgement is not checked at all.
-func TestDeriveEnvironmentChecksShapeAndNotJudgement(t *testing.T) {
+func TestEnvironmentStatusReportsVerdictsAndBootability(t *testing.T) {
 	cs, back := connect(t, Read)
-	back.compose = fixture(back.root)
-
-	ok := map[string]any{"app": "web", "port": 3000}
-	for _, c := range []struct {
-		what string
-		in   map[string]any
-		want string
-	}{
-		{"a service that does not exist", map[string]any{"app": "api", "port": 3000}, "api"},
-		{"a port that is not one", map[string]any{"app": "web", "port": 0}, "port"},
-		{"a host path where a container path belongs",
-			map[string]any{"app": "web", "port": 3000, "writable": []string{"uploads"}}, "container"},
-		{"a schema step in no service", map[string]any{"app": "web", "port": 3000,
-			"schema": []map[string]any{{"service": "runner"}}}, "runner"},
-		{"a database with nothing saying what it speaks", map[string]any{"app": "web",
-			"port": 3000, "database": "cache", "db_port": 6379}, "speaks"},
-		{"a login key the service does not declare", map[string]any{"app": "web", "port": 3000,
-			"database": "store", "db_port": 5432, "driver": "mysql",
-			"login": map[string]any{"user": "root", "password": "$MYSQL_ROOT_PASSWORD"}},
-			"MYSQL_ROOT_PASSWORD"},
-	} {
-		msg := fails(t, cs, "derive_environment", map[string]any{"environment": c.in})
-		if !strings.Contains(msg, c.want) {
-			t.Errorf("%s said %q, want it to name %q", c.what, msg, c.want)
-		}
-	}
-	if back.proposed != nil {
-		t.Fatal("a refused environment was recorded")
+	back.status = StatusReport{
+		Configured: true,
+		Services:   []ServiceStatus{{Name: "web", Role: "tested"}, {Name: "db", Role: "support"}},
+		Bootable:   true,
+		Reason:     "configured",
 	}
 
-	// The cache is a plausible database and a wrong one, and nothing here can tell.
-	// GritQA takes it: picking the service is the agent's judgement, not its own.
-	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": ok})
-	if !got.Proposed {
-		t.Fatal("a well-shaped answer was not recorded")
+	got := call[StatusReport](t, cs, "environment_status", nil)
+	if !got.Configured || !got.Bootable {
+		t.Errorf("configured status reads %+v", got)
 	}
-	// The agent records JSON; the human approves YAML. Handing back the block is
-	// what stops them guessing at its shape.
-	if got.Accept != acceptBlock {
-		t.Errorf("Accept = %q, want the block that approves the proposal", got.Accept)
-	}
-	if !strings.Contains(got.Note, config.Name) {
-		t.Errorf("the note does not say where the block goes: %q", got.Note)
+	if len(got.Services) != 2 || got.Services[0].Name != "web" {
+		t.Errorf("services read %+v", got.Services)
 	}
 }
-
-// A datastore this build has no client for costs the ledger, not the boot. GritQA
-// takes the environment and says what it will not be able to watch.
-func TestDeriveEnvironmentTakesADatastoreItCannotRead(t *testing.T) {
-	cs, back := connect(t, Read)
-	back.compose = fixture(back.root)
-
-	got := call[envOut](t, cs, "derive_environment", map[string]any{"environment": map[string]any{
-		"app": "web", "port": 3000, "database": "cache", "db_port": 6379, "driver": "redis"}})
-	if !got.Proposed || back.proposed == nil {
-		t.Fatal("a project whose datastore GritQA cannot speak to was refused")
-	}
-	if back.proposed.Watched() {
-		t.Error("redis is not something this build connects to")
-	}
-	for _, want := range []string{"no redis client", "take no readings", "own image ships"} {
-		if !strings.Contains(got.Note, want) {
-			t.Errorf("the note does not say %q: %q", want, got.Note)
-		}
-	}
-}
-
-// An environment worked out from a file that has since changed is reported as
-// suspect rather than as wrong: most compose edits move none of these answers.
-func TestDeriveEnvironmentSaysWhenTheComposeFileMoved(t *testing.T) {
-	cs, back := connect(t, Read)
-	back.compose = fixture(back.root)
-	back.env = &sandbox.Environment{App: "web", Port: 3000, Fingerprint: "older",
-		Author: sandbox.AuthorAgent}
-
-	got := call[envOut](t, cs, "derive_environment", nil)
-	if !got.Stale || !strings.Contains(got.Note, "changed") {
-		t.Errorf("a moved fingerprint went unreported: %+v", got)
-	}
-
-	back.env.Fingerprint = "9f2c"
-	if got := call[envOut](t, cs, "derive_environment", nil); got.Stale {
-		t.Error("the fingerprint matches, so nothing is suspect")
-	}
-}
-
 func TestExecuteToolsReachTheBackend(t *testing.T) {
 	cs, back := connect(t, Execute)
 	write(t, filepath.Join(back.root, "p.json"), `{"name":"a plan","steps":[

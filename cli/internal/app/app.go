@@ -34,6 +34,8 @@ type Options struct {
 	JSON       bool
 	Logout     bool
 	ConfigPath string
+	Init       bool
+	Update     bool
 	Server     string
 	// Version is what this binary reports to the dashboard, so a run can be traced
 	// to the release that produced it.
@@ -81,6 +83,15 @@ func Run(ctx context.Context, opts Options) error {
 
 	if opts.Logout {
 		return logout(w, opts)
+	}
+
+	// Scaffolding stops before anything else: init and update only write the
+	// config file, so resolving a project around them would invent one.
+	if opts.Init {
+		return Init(ctx, w)
+	}
+	if opts.Update {
+		return Update(ctx, w)
 	}
 
 	// Before the banner: in stdio mode stdout carries JSON-RPC, and one line of

@@ -27,7 +27,6 @@ type Environment struct {
 	Database string `json:"database,omitempty"`
 	DBPort   int    `json:"db_port,omitempty"`
 	Driver   string `json:"driver,omitempty"`
-	Login    Login  `json:"login"`
 
 	// Schema is how the database gets its structure and its data, in order. Empty
 	// is an answer: a project can have nothing to migrate yet.
@@ -56,16 +55,6 @@ type Environment struct {
 	// longer matches, the environment describes a file that has since changed.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Why         string `json:"why,omitempty"`
-}
-
-// Login names how to connect by naming keys rather than values. A field starting
-// with $ means: read that key from the database service's environment once the
-// stack is up. GritQA resolves it at boot, so a password that arrived from .env
-// never has to travel to whoever wrote this down.
-type Login struct {
-	User     string `json:"user,omitempty"`
-	Password string `json:"password,omitempty"`
-	Name     string `json:"name,omitempty"`
 }
 
 // SchemaStep is one step of bringing the schema up. An empty Run means the
@@ -137,24 +126,19 @@ func (e Environment) Check(c *Compose) error {
 			"name it even if it is something GritQA has no client for, because the record is "+
 			"what says what a run was measured against", db.Name)
 	}
-	for what, ref := range map[string]string{"user": e.Login.User,
-		"password": e.Login.Password, "name": e.Login.Name} {
-		key, isKey := strings.CutPrefix(ref, "$")
-		if !isKey {
-			continue
-		}
-		if _, ok := db.Environment[key]; !ok {
-			return fmt.Errorf("login.%s reads $%s, and %s declares no such variable",
-				what, key, db.Name)
-		}
-	}
 	return nil
 }
 
-// Resolve turns the $KEY references into the values compose resolved. It needs a
-// compose read that kept its secrets, because the point is to connect -- so the
-// password it comes back with is the developer's, not one GritQA generated, and
-// Creds.scrub is what keeps it out of everything reported.
+// Resolve connects to the measured datastore using the compose file's own
+// answer: the credentials the database service declares, read the way compose
+// resolved them. Nothing is configured because there is nothing to configure —
+// the service already says how to reach it, and GritQA reads that rather than
+// a second copy of it. The names tried are the ones the images document; an
+// exotic setup renames a variable in its own file, which is where the name
+// lives anyway.
+//
+// The password it comes back with is the developer's, not one GritQA
+// generated, and Creds.scrub is what keeps it out of everything reported.
 func (e Environment) Resolve(c *Compose) (Creds, error) {
 	full, err := c.resolved()
 	if err != nil {
@@ -164,29 +148,66 @@ func (e Environment) Resolve(c *Compose) (Creds, error) {
 	if !ok {
 		return Creds{}, fmt.Errorf("%q is no longer a service in this compose file", e.Database)
 	}
-	out := Creds{}
-	for _, f := range []struct {
-		what string
-		ref  string
-		into *string
-	}{
-		{"user", e.Login.User, &out.User},
-		{"password", e.Login.Password, &out.Password},
-		{"name", e.Login.Name, &out.Database},
-	} {
-		key, isKey := strings.CutPrefix(f.ref, "$")
-		if !isKey {
-			*f.into = f.ref
-			continue
-		}
-		v, ok := db.Environment[key]
-		if !ok || v == "" {
-			return Creds{}, fmt.Errorf("login.%s reads $%s and %s has no value for it",
-				f.what, key, db.Name)
-		}
-		*f.into = v
+	user, err := firstSet(db.Environment, credentialKeys(e.Driver, "user"))
+	if err != nil {
+		return Creds{}, fmt.Errorf("%s declares no database user (looked for %s)",
+			db.Name, strings.Join(credentialKeys(e.Driver, "user"), ", "))
 	}
-	return out, nil
+	password, err := firstSet(db.Environment, credentialKeys(e.Driver, "password"))
+	if err != nil {
+		return Creds{}, fmt.Errorf("%s declares no database password (looked for %s)",
+			db.Name, strings.Join(credentialKeys(e.Driver, "password"), ", "))
+	}
+	name, err := firstSet(db.Environment, credentialKeys(e.Driver, "name"))
+	if err != nil {
+		return Creds{}, fmt.Errorf("%s declares no database name (looked for %s)",
+			db.Name, strings.Join(credentialKeys(e.Driver, "name"), ", "))
+	}
+	return Creds{User: user, Password: password, Database: name}, nil
+}
+
+// credentialKeys are the variable names the database images document, most
+// specific first. A literal value in the file counts as set: it is the
+// developer's own declaration, not a secret arriving from outside it.
+func credentialKeys(driver, what string) []string {
+	switch strings.ToLower(driver) {
+	case "mysql", "mariadb":
+		switch what {
+		case "user":
+			return []string{"MYSQL_USER", "MARIADB_USER", "DB_USER", "USER"}
+		case "password":
+			return []string{"MYSQL_PASSWORD", "MARIADB_PASSWORD", "DB_PASSWORD", "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD"}
+		default:
+			return []string{"MYSQL_DATABASE", "MARIADB_DATABASE", "DB_NAME", "DATABASE_NAME"}
+		}
+	case "postgres", "postgresql":
+		switch what {
+		case "user":
+			return []string{"POSTGRES_USER", "DB_USER", "USER"}
+		case "password":
+			return []string{"POSTGRES_PASSWORD", "DB_PASSWORD"}
+		default:
+			return []string{"POSTGRES_DB", "DB_NAME", "DATABASE_NAME"}
+		}
+	default:
+		switch what {
+		case "user":
+			return []string{"DB_USER", "DATABASE_USER", "USER"}
+		case "password":
+			return []string{"DB_PASSWORD", "DATABASE_PASSWORD"}
+		default:
+			return []string{"DB_NAME", "DATABASE_NAME", "DB"}
+		}
+	}
+}
+
+func firstSet(env map[string]string, keys []string) (string, error) {
+	for _, key := range keys {
+		if v := env[key]; v != "" {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("none set")
 }
 
 // Watched reports whether GritQA can take its own readings from the datastore.
@@ -215,8 +236,8 @@ func (e Environment) Describe() string {
 	case e.Database != "":
 		what += fmt.Sprintf(", %s over %s and read through its own client", e.Database, e.Driver)
 	}
-	if refused := e.Refused(); len(refused) > 0 {
-		what += ", refusing " + strings.Join(refused, " and ")
+	if ignored := e.Ignored(); len(ignored) > 0 {
+		what += ", ignoring " + strings.Join(ignored, " and ")
 	}
 	if held := e.OnDemand(); len(held) > 0 {
 		what += ", holding back " + strings.Join(held, " and ")
@@ -279,14 +300,29 @@ const (
 	// ledger lie; the same worker started by hand is the only way a daily job gets
 	// tested at all.
 	RoleOnDemand Role = "on_demand"
-	// RoleNever is refused: taken out of the document before it reaches Docker, so
-	// nothing can start it by accident.
-	RoleNever Role = "never"
+	// RoleIgnore is the ignore list: taken out of the document before it reaches
+	// Docker, so nothing can start it by accident.
+	RoleIgnore Role = "ignore"
 )
 
 // Roles is the whole vocabulary, in the order a person should read it.
 func Roles() []Role {
-	return []Role{RoleTested, RoleSupport, RoleSchema, RoleOnDemand, RoleNever}
+	return []Role{RoleTested, RoleSupport, RoleSchema, RoleOnDemand, RoleIgnore}
+}
+
+// UnmarshalJSON reads a role the way stored records wrote it: "never" was the
+// old word for what "ignore" says now, and an approved answer from before the
+// rename boots unchanged instead of failing its own check.
+func (r *Role) UnmarshalJSON(raw []byte) error {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return err
+	}
+	if s == "never" {
+		s = string(RoleIgnore)
+	}
+	*r = Role(s)
+	return nil
 }
 
 // Measure is how a service's state is read for the ledger, and it is separate
@@ -317,7 +353,7 @@ type Classification struct {
 	Service string `json:"service"`
 	Role    Role   `json:"role"`
 
-	// Why is required on never and optional elsewhere. A refusal is the one choice
+	// Why is required on ignore and optional elsewhere. A refusal is the one choice
 	// that leaves nothing behind to read the reason off: the service is gone from
 	// the document, so if the record does not say why, nobody can tell whether it
 	// was a safety call or a mistake.
@@ -329,7 +365,6 @@ type Classification struct {
 
 	Measure Measure `json:"measure,omitempty"`
 	Driver  string  `json:"driver,omitempty"`
-	Login   *Login  `json:"login,omitempty"`
 
 	// Run is a schema step's command. Empty means the service's own.
 	Run []string `json:"run,omitempty"`
@@ -344,7 +379,7 @@ func (e Environment) Normalize() Environment {
 	}
 	out := e
 	out.App, out.Port = "", 0
-	out.Database, out.DBPort, out.Driver, out.Login = "", 0, "", Login{}
+	out.Database, out.DBPort, out.Driver = "", 0, ""
 	out.Schema = nil
 
 	for _, s := range e.Services {
@@ -359,18 +394,15 @@ func (e Environment) Normalize() Environment {
 		// reads -- but it is not what a single Database field can say.
 		if s.Measure == MeasureSQL && out.Database == "" {
 			out.Database, out.DBPort, out.Driver = s.Service, s.Port, s.Driver
-			if s.Login != nil {
-				out.Login = *s.Login
-			}
 		}
 	}
 	return out
 }
 
-// Refused are the services the copy must not start at all, and OnDemand the ones
+// Ignored are the services the copy must not start at all, and OnDemand the ones
 // it starts only when a step asks. Both are empty for an environment that never
 // classified anything, which is what keeps the older shape booting unchanged.
-func (e Environment) Refused() []string { return e.playing(RoleNever) }
+func (e Environment) Ignored() []string { return e.playing(RoleIgnore) }
 
 func (e Environment) OnDemand() []string { return e.playing(RoleOnDemand) }
 
@@ -416,9 +448,9 @@ func (e Environment) checkServices(c *Compose) error {
 					tested, s.Service)
 			}
 			tested = s.Service
-		case RoleNever:
+		case RoleIgnore:
 			if strings.TrimSpace(s.Why) == "" {
-				return fmt.Errorf("%s is refused and nothing says why — it will be gone from "+
+				return fmt.Errorf("%s is ignored and nothing says why — it will be gone from "+
 					"the document GritQA boots, so the record is the only place the reason "+
 					"can live", s.Service)
 			}
@@ -456,8 +488,11 @@ func (e Environment) checkServices(c *Compose) error {
 	if len(unsaid) > 0 {
 		return fmt.Errorf("%s in %s carry no role, and an unclassified service is one "+
 			"`docker compose up` starts because nobody said otherwise — say what each one "+
-			"is, even if the answer is never", strings.Join(unsaid, ", "),
+			"is, even if the answer is ignore", strings.Join(unsaid, ", "),
 			strings.Join(c.Files, ", "))
+	}
+	if err := checkClosure(c, e.Services); err != nil {
+		return err
 	}
 	if tested == "" {
 		return fmt.Errorf("nothing in %s is under test — one service answers the requests a "+
@@ -480,4 +515,66 @@ func list(rs []Role) string {
 		out[i] = string(r)
 	}
 	return strings.Join(out, ", ")
+}
+
+// checkClosure fails a kept service that needs an ignored one, transitively.
+// The overlay deletes ignored services and prunes the edges pointing at them,
+// so without this a kept service would boot missing its sidecar and fail in
+// the copy for a reason nothing in the copy explains. Optional dependencies
+// (required: false) are exempt: compose starts without them anyway.
+func checkClosure(c *Compose, services []Classification) error {
+	ignored := map[string]bool{}
+	kept := map[string]bool{}
+	for _, s := range services {
+		if s.Role == RoleIgnore {
+			ignored[s.Service] = true
+		} else {
+			kept[s.Service] = true
+		}
+	}
+	deps := map[string][]Need{}
+	for _, name := range c.Names() {
+		svc, ok := c.Service(name)
+		if !ok {
+			continue
+		}
+		deps[name] = svc.DependsOn
+	}
+	for name := range kept {
+		if bad, chain := firstIgnoredDep(name, deps, ignored); bad != "" {
+			return fmt.Errorf("%q needs %q, but %q is ignored — un-ignore it or "+
+				"stop needing it, because the copy boots without it either way",
+				name, strings.Join(chain, " → "), bad)
+		}
+	}
+	return nil
+}
+
+// firstIgnoredDep walks one service's required dependencies depth-first and
+// reports the first ignored service found, with the chain that reaches it.
+func firstIgnoredDep(root string, deps map[string][]Need, ignored map[string]bool) (string, []string) {
+	type frame struct {
+		name  string
+		chain []string
+	}
+	seen := map[string]bool{root: true}
+	stack := []frame{{name: root}}
+	for len(stack) > 0 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, need := range deps[top.name] {
+			if !need.Required {
+				continue
+			}
+			chain := append(append([]string{}, top.chain...), need.Service)
+			if ignored[need.Service] {
+				return need.Service, chain
+			}
+			if !seen[need.Service] {
+				seen[need.Service] = true
+				stack = append(stack, frame{name: need.Service, chain: chain})
+			}
+		}
+	}
+	return "", nil
 }

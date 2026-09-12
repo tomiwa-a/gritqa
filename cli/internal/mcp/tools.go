@@ -15,7 +15,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/tomiwa-a/gritqa/cli/internal/config"
 	"github.com/tomiwa-a/gritqa/cli/internal/index"
 	"github.com/tomiwa-a/gritqa/cli/internal/plan"
 	"github.com/tomiwa-a/gritqa/cli/internal/run"
@@ -67,8 +66,8 @@ var surface = []struct {
 				"Values are reported as the file declares them. A value that came from .env or the " +
 				"shell is shown as the ${...} expression it came from rather than what it resolved " +
 				"to, because that one can be a live credential.\n\n" +
-				"Costs nothing and starts nothing. Read this before start_sandbox, and record what " +
-				"you concluded with derive_environment."}, s.readCompose)
+				"Costs nothing and starts nothing. Read this before start_sandbox, then check " +
+				"environment_status: an unbootable project fails there with the reason named."}, s.readCompose)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "start_sandbox",
@@ -97,28 +96,12 @@ var surface = []struct {
 				"from run variables; a name with no value refuses rather than sending nothing."}, s.trialCall)
 	}},
 	{Read, func(m *sdk.Server, s *Server) {
-		sdk.AddTool(m, &sdk.Tool{Name: "derive_environment",
-			Description: "Where your reading of read_compose gets written down. Called empty it " +
-				"reports what is on record, which starts out as nothing at all — GritQA never " +
-				"works this out for itself, so until you do it cannot bring a copy of the project " +
-				"up.\n\n" +
-				"What it wants is the handful of answers a compose file does not state: which " +
-				"service answers HTTP and on which container port, which service holds the data " +
-				"and what it speaks, how to connect to it, how the schema and its rows come up, " +
-				"and which directories the app writes into. Every one of those is a conclusion " +
-				"about a declaration — a service named web may be a proxy, a db may be a cache, " +
-				"and a project may bring its schema up in a way nothing in compose mentions. Read " +
-				"before you answer: the Dockerfile a service builds from, the manifest, the " +
-				"framework's database config, the migration tool's own config. Leave a field out " +
-				"rather than filling it with a guess.\n\n" +
-				"Send credentials as names. $MYSQL_ROOT_PASSWORD means read that variable off that " +
-				"service once the stack is up — GritQA resolves it at boot, so the password itself " +
-				"never has to travel here. A literal is right for a fixed user like root.\n\n" +
-				"What comes back is a check on shape only: that the services exist, that the paths " +
-				"are container paths, that GritQA has a driver for what you named. Whether you " +
-				"picked the right service is not checkable and is not checked. Recorded as a " +
-				"proposal for a human to approve; nothing starts, and no run boots on it until " +
-				"then."}, s.deriveEnvironment)
+		sdk.AddTool(m, &sdk.Tool{Name: "environment_status",
+			Description: "What is configured about how this project boots: the service verdicts " +
+				"on record, which services are still missing one, and whether a run could boot. " +
+				"Read-only — verdicts are written in .gritqa/config.yaml by a human, never here. " +
+				"Read this before start_sandbox: an unbootable project fails there with the same " +
+				"reason this names."}, s.environmentStatus)
 	}},
 	{Execute, func(m *sdk.Server, s *Server) {
 		sdk.AddTool(m, &sdk.Tool{Name: "run_plan",
@@ -618,121 +601,17 @@ func (s *Server) readCompose(ctx context.Context, _ *sdk.CallToolRequest, _ empt
 	}, nil
 }
 
-// derive_environment
+// environment_status
 
-type envIn struct {
-	Environment *environmentIn `json:"environment,omitempty" jsonschema:"what you worked out; omit to read what is on record"`
-	Why         string         `json:"why,omitempty" jsonschema:"what in the project led you to it"`
-}
+type statusIn struct{}
 
-// environmentIn is what an agent may author, which is deliberately not
-// sandbox.Environment: the author, the compose fingerprint and staleness are this
-// machine's bookkeeping, not a judgement anyone can offer.
-type environmentIn struct {
-	App  string `json:"app" jsonschema:"the compose service that answers HTTP"`
-	Port int    `json:"port" jsonschema:"the port inside that service's container that serves it"`
-
-	Database string     `json:"database,omitempty" jsonschema:"the compose service holding the data a run should be measured against; omit if the project has none"`
-	DBPort   int        `json:"db_port,omitempty" jsonschema:"the port it listens on inside its container"`
-	Driver   string     `json:"driver,omitempty" jsonschema:"what it speaks, whatever that is: mysql, postgres, mongodb, redis, kafka. Name it even for a store GritQA has no client for — the project still boots, and the record is what says what the run was measured against"`
-	Login    *loginIn   `json:"login,omitempty" jsonschema:"how to connect to it"`
-	Schema   []schemaIn `json:"schema,omitempty" jsonschema:"how the schema and its data come up, in order; omit if nothing does"`
-
-	Writable []string `json:"writable,omitempty" jsonschema:"absolute container paths the app writes to, e.g. /app/uploads"`
-}
-
-// loginIn takes keys, not values. A $KEY is read out of that service's
-// environment when the stack is up, which is how a password reaches a connection
-// without reaching this conversation.
-type loginIn struct {
-	User     string `json:"user,omitempty" jsonschema:"the user, literally, or $KEY to read it from the service's environment"`
-	Password string `json:"password,omitempty" jsonschema:"$KEY naming the variable that carries it — send the name, never the password"`
-	Name     string `json:"name,omitempty" jsonschema:"the database to connect to, literally or as $KEY"`
-}
-
-type schemaIn struct {
-	Service string   `json:"service" jsonschema:"the compose service to run it in"`
-	Run     []string `json:"run,omitempty" jsonschema:"the command, as argv; omit to run that service's own declared command"`
-}
-
-func (in environmentIn) to(why string) sandbox.Environment {
-	out := sandbox.Environment{
-		App: in.App, Port: in.Port,
-		Database: in.Database, DBPort: in.DBPort, Driver: in.Driver,
-		Writable: in.Writable, Author: sandbox.AuthorAgent, Why: why,
-	}
-	if in.Login != nil {
-		out.Login = sandbox.Login{User: in.Login.User, Password: in.Login.Password, Name: in.Login.Name}
-	}
-	for _, s := range in.Schema {
-		out.Schema = append(out.Schema, sandbox.SchemaStep{Service: s.Service, Run: s.Run})
-	}
-	return out
-}
-
-type envOut struct {
-	Environment *sandbox.Environment `json:"environment"`
-	Compose     string               `json:"compose_fingerprint,omitempty"`
-	Stale       bool                 `json:"describes_an_older_compose_file,omitempty"`
-	Proposed    bool                 `json:"recorded_as_proposal,omitempty"`
-	// Accept is the config block that puts a proposal in effect. Nothing acts on
-	// it here: it is what to show the human who has to approve it.
-	Accept string `json:"accept_by_adding_to_config,omitempty"`
-	Note   string `json:"note"`
-}
-
-func (s *Server) deriveEnvironment(ctx context.Context, _ *sdk.CallToolRequest, in envIn) (*sdk.CallToolResult, envOut, error) {
-	got, err := s.back.Compose(ctx)
+func (s *Server) environmentStatus(ctx context.Context, _ *sdk.CallToolRequest, _ statusIn) (*sdk.CallToolResult, StatusReport, error) {
+	report, err := s.back.Status(ctx)
 	if err != nil {
-		return nil, envOut{}, err
+		return nil, StatusReport{}, err
 	}
-
-	if in.Environment == nil {
-		current, err := s.back.Environment(ctx)
-		if err != nil {
-			return nil, envOut{}, err
-		}
-		out := envOut{Environment: current, Compose: got.Fingerprint}
-		if current == nil {
-			out.Note = "Nothing is on record. GritQA does not work this out for itself, so until " +
-				"someone does, it cannot boot a copy of this project: read_compose, read what the " +
-				"services build from and what their commands reference, then send your answer back here."
-			return nil, out, nil
-		}
-		out.Stale = current.Stale(got)
-		out.Note = "On record: " + current.Describe() + "."
-		if out.Stale {
-			out.Note += " The compose file has changed since this was worked out, so it may no " +
-				"longer be right — check it against read_compose before trusting it."
-		}
-		return nil, out, nil
-	}
-
-	proposed := in.Environment.to(in.Why)
-	proposed.Fingerprint = got.Fingerprint
-	if err := proposed.Check(got); err != nil {
-		return nil, envOut{}, err
-	}
-	accept, err := s.back.Propose(ctx, proposed)
-	if err != nil {
-		return nil, envOut{}, err
-	}
-	s.log("the agent worked out an environment: " + proposed.Describe())
-	note := "Recorded as a proposal, and not in effect: no run boots on it until a human " +
-		"approves it by adding accept_by_adding_to_config to " + config.Name +
-		" — show them that block. Nothing was started."
-	if proposed.Database != "" && !proposed.Watched() {
-		note += fmt.Sprintf(" This build has no %s client, so a run will bring %s up and take no "+
-			"readings of its own from it — the ledger will say so rather than imply the data was "+
-			"watched. Query it with the client %s's own image ships.",
-			proposed.Driver, proposed.Database, proposed.Database)
-	}
-	return nil, envOut{
-		Environment: &proposed, Compose: got.Fingerprint, Proposed: true,
-		Accept: accept, Note: note,
-	}, nil
+	return nil, report, nil
 }
-
 // run_plan
 
 type runIn struct {

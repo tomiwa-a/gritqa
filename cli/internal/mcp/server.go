@@ -33,13 +33,10 @@ type Backend interface {
 	StartSandbox(ctx context.Context) (Boot, error)
 	// Compose reads the project's compose files, as compose itself resolves them.
 	Compose(ctx context.Context) (*sandbox.Compose, error)
-	// Environment is what has been worked out about the project's compose file, and
-	// nil when nobody has: GritQA does not answer this for itself.
-	Environment(ctx context.Context) (*sandbox.Environment, error)
-	// Propose records an environment the agent worked out. It is pending until a
-	// human approves it, and what comes back is the block that approves it: the
-	// agent is talking to someone who would otherwise have to guess the shape.
-	Propose(ctx context.Context, e sandbox.Environment) (accept string, err error)
+	// Status reports what is configured about how this project boots: the
+	// verdicts on record, what is still missing one, and whether a run could
+	// boot. Read-only — verdicts are written in the config file, never here.
+	Status(ctx context.Context) (StatusReport, error)
 	// RunPlan executes an approved plan, with repair and the state ledger wired
 	// exactly as --plan wires them.
 	RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error)
@@ -57,6 +54,28 @@ type Boot struct {
 	BaseURL  string
 	Tables   []string
 	Already  bool
+}
+
+// StatusReport is what is configured about booting, for an agent to read, not
+// to write. Verdicts live in the config file; this only says what is there.
+type StatusReport struct {
+	// Configured is whether any verdicts are on record at all.
+	Configured bool `json:"verdicts_recorded"`
+	Services   []ServiceStatus `json:"services"`
+	// Missing names compose services with no verdict. Empty means complete.
+	Missing []string `json:"missing_verdicts,omitempty"`
+	// Fingerprint identifies the compose file the verdicts were checked against.
+	Fingerprint string `json:"compose_fingerprint,omitempty"`
+	// Bootable says a run could boot right now. Reason always says why, in
+	// words that name the fix: the missing services, or the check that failed.
+	Bootable bool   `json:"bootable"`
+	Reason   string `json:"reason"`
+}
+
+// ServiceStatus is one service and the verdict on record, if any.
+type ServiceStatus struct {
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
 }
 
 type Options struct {
@@ -157,7 +176,7 @@ func scopeNote(scope Scope) string {
 			"it resets the sandbox to its post-seed baseline first, so research writes cannot make a step pass."
 	}
 	return "Nothing here has a side effect on the project: no tool writes a file, " +
-		"and derive_environment only records a proposal for a human to approve."
+		"and environment_status only reports what is configured."
 }
 
 // Tokens are what a client presents over HTTP, by scope. Empty for stdio.

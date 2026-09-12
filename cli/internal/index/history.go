@@ -52,42 +52,6 @@ CREATE TABLE IF NOT EXISTS execution_state (
   PRIMARY KEY (execution_id, seq)
 );
 
-CREATE TABLE IF NOT EXISTS sandbox_recipe (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  fingerprint TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  recipe      TEXT NOT NULL,
-  saved_at    TEXT NOT NULL
-);
-
--- A proposal is deliberately not a row in sandbox_recipe: Recipe() feeds the next
--- run's derivation, so a table the agent can write would boot on its own answer.
-CREATE TABLE IF NOT EXISTS sandbox_proposal (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  fingerprint TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  recipe      TEXT NOT NULL,
-  saved_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sandbox_environment (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  fingerprint TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  environment TEXT NOT NULL,
-  saved_at    TEXT NOT NULL
-);
-
--- Same split as sandbox_recipe and its proposal, for the same reason: a table the
--- agent can write is a table a run would boot on without anyone approving it.
-CREATE TABLE IF NOT EXISTS sandbox_environment_proposal (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  fingerprint TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  environment TEXT NOT NULL,
-  saved_at    TEXT NOT NULL
-);
-
 -- Which plan on the dashboard a draft file became, per server. A draft is written
 -- as a file and is the plan's record nowhere: keeping the id means a second push
 -- of the same file is a new version of one plan instead of a second plan.
@@ -499,70 +463,6 @@ func nullInt(n int) any {
 	return n
 }
 
-// Recipe is the environment a previous run worked out, as JSON. It sits beside
-// history rather than in the cache because a cache rebuild is routine and an
-// agent-derived recipe costs a model call to replace.
-func (s *Store) Recipe() (string, error) {
-	var body string
-	err := s.db.QueryRow(`SELECT recipe FROM sandbox_recipe WHERE id = 1`).Scan(&body)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return body, err
-}
-
-// Proposal is a recipe an agent worked out, waiting on a human. Nothing reads it
-// on the way into a run.
-func (s *Store) Proposal() (string, error) {
-	var body string
-	err := s.db.QueryRow(`SELECT recipe FROM sandbox_proposal WHERE id = 1`).Scan(&body)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return body, err
-}
-
-func (s *Store) SaveProposal(fingerprint, author, body string) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO sandbox_proposal
-	  (id, fingerprint, author, recipe, saved_at) VALUES (1, ?, ?, ?, ?)`,
-		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
-	return err
-}
-
-// Environment is what someone worked out about the project's compose file, as
-// JSON, and empty when nobody has. GritQA never fills this in for itself.
-func (s *Store) Environment() (string, error) { return s.envRow("sandbox_environment") }
-
-// EnvironmentProposal is an environment an agent worked out, waiting on a human.
-// Nothing reads it on the way into a run.
-func (s *Store) EnvironmentProposal() (string, error) {
-	return s.envRow("sandbox_environment_proposal")
-}
-
-func (s *Store) SaveEnvironment(fingerprint, author, body string) error {
-	return s.saveEnv("sandbox_environment", fingerprint, author, body)
-}
-
-func (s *Store) SaveEnvironmentProposal(fingerprint, author, body string) error {
-	return s.saveEnv("sandbox_environment_proposal", fingerprint, author, body)
-}
-
-func (s *Store) envRow(table string) (string, error) {
-	var body string
-	err := s.db.QueryRow(`SELECT environment FROM ` + table + ` WHERE id = 1`).Scan(&body)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return body, err
-}
-
-func (s *Store) saveEnv(table, fingerprint, author, body string) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO `+table+
-		` (id, fingerprint, author, environment, saved_at) VALUES (1, ?, ?, ?, ?)`,
-		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
-	return err
-}
-
 // RemotePlan is the dashboard plan a draft file became, and "" when this file has
 // never been pushed to this server. Keyed by server as well as file because two
 // servers hand out different ids for the same draft.
@@ -580,12 +480,5 @@ func (s *Store) SaveRemotePlan(server, file, planID string, version int) error {
 	_, err := s.db.Exec(`INSERT OR REPLACE INTO remote_plans
 	  (server, plan_file, plan_id, version, saved_at) VALUES (?, ?, ?, ?, ?)`,
 		server, file, planID, version, time.Now().UTC().Format(time.RFC3339))
-	return err
-}
-
-func (s *Store) SaveRecipe(fingerprint, author, body string) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO sandbox_recipe
-	  (id, fingerprint, author, recipe, saved_at) VALUES (1, ?, ?, ?, ?)`,
-		fingerprint, author, body, time.Now().UTC().Format(time.RFC3339))
 	return err
 }

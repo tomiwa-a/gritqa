@@ -116,10 +116,13 @@ func TestLoadRoundTripsRunBlock(t *testing.T) {
 		Variables: map[string]string{"adminPassword": "$GRITQA_ADMIN_PASSWORD"},
 		Sandbox: &Sandbox{
 			Compose: []string{"compose.yaml"},
-			Environment: &Environment{
-				App: "web", Port: 80, Database: "db", DBPort: 3306, Driver: "mysql",
-				Login:  Login{User: "$DB_USER", Password: "$DB_PASSWORD", Name: "$DB_NAME"},
-				Schema: []SchemaStep{{Service: "migrate"}, {Service: "web", Run: []string{"sh", "-c", "seed"}}},
+			Egress:  "deny",
+			Services: map[string]Service{
+				"web":     {Role: "tested", Port: 80},
+				"db":      {Role: "support", Port: 3306, Measure: "sql", Driver: "mysql"},
+				"migrate": {Role: "schema"},
+				"seed":    {Role: "schema", Run: []string{"sh", "-c", "seed"}},
+				"tunnel":  {Role: "ignore", Why: "reaches live infra"},
 			},
 		},
 	}
@@ -137,14 +140,15 @@ func TestLoadRoundTripsRunBlock(t *testing.T) {
 	if got.Run.Port != 8080 || got.Run.Variables["adminPassword"] != "$GRITQA_ADMIN_PASSWORD" {
 		t.Errorf("got %+v", got.Run)
 	}
-	e := got.Run.SandboxOpts().Environment
-	if e == nil || e.App != "web" || e.Login.Password != "$DB_PASSWORD" {
-		t.Fatalf("the environment did not survive: %+v", e)
+	gotten := got.Run.SandboxOpts().Services
+	if len(gotten) != 5 || gotten["web"].Port != 80 || gotten["tunnel"].Why == "" {
+		t.Fatalf("the service verdicts did not survive: %+v", gotten)
 	}
-	// A credential is named, never carried: it is read out of the database service's
-	// own environment once the copy is up.
-	if len(e.Schema) != 2 || e.Schema[1].Run[2] != "seed" {
-		t.Errorf("the schema steps did not survive: %+v", e.Schema)
+	if gotten["db"].Measure != "sql" || gotten["db"].Driver != "mysql" {
+		t.Errorf("the measured store did not survive: %+v", gotten["db"])
+	}
+	if len(gotten["seed"].Run) != 3 || gotten["seed"].Run[2] != "seed" {
+		t.Errorf("the schema command did not survive: %+v", gotten["seed"])
 	}
 	if len(got.Retired()) != 0 {
 		t.Errorf("a config of only live keys reports %v as retired", got.Retired())

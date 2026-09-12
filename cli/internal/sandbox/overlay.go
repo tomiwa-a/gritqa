@@ -37,10 +37,10 @@ type Overlay struct {
 	Detached []string
 	// Shared are the volumes created for the writable paths, one per path.
 	Shared []string
-	// Refused are the services taken out of the document altogether, and Held the
+	// Ignored are the services taken out of the document altogether, and Held the
 	// ones left in but kept out of the boot. Both are reported because both are a
 	// difference between what the developer runs and what GritQA ran.
-	Refused []string
+	Ignored []string
 	Held    []string
 	// Sealed is whether the copy was cut off from the internet.
 	Sealed bool
@@ -75,19 +75,19 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		out.Shared = append(out.Shared, fmt.Sprintf("gritqa-writable-%d", i))
 	}
 
-	// A refused service is deleted rather than disabled: the safety property should
+	// An ignored service is deleted rather than disabled: the safety property should
 	// not depend on a flag being read correctly further down. A held one stays in
 	// the document behind a profile nothing enables, so a step can still start it by
 	// name. Either way nothing left in the file may depend on it, or compose stops
 	// on a dependency it cannot satisfy.
 	absent := map[string]bool{}
-	for _, name := range e.Refused() {
+	for _, name := range e.Ignored() {
 		if _, ok := services[name]; !ok {
 			continue
 		}
 		delete(services, name)
 		absent[name] = true
-		out.Refused = append(out.Refused, name)
+		out.Ignored = append(out.Ignored, name)
 	}
 	held := map[string]bool{}
 	for _, name := range e.OnDemand() {
@@ -98,7 +98,7 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		absent[name] = true
 		out.Held = append(out.Held, name)
 	}
-	sort.Strings(out.Refused)
+	sort.Strings(out.Ignored)
 	sort.Strings(out.Held)
 
 	for _, name := range sorted(services) {

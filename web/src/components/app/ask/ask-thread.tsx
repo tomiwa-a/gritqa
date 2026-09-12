@@ -27,6 +27,7 @@ const VERBS: Record<string, string> = {
   search: 'searched for',
   db: 'queried the database',
   derive_environment: 'worked out how to run it',
+  environment_status: 'read how to run it',
   start_sandbox: 'started a sandbox',
 };
 

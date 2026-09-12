@@ -31,11 +31,6 @@ type session struct {
 	store *index.Store
 	snap  *index.Snapshot
 	st    *sandbox.Stack
-
-	// sync is how a process that is attached to a dashboard asks it how this project
-	// boots, before anything is brought up. nil for --plan and for a --serve that
-	// never linked, and both of those read the local store exactly as they did.
-	sync func(context.Context)
 }
 
 func newSession(cfg *config.Config, opts Options, w *term.Writer) *session {
@@ -53,17 +48,7 @@ func (s *session) staged(ctx context.Context) (*sandbox.Stack, error) {
 		return nil, errors.New("this project has no run.sandbox, so nothing brings a copy of it " +
 			"up and there is nowhere safe to run a plan — add run.sandbox in " + config.Name)
 	}
-	store, _, err := s.cached(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// Before the boot rather than after the claim: an approval given a minute ago is
-	// the one that should boot, and a process that has been up for a week would
-	// otherwise still be booting on whatever it was told at startup.
-	if s.sync != nil {
-		s.sync(ctx)
-	}
-	st, err := stage(ctx, s.w, s.cfg, store)
+	st, err := stage(ctx, s.w, s.cfg)
 	if err != nil {
 		return nil, err
 	}

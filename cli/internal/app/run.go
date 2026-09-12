@@ -56,7 +56,7 @@ func runPlan(ctx context.Context, w *term.Writer, cfg *config.Config, opts Optio
 				"run.base_url is %s, and a sandboxed run does not use it — this runs against "+
 					"GritQA's own copy on a loopback port", strings.TrimRight(cfg.Run.BaseURL, "/"))})
 		}
-		if st, err = stage(ctx, w, cfg, store); err != nil {
+		if st, err = stage(ctx, w, cfg); err != nil {
 			return err
 		}
 		defer st.Down(context.WithoutCancel(ctx))

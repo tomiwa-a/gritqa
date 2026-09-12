@@ -45,11 +45,10 @@ func classified() Environment {
 			{Service: "main", Role: RoleTested, Port: 8080},
 			{Service: "migration", Role: RoleSchema, Run: []string{"dotnet", "migrate"}},
 			{Service: "database", Role: RoleSupport, Measure: MeasureSQL, Port: 3306,
-				Driver: "mysql", Login: &Login{User: "root", Password: "$MYSQL_ROOT_PASSWORD",
-					Name: "loanapp"}},
+				Driver: "mysql"},
 			{Service: "jobs", Role: RoleOnDemand,
 				Why: "writes on a two-minute schedule, so it would move rows no step caused"},
-			{Service: "cloudflared", Role: RoleNever,
+			{Service: "cloudflared", Role: RoleIgnore,
 				Why: "runs a tunnel against a live token and would publish the copy publicly"},
 		},
 		Author: AuthorApproved,
@@ -67,7 +66,7 @@ func TestAnUnclassifiedServiceRefusesToBoot(t *testing.T) {
 	if err == nil {
 		t.Fatal("four services out of five was accepted")
 	}
-	for _, want := range []string{"cloudflared", "jobs", "never"} {
+	for _, want := range []string{"cloudflared", "jobs", "ignore"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want %s named in it", err, want)
 		}
@@ -80,12 +79,41 @@ func TestACompleteClassificationIsAccepted(t *testing.T) {
 	}
 }
 
+// A kept service that needs an ignored one fails with the chain named: the
+// overlay would delete the ignored service and prune the edge, leaving the
+// kept one to fail in the copy for a reason nothing in the copy explains.
+func TestAKeptServiceMayNotNeedAnIgnoredOne(t *testing.T) {
+	c := rolesCompose()
+	for i := range c.Services {
+		if c.Services[i].Name == "main" {
+			c.Services[i].DependsOn = []Need{{Service: "cloudflared", Required: true}}
+		}
+		if c.Services[i].Name == "jobs" {
+			c.Services[i].DependsOn = []Need{{Service: "cloudflared", Required: false}}
+		}
+	}
+	if err := classified().Check(c); err == nil || !strings.Contains(err.Error(), "cloudflared") {
+		t.Fatalf("err = %v, want the ignored tunnel named with its dependent", err)
+	}
+
+	// Optional edges are exempt: compose starts without them anyway.
+	c2 := rolesCompose()
+	for i := range c2.Services {
+		if c2.Services[i].Name == "main" {
+			c2.Services[i].DependsOn = []Need{{Service: "cloudflared", Required: false}}
+		}
+	}
+	if err := classified().Check(c2); err != nil {
+		t.Errorf("an optional edge to an ignored service should not fail: %v", err)
+	}
+}
+
 // Refusing is the one choice that leaves nothing behind to read the reason off:
 // the service is gone from the document, so the record is the only place it lives.
 func TestARefusalHasToSayWhy(t *testing.T) {
 	e := classified()
 	for i := range e.Services {
-		if e.Services[i].Role == RoleNever {
+		if e.Services[i].Role == RoleIgnore {
 			e.Services[i].Why = "  "
 		}
 	}
@@ -153,9 +181,6 @@ func TestTheOlderFieldsAreDerivedFromTheClassification(t *testing.T) {
 	if e.Database != "database" || e.DBPort != 3306 || e.Driver != "mysql" {
 		t.Errorf("datastore = %s on %d over %s", e.Database, e.DBPort, e.Driver)
 	}
-	if e.Login.Password != "$MYSQL_ROOT_PASSWORD" {
-		t.Errorf("login = %+v, want the reference and not a value", e.Login)
-	}
 	if len(e.Schema) != 1 || e.Schema[0].Service != "migration" {
 		t.Errorf("schema = %+v, want the migrator", e.Schema)
 	}
@@ -182,7 +207,7 @@ func TestNoClassificationLeavesTheOlderFieldsAlone(t *testing.T) {
 	if err := got.Check(rolesCompose()); err != nil {
 		t.Fatalf("Check refused the shape that boots today: %v", err)
 	}
-	if got.Refused() != nil || got.OnDemand() != nil {
+	if got.Ignored() != nil || got.OnDemand() != nil {
 		t.Error("an unclassified environment refuses and holds back nothing")
 	}
 }
@@ -223,8 +248,8 @@ func TestARefusedServiceIsNotInTheDocument(t *testing.T) {
 	if _, ok := services["cloudflared"]; ok {
 		t.Error("the tunnel is still in the document GritQA boots")
 	}
-	if !contains(got.Refused, "cloudflared") {
-		t.Errorf("Refused = %v, want the tunnel named", got.Refused)
+	if !contains(got.Ignored, "cloudflared") {
+		t.Errorf("Ignored = %v, want the tunnel named", got.Ignored)
 	}
 	if strings.Contains(string(got.Document), "cloudflared") {
 		t.Error("the document still mentions the tunnel somewhere")
@@ -334,7 +359,7 @@ func TestSealingSkipsADriverItDoesNotKnow(t *testing.T) {
 func TestAnUnclassifiedEnvironmentBootsUnchanged(t *testing.T) {
 	got, doc := roled(t, Environment{App: "main", Port: 8080})
 
-	if got.Sealed || got.Refused != nil || got.Held != nil {
+	if got.Sealed || got.Ignored != nil || got.Held != nil {
 		t.Errorf("overlay = %+v, want none of the new behaviour", got)
 	}
 	if _, ok := doc["services"].(map[string]any)["cloudflared"]; !ok {

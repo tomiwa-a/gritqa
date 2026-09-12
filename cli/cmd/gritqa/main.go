@@ -65,6 +65,8 @@ func main() {
 	f.BoolVar(&opts.JSON, "json", false, "NDJSON output, one event per line")
 	f.BoolVar(&opts.Logout, "logout", false, "forget the stored token and exit")
 	f.StringVar(&opts.ConfigPath, "config", "", "path to config.yaml")
+	f.BoolVar(&opts.Init, "init", false, "scaffold .gritqa/config.yaml from the compose file, then stop")
+	f.BoolVar(&opts.Update, "update", false, "refresh the config from the compose file, then stop")
 	f.StringVar(&opts.Server, "server", "", "dashboard base URL (default https://app.gritqa.dev)")
 	f.StringVar(&opts.Serve, "serve", "", "serve this project's tools over MCP; bare for stdio, or --serve=127.0.0.1:7391")
 	f.Lookup("serve").NoOptDefVal = "stdio"

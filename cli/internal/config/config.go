@@ -71,7 +71,7 @@ type Run struct {
 
 // Sandbox turns a run into a copy of the project brought up on its own compose
 // file. Nothing here describes how it boots: that is what the compose file says,
-// and Environment is who read it.
+// and Services is who read it.
 type Sandbox struct {
 	// Compose names the project's compose files, relative to the project root.
 	// Empty means compose's own lookup order, tried at the project root and then
@@ -83,67 +83,42 @@ type Sandbox struct {
 	Mount string `yaml:"mount,omitempty"`
 	// Tables limits what the state ledger watches. Empty watches every table.
 	Tables []string `yaml:"tables,omitempty"`
-
-	// Environment is what someone worked out about the project's compose file, and
-	// the only thing that lets a run boot: GritQA does not decide which service is
-	// the app. The agent proposes one through derive_environment, and this is where
-	// a human accepts it.
-	Environment *Environment `yaml:"environment,omitempty"`
+	// Egress says whether the copy may reach the internet: deny or allow.
+	// Empty reads as deny, because a copy of someone's stack has no business
+	// making outbound calls.
+	Egress string `yaml:"egress,omitempty"`
+	// Writable lists container paths the app writes to, so the copy mounts fresh
+	// volumes over them instead of writing into the developer's source tree.
+	Writable []string `yaml:"writable,omitempty"`
+	// Services is the verdict on every service the compose file declares, keyed
+	// by service name. A service with no entry blocks the boot with its name in
+	// the error: an unjudged service is one `docker compose up` starts because
+	// nobody said otherwise.
+	Services map[string]Service `yaml:"services,omitempty"`
 }
 
-// Environment mirrors sandbox.Environment in YAML. It is a separate declaration
-// because the wire format is JSON and this one is hand-written, and because a
-// config package that imported the sandbox would invert the dependency.
-type Environment struct {
-	App      string       `yaml:"app"`
-	Port     int          `yaml:"port"`
-	Database string       `yaml:"database,omitempty"`
-	DBPort   int          `yaml:"db_port,omitempty"`
-	Driver   string       `yaml:"driver,omitempty"`
-	Login    Login        `yaml:"login,omitempty"`
-	Schema   []SchemaStep `yaml:"schema,omitempty"`
-	Writable []string     `yaml:"writable,omitempty"`
-}
-
-// Login names how to connect by naming keys rather than values: a $KEY is read
-// from the database service's own environment once the copy is up, so a password
-// out of the developer's .env never has to be copied in here.
-type Login struct {
-	User     string `yaml:"user,omitempty"`
-	Password string `yaml:"password,omitempty"`
-	Name     string `yaml:"name,omitempty"`
-}
-
-// SchemaStep is one step of bringing the schema up. An empty run means the
-// service's own declared command.
-type SchemaStep struct {
-	Service string   `yaml:"service"`
+// Service is one verdict: what GritQA does with one service the compose file
+// declares. Role is tested, support, schema, on_demand or ignore; port is the
+// container port it serves or listens on; why is required on ignore and tells
+// the future why a service is gone from the copy; run is a schema step's
+// command (empty means the service's own); measure and driver say how state is
+// read for datastores (measure sql with a driver like mysql).
+type Service struct {
+	Role    string   `yaml:"role,omitempty"`
+	Port    int      `yaml:"port,omitempty"`
+	Why     string   `yaml:"why,omitempty"`
 	Run     []string `yaml:"run,omitempty"`
+	Measure string   `yaml:"measure,omitempty"`
+	Driver  string   `yaml:"driver,omitempty"`
 }
 
-// EnvironmentBlock renders an environment as the block that puts it in effect.
-// A proposal is recorded as JSON and approved by hand in YAML, so whoever
-// approves one would otherwise be guessing at the shape.
-func EnvironmentBlock(e Environment) string {
-	var b strings.Builder
-	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2)
-	if enc.Encode(map[string]any{
-		"run": map[string]any{"sandbox": map[string]any{"environment": e}},
-	}) != nil {
-		return ""
-	}
-	enc.Close()
-	return b.String()
-}
-
-// The keys a run used to read. GritQA brought its own database up once and had to
-// be told which image, which schema commands, which writable paths; every one of
-// those is now the developer's compose file's answer. Ignoring them in silence
-// would leave someone believing image: still chose something.
+// The keys a run used to read. The environment block and everything under it
+// moved into services: one verdict per service instead of one block of answers.
+// Ignoring them in silence would leave someone believing environment: still
+// boots something.
 var retired = map[string][]string{
 	"run":         {"start", "migrate", "seed", "env"},
-	"run.sandbox": {"image", "database", "docroot", "watch", "writable", "runtime", "recipe", "workdir", "install"},
+	"run.sandbox": {"image", "database", "docroot", "watch", "runtime", "recipe", "workdir", "install", "environment"},
 }
 
 // Retired names the keys in this file that nothing reads any more.

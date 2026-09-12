@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
@@ -77,48 +78,42 @@ func (b *serve) Compose(ctx context.Context) (*sandbox.Compose, error) {
 // Environment is what has been worked out about the project's compose file, and
 // nil when nobody has. GritQA has no fallback answer to offer here: the point of
 // the whole seam is that it stops guessing how someone else's project boots.
-func (b *serve) Environment(ctx context.Context) (*sandbox.Environment, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	store, _, err := b.cached(ctx)
+// Status reports what is configured about how this project boots, and whether
+// it is enough: the verdicts on record, the services still missing one, and
+// the check result. Read-only by design — verdicts are written in the config
+// file by a human, never talked into existence here.
+func (b *serve) Status(ctx context.Context) (mcp.StatusReport, error) {
+	sb := b.cfg.Run.SandboxOpts()
+	out := mcp.StatusReport{Configured: sb.Services != nil}
+	if !out.Configured {
+		out.Reason = "no service verdicts in " + config.Name + " — run gritqa --init " +
+			"to scaffold them from the compose file, judge each service, and run again"
+		return out, nil
+	}
+	c, err := composeFor(ctx, b.cfg)
 	if err != nil {
-		return nil, err
+		out.Reason = err.Error()
+		return out, nil
 	}
-	body, err := store.Environment()
-	if err != nil {
-		return nil, err
+	out.Fingerprint = c.Fingerprint
+	seen := map[string]bool{}
+	for name, verdict := range sb.Services {
+		seen[name] = true
+		out.Services = append(out.Services, mcp.ServiceStatus{Name: name, Role: verdict.Role})
 	}
-	return sandbox.DecodeEnvironment(body)
-}
-
-// Propose records a proposal and returns the block that approves it, which is
-// also what it prints: the person who has to accept this reads a terminal, and
-// nothing else here tells them what to write.
-func (b *serve) Propose(_ context.Context, e sandbox.Environment) (string, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if b.store == nil {
-		return "", errors.New("the local cache is not open, so there is nowhere to record a proposal")
+	sort.Slice(out.Services, func(i, j int) bool { return out.Services[i].Name < out.Services[j].Name })
+	for _, name := range c.Names() {
+		if !seen[name] {
+			out.Missing = append(out.Missing, name)
+		}
 	}
-	body, err := e.Encode()
-	if err != nil {
-		return "", err
+	if err := fromConfig(sb).Check(c); err != nil {
+		out.Reason = err.Error()
+		return out, nil
 	}
-	if err := b.store.SaveEnvironmentProposal(e.Fingerprint, e.Author, body); err != nil {
-		return "", err
-	}
-	accept := config.EnvironmentBlock(toConfig(e))
-	b.w.Write(term.Line{
-		Kind: term.Info,
-		Text: fmt.Sprintf("the agent worked out how this project boots — %s. No run boots on it "+
-			"until this is in %s:", e.Describe(), config.Name),
-	})
-	for _, line := range strings.Split(strings.TrimRight(accept, "\n"), "\n") {
-		b.w.Write(term.Line{Kind: term.Out, Text: line})
-	}
-	return accept, nil
+	out.Bootable = true
+	out.Reason = "configured"
+	return out, nil
 }
 
 // Sandbox answers with what is up and starts nothing. A tool that reads should

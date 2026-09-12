@@ -71,7 +71,6 @@ func attach(ctx context.Context, s *session, srv *mcp.Server, token string) erro
 		srv:     srv,
 		tok:     token,
 	}
-	s.sync = a.environment
 
 	go a.dialOut(ctx)
 
@@ -97,15 +96,41 @@ func attach(ctx context.Context, s *session, srv *mcp.Server, token string) erro
 			"so this pass stays local: " + err.Error()})
 	}
 
+	// Verdicts first: an unjudged or contradictory setup fails here, in seconds,
+	// instead of minutes later when a boot or a draft needs it.
+	comp, err := checkConfigured(ctx, w, cfg)
+	if err != nil {
+		return err
+	}
+
+	// The trial boot overlaps the read below: Docker works while the index
+	// walks, and the pass joins both before anything is reported. Buffered, so
+	// a read that fails first still lets the boot finish alone.
+	bootDone := make(chan error, 1)
+	booting := comp != nil
+	if booting {
+		go func() {
+			_, err := trialBoot(ctx, w, cfg, comp)
+			bootDone <- err
+		}()
+	}
+
 	got, err := read(ctx, w, cfg, a.opts)
 	if err != nil {
 		return err
+	}
+	if booting {
+		if berr := <-bootDone; berr != nil {
+			w.Write(term.Line{Kind: term.Fail, Text: "trial boot failed — runs will fail " +
+				"until the compose file or the verdicts are fixed: " + berr.Error()})
+		} else {
+			w.Write(term.Line{Kind: term.OK, Text: "trial boot passed"})
+		}
 	}
 	a.snap = got.snap
 	a.keep(prog.Snapshot())
 
 	a.mirror(ctx, got.snap)
-	a.environment(ctx)
 	w.Write(term.Line{Kind: term.Blank})
 	w.Write(term.Line{Kind: term.Info, Text: "waiting for approved plans — Ctrl-C to stop"})
 

@@ -71,7 +71,7 @@ Your tools:
 - read_file -- one repo-relative file, up to 128 KB. Project-bounded.
 - search -- literal or regex across source. Use to find handlers, permissions, migrations, and where a store key/column is used.
 - db -- one read-only query against the project's primary datastore via the sandbox (SQL: SELECT/SHOW/EXPLAIN/DESCRIBE; auto-starts the sandbox if needed, about a minute the first time). For non-SQL stores (MongoDB, Redis, ClickHouse, Kafka, etc.) there is no db query -- use search + read_file instead. Make as many db calls as you need when a SQL store exists: list tables, describe schema, join/filter, and cross-check what the code says.
-- read_compose / derive_environment / start_sandbox / teardown -- for environment questions only.
+- read_compose / environment_status / start_sandbox / teardown -- for environment questions only. environment_status is read-only: verdicts live in the project's config file, so point there instead of proposing any.
 
 Data questions -- always do both sides and say so:
 - Query the live data when a SQL store exists: use db to list tables/collections, describe schema, and SELECT to join/filter (e.g. which roles have which permissions). For document/KV/stream stores (Mongo, Redis, ClickHouse, Kafka, Grafana, etc.) skip db and read the code: search for collection/table/topic/key definitions, read the model/migration that defines them, and confirm the mapping.
@@ -375,8 +375,8 @@ function digestOf(tool: string, output: unknown): string | undefined {
   }
   if (typeof out.base_url === 'string') return 'sandbox up';
 
-  /* A shape this does not know. `read_file` truncating, `derive_environment`
-     reporting a recipe -- the tool ran and said something, and that is the honest
+  /* A shape this does not know. `read_file` truncating, `environment_status`
+     reporting the verdicts -- the tool ran and said something, and that is the honest
      digest for a tool added after this function was written. */
   return tool === 'get_index' ? 'read the index' : undefined;
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 // runs whatever the environment says brings the schema up, and takes the baseline
 // a run is measured against. It is a copy in the strict sense — its own project
 // name, its own volumes, its own ports — so whatever they have running is untouched.
-func stage(ctx context.Context, w *term.Writer, cfg *config.Config, store *index.Store) (*sandbox.Stack, error) {
+func stage(ctx context.Context, w *term.Writer, cfg *config.Config) (*sandbox.Stack, error) {
 	if got := cfg.Retired(); len(got) > 0 {
 		w.Write(term.Line{Kind: term.Info, Text: strings.Join(got, ", ") + " no longer mean " +
 			"anything: a run boots your compose file, so the image, the schema commands and the " +
@@ -27,7 +28,7 @@ func stage(ctx context.Context, w *term.Writer, cfg *config.Config, store *index
 	if err != nil {
 		return nil, err
 	}
-	env, err := environment(cfg, store, c)
+	env, err := environment(cfg, c)
 	if err != nil {
 		return nil, err
 	}
@@ -75,56 +76,87 @@ func composeFor(ctx context.Context, cfg *config.Config) (*sandbox.Compose, erro
 	return sandbox.ReadCompose(ctx, files)
 }
 
-// environment is what someone worked out about this project's compose file: the
-// block a human wrote in their config, or one that was proposed and approved.
-// There is no fallback, and that is the point — deciding for itself which service
-// is the app is the class of thing GritQA stopped doing.
-func environment(cfg *config.Config, store *index.Store, c *sandbox.Compose) (sandbox.Environment, error) {
-	if e := cfg.Run.SandboxOpts().Environment; e != nil {
-		out := fromConfig(*e)
+// environment is what the config file says about this project's compose file:
+// one verdict per service, written by a human, checked against the file on
+// every boot. There is no fallback, and that is the point — deciding for
+// itself which service is the app is the class of thing GritQA stopped doing.
+func environment(cfg *config.Config, c *sandbox.Compose) (sandbox.Environment, error) {
+	if sb := cfg.Run.SandboxOpts(); sb.Services != nil {
+		out := fromConfig(sb)
 		return out, out.Check(c)
 	}
-	if store != nil {
-		body, err := store.Environment()
-		if err != nil {
-			return sandbox.Environment{}, err
-		}
-		e, err := sandbox.DecodeEnvironment(body)
-		if err != nil {
-			return sandbox.Environment{}, err
-		}
-		if e != nil {
-			return *e, e.Check(c)
-		}
-	}
-	return sandbox.Environment{}, fmt.Errorf("nothing here knows how this project boots — which "+
-		"of %s answers HTTP, which one holds the data, what brings its schema up. Ask the agent to "+
-		"read the project and propose an answer with derive_environment, or write "+
-		"run.sandbox.environment in %s yourself", strings.Join(c.Names(), ", "), config.Name)
+	return sandbox.Environment{}, fmt.Errorf("no service verdicts in %s — run `gritqa --init` "+
+		"to scaffold them from %s, judge each service, and run again",
+		config.Name, strings.Join(c.Names(), ", "))
 }
 
-func fromConfig(e config.Environment) sandbox.Environment {
+// checkConfigured reads the compose file and checks the verdicts against it,
+// before anything expensive happens. No sandbox block means a research-only
+// setup: nothing to check, nothing to prove. A compose file that will not read
+// warns instead of failing — verdict failures are fatal, but a laptop with
+// Docker off still has questions to ask, and boots fail later with specifics.
+func checkConfigured(ctx context.Context, w *term.Writer, cfg *config.Config) (*sandbox.Compose, error) {
+	if cfg.Run == nil || cfg.Run.Sandbox == nil {
+		return nil, nil
+	}
+	c, err := composeFor(ctx, cfg)
+	if err != nil {
+		w.Write(term.Line{Kind: term.Info, Text: "could not read the compose file, so the " +
+			"verdicts go unchecked until a run needs them: " + err.Error()})
+		return nil, nil
+	}
+	if err := fromConfig(*cfg.Run.Sandbox).Check(c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// trialBoot proves the verdicts once per compose file: a throwaway stage torn
+// down immediately, recorded by fingerprint. Unchanged compose never pays
+// twice. A failed proof warns loudly and lets the process continue, because
+// the verdicts above already decided what may boot — Docker being off is not
+// otherwise fatal to a process that also answers questions.
+func trialBoot(ctx context.Context, w *term.Writer, cfg *config.Config, c *sandbox.Compose) (bool, error) {
+	store, err := index.Open(cfg.CachePath())
+	if err != nil {
+		return false, err
+	}
+	defer store.Close()
+	if fp, _ := store.Meta("trial_boot"); fp != "" && fp == c.Fingerprint {
+		return false, nil
+	}
+	st, err := stage(ctx, w, cfg)
+	if err != nil {
+		return true, err
+	}
+	defer st.Down(context.WithoutCancel(ctx))
+	if err := store.SetMeta("trial_boot", c.Fingerprint); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+func fromConfig(sb config.Sandbox) sandbox.Environment {
 	out := sandbox.Environment{
-		App: e.App, Port: e.Port, Database: e.Database, DBPort: e.DBPort,
-		Driver: e.Driver, Writable: e.Writable, Author: sandbox.AuthorConfig,
-		Login: sandbox.Login{User: e.Login.User, Password: e.Login.Password, Name: e.Login.Name},
+		Author:   sandbox.AuthorConfig,
+		Egress:   sb.Egress,
+		Writable: sb.Writable,
 	}
-	for _, s := range e.Schema {
-		out.Schema = append(out.Schema, sandbox.SchemaStep{Service: s.Service, Run: s.Run})
+	names := make([]string, 0, len(sb.Services))
+	for name := range sb.Services {
+		names = append(names, name)
 	}
-	return out
-}
-
-// toConfig is fromConfig backwards, for rendering a proposal as the block that
-// approves it.
-func toConfig(e sandbox.Environment) config.Environment {
-	out := config.Environment{
-		App: e.App, Port: e.Port, Database: e.Database, DBPort: e.DBPort,
-		Driver: e.Driver, Writable: e.Writable,
-		Login: config.Login{User: e.Login.User, Password: e.Login.Password, Name: e.Login.Name},
-	}
-	for _, s := range e.Schema {
-		out.Schema = append(out.Schema, config.SchemaStep{Service: s.Service, Run: s.Run})
+	sort.Strings(names)
+	for _, name := range names {
+		s := sb.Services[name]
+		out.Services = append(out.Services, sandbox.Classification{
+			Service: name,
+			Role:    sandbox.Role(s.Role),
+			Port:    s.Port,
+			Why:     s.Why,
+			Run:     s.Run,
+			Measure: sandbox.Measure(s.Measure),
+			Driver:  s.Driver,
+		})
 	}
 	return out
 }
