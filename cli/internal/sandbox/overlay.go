@@ -94,9 +94,21 @@ func (c *Compose) Overlay(e Environment, project string) (*Overlay, error) {
 		if _, ok := services[name]; !ok {
 			continue
 		}
-		held[name] = true
-		absent[name] = true
+	held[name] = true
+	absent[name] = true
 		out.Held = append(out.Held, name)
+	}
+	// Schema services park the same way: they run as explicit steps, never as
+	// part of the boot. A schema runner that also starts on `up` executes twice
+	// per boot — once unobserved, once as the step — and the first execution's
+	// leftover state is what the second one trips over.
+	for _, step := range e.Schema {
+		if _, ok := services[step.Service]; !ok {
+			continue
+		}
+		held[step.Service] = true
+		absent[step.Service] = true
+		out.Held = append(out.Held, step.Service)
 	}
 	sort.Strings(out.Ignored)
 	sort.Strings(out.Held)

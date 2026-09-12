@@ -241,8 +241,7 @@ func roled(t *testing.T, e Environment) (*Overlay, map[string]any) {
 
 // A refused service is deleted rather than disabled, so nothing downstream has to
 // read a flag correctly for the safety property to hold.
-func TestARefusedServiceIsNotInTheDocument(t *testing.T) {
-	got, doc := roled(t, classified().Normalize())
+func TestARefusedServiceIsNotInTheDocument(t *testing.T) {	got, doc := roled(t, classified().Normalize())
 
 	services := doc["services"].(map[string]any)
 	if _, ok := services["cloudflared"]; ok {
@@ -256,6 +255,27 @@ func TestARefusedServiceIsNotInTheDocument(t *testing.T) {
 	}
 }
 
+// A schema runner that also starts on `up` executes twice per boot — once
+// unobserved, once as the step — and the first execution's leftover state is
+// what the second one trips over. So schema services park behind the hold
+// profile like on-demand ones: out of the boot, runnable by explicit step.
+func TestSchemaServicesParkOutOfTheBoot(t *testing.T) {
+	got, doc := roled(t, classified().Normalize())
+
+	services := doc["services"].(map[string]any)
+	migration, ok := services["migration"].(map[string]any)
+	if !ok {
+		t.Fatal("the migrator is gone from the document entirely")
+	}
+	profiles, _ := migration["profiles"].([]any)
+	if len(profiles) != 1 || profiles[0] != HoldProfile {
+		t.Errorf("migration profiles = %v, want only the hold profile", profiles)
+	}
+	if !contains(got.Held, "migration") {
+		t.Errorf("Held = %v, want the migrator named", got.Held)
+	}
+}
+
 // Compose stops on a depends_on it cannot satisfy, so removing a service without
 // removing what points at it turns a safety choice into a boot failure.
 func TestWhatDependedOnTheAbsentIsDetached(t *testing.T) {
@@ -266,9 +286,12 @@ func TestWhatDependedOnTheAbsentIsDetached(t *testing.T) {
 	if !sameJSON(deps, []any{"database"}) {
 		t.Errorf("jobs depends_on = %v, want the database alone", deps)
 	}
-	// main depended on database and migration, in map form, and both are booting.
-	if got := svc(t, doc, "main")["depends_on"].(map[string]any); len(got) != 2 {
-		t.Errorf("main depends_on = %v, want both kept", got)
+	// main depended on database and migration, in map form. The database edge
+	// stays: it boots. The migration edge goes: schema services run as explicit
+	// steps, never as part of the boot, so an edge `up` cannot satisfy would
+	// only fail it.
+	if got := svc(t, doc, "main")["depends_on"].(map[string]any); len(got) != 1 {
+		t.Errorf("main depends_on = %v, want the database alone", got)
 	}
 }
 

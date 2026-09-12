@@ -245,13 +245,67 @@ func (s *Stack) Schema(ctx context.Context) error {
 		}
 		s.log("running " + what)
 
-		args := append([]string{"run", "--rm", "-T", step.Service}, step.Run...)
-		out, err := s.compose(ctx, args...)
+		// The database can report healthy on its first ping while still warming
+		// its grants, so a first attempt may catch a refusal. Retry those —
+		// and only those — because a genuine migration error must fail fast
+		// instead of retrying its way into partial state.
+		var out string
+		var err error
+		for attempt := 1; ; attempt++ {
+			args := append([]string{"run", "--rm", "-T", step.Service}, step.Run...)
+			out, err = s.compose(ctx, args...)
+			if err == nil || !connectionRefused(out) || attempt >= schemaAttempts {
+				break
+			}
+			s.log(fmt.Sprintf("database not ready (%s), retrying %s", firstLine(out), what))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(schemaRetryEvery):
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("%s failed:\n%s", what, out)
 		}
 	}
 	return nil
+}
+
+// schemaAttempts bounds how long a warming database gets, and schemaRetryEvery
+// spaces the attempts. Six tries at five seconds covers the slowest healthy
+// boot this has been seen against without turning a refusal into a minute.
+const schemaAttempts = 6
+
+const schemaRetryEvery = 5 * time.Second
+
+// connectionRefused recognizes a database that is not ready yet, as opposed to
+// a migration that is wrong. Matched narrowly on purpose: these strings all say
+// the connection died, and anything else — including a duplicate table — fails
+// on the first attempt.
+func connectionRefused(out string) bool {
+	lowered := strings.ToLower(out)
+	for _, symptom := range []string{
+		"connection refused",
+		"can't connect",
+		"cannot connect",
+		"could not connect",
+		"connection timed out",
+		"communications link failure",
+		"connection reset",
+		"temporary failure in name resolution",
+		"sqlstate[hy000] [2002]",
+		"sqlstate[08006]",
+	} {
+		if strings.Contains(lowered, symptom) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstLine(out string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	return line
 }
 
 // Baseline works out what the ledger will watch, and is called after the schema

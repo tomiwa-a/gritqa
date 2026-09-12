@@ -346,3 +346,32 @@ volumes:
 		t.Errorf("the reset left a research upload behind: %q", out)
 	}
 }
+
+// Only a dead connection retries: a genuine migration error must fail on the
+// first attempt instead of retrying its way into partial state.
+func TestConnectionRefusedMatcher(t *testing.T) {
+	refused := []string{
+		"PDOException: SQLSTATE[HY000] [2002] Connection refused",
+		"Can't connect to MySQL server on 'db'",
+		"could not connect to server: Connection refused",
+		"Communications link failure",
+		"temporary failure in name resolution",
+		"connection timed out",
+	}
+	for _, out := range refused {
+		if !connectionRefused(out) {
+			t.Errorf("connectionRefused(%q) = false, want a retry", out)
+		}
+	}
+	final := []string{
+		"SQLSTATE[42S01]: Base table or view already exists: 1050 Table 'roles' already exists",
+		"syntax error at or near",
+		"migration failed",
+		"",
+	}
+	for _, out := range final {
+		if connectionRefused(out) {
+			t.Errorf("connectionRefused(%q) = true, want it to fail fast", out)
+		}
+	}
+}
