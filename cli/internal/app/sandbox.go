@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
-	"github.com/tomiwa-a/gritqa/cli/internal/index"
 	"github.com/tomiwa-a/gritqa/cli/internal/run"
 	"github.com/tomiwa-a/gritqa/cli/internal/sandbox"
 	"github.com/tomiwa-a/gritqa/cli/internal/term"
@@ -118,30 +117,6 @@ func checkConfigured(ctx context.Context, w *term.Writer, cfg *config.Config) (*
 	return c, nil
 }
 
-// trialBoot proves the verdicts once per compose file: a throwaway stage torn
-// down immediately, recorded by fingerprint. Unchanged compose never pays
-// twice. A failed proof warns loudly and lets the process continue, because
-// the verdicts above already decided what may boot — Docker being off is not
-// otherwise fatal to a process that also answers questions.
-func trialBoot(ctx context.Context, w *term.Writer, cfg *config.Config, c *sandbox.Compose) (bool, error) {
-	store, err := index.Open(cfg.CachePath())
-	if err != nil {
-		return false, err
-	}
-	defer store.Close()
-	if fp, _ := store.Meta("trial_boot"); fp != "" && fp == c.Fingerprint {
-		return false, nil
-	}
-	st, err := stage(ctx, w, cfg)
-	if err != nil {
-		return true, err
-	}
-	defer st.Down(context.WithoutCancel(ctx))
-	if err := store.SetMeta("trial_boot", c.Fingerprint); err != nil {
-		return true, err
-	}
-	return true, nil
-}
 func fromConfig(sb config.Sandbox) sandbox.Environment {
 	out := sandbox.Environment{
 		Author:   sandbox.AuthorConfig,

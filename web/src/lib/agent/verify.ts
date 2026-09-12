@@ -190,28 +190,15 @@ export async function verifyPlan(input: {
     });
     recordOutcomes(watch, 'verify', investigation.content);
 
-    const out = await generateObject({
+    const checks = await settleVerdicts({
       model: input.model,
-      schema: checksSchema,
-      system: CHECK_RULES,
-      prompt: [
-        plan,
-        '',
-        'What you found when you looked:',
-        investigation.text,
-        '',
-        'Now one verdict per step, in the order above, using the ids exactly as written.',
-        'A step you did not manage to establish anything about is `unsupported`.',
-      ].join('\n'),
+      planPrompt: plan,
+      investigation: investigation.text,
+      stepIds: input.steps.map((step) => step.id),
+      watch,
     });
 
-    return {
-      checks: checksFor(
-        out.object,
-        input.steps.map((step) => step.id),
-      ),
-      findings: investigation.text,
-    };
+    return { checks, findings: investigation.text };
   } catch (error) {
     /* A plan that could not be checked is still a plan. The log names the reason and
        the developer sees an unverified plan, which is what they had yesterday. */
@@ -287,22 +274,13 @@ export async function recheckStep(input: {
     });
     recordOutcomes(watch, 'verify', investigation.content);
 
-    const out = await generateObject({
+    const [check] = await settleVerdicts({
       model: input.model,
-      schema: checksSchema,
-      system: CHECK_RULES,
-      prompt: [
-        plan,
-        '',
-        'What you found when you looked:',
-        investigation.text,
-        '',
-        'Now the one verdict for this step, using its id exactly as written.',
-        'A step you did not manage to establish anything about is `unsupported`.',
-      ].join('\n'),
+      planPrompt: plan,
+      investigation: investigation.text,
+      stepIds: [input.step.id],
+      watch,
     });
-
-    const [check] = checksFor(out.object, [input.step.id]);
     return { check, findings: investigation.text };
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
@@ -318,4 +296,64 @@ export async function recheckStep(input: {
       findings: '',
     };
   }
+}
+
+/**
+ * Verdicts that were actually given, never blanks filed as answers.
+ *
+ * A confirm-with-no-note is a real verdict; an `unsupported` with an empty
+ * note is the fallback shape, which means the model named nothing usable for
+ * that step. When any step comes back in fallback shape, one retry names the
+ * missing ids exactly. Still short afterwards, the survivors stand and a
+ * visible note says how many settled -- a partial job reads as partial, never
+ * as forty clean rows of nothing.
+ */
+async function settleVerdicts(input: {
+  model: LanguageModel;
+  planPrompt: string;
+  investigation: string;
+  stepIds: string[];
+  watch: Watcher;
+}): Promise<StepCheck[]> {
+  const ask = (missed: string[]) =>
+    generateObject({
+      model: input.model,
+      schema: checksSchema,
+      system: CHECK_RULES,
+      prompt: [
+        input.planPrompt,
+        '',
+        'What you found when you looked:',
+        input.investigation,
+        '',
+        missed.length === 0
+          ? 'Now one verdict per step, in the order above, using the ids exactly as written.'
+          : `Your last answer named none of these steps: ${missed.join(', ')}. Return one entry per listed id, using the ids exactly as written.`,
+        'The verdict is exactly one of confirmed, unsupported or wrong. A step you did not manage to establish anything about is `unsupported`.',
+      ].join('\n'),
+    });
+
+  const settled = (checks: StepCheck[]) =>
+    checks.filter((c) => c.verdict !== 'unsupported' || c.note.trim() !== '');
+
+  const first = checksFor((await ask([])).object, input.stepIds);
+  const kept = new Map(settled(first).map((c) => [c.stepId, c]));
+  if (kept.size === input.stepIds.length) return first;
+
+  const missed = input.stepIds.filter((id) => !kept.has(id));
+  const second = checksFor((await ask(missed)).object, input.stepIds);
+  for (const c of settled(second)) {
+    if (!kept.has(c.stepId)) kept.set(c.stepId, c);
+  }
+  const checks = input.stepIds.map(
+    (id) => kept.get(id) ?? { stepId: id, verdict: 'unsupported' as const, note: '' },
+  );
+  if (kept.size < input.stepIds.length) {
+    input.watch.note({
+      phase: 'verify',
+      kind: 'note',
+      label: `Checked ${input.stepIds.length} steps but established ${kept.size} — the rest came back without usable verdicts and read as unsettled.`,
+    });
+  }
+  return checks;
 }
