@@ -1,4 +1,5 @@
 import type { ToolSet } from 'ai';
+import { digestOf, errorDigest, subjectOf, type ContentPart } from './tool-digest';
 
 /**
  * What the agent did, as it does it.
@@ -158,6 +159,55 @@ function reading(tool: string, input: unknown): string {
 function clipped(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim();
   return one.length > 160 ? `${one.slice(0, 159)}…` : one;
+}
+
+/**
+ * What each finished tool call came back with, as notes beside the start notes.
+ *
+ * Starts are recorded when tools fire so a hang stays visible; this walks the
+ * finished content afterwards and records what each call actually returned — a
+ * measurement, never a payload — or that it failed and why in one line. A call
+ * whose result carries no measurement gets no second row: the start note already
+ * says it happened. A call with no result at all (the generation ended mid-flight)
+ * gets none either, which is exactly the hanging case the start note exists for.
+ */
+export function recordOutcomes(
+  watch: Watcher,
+  phase: WorkPhase,
+  content: readonly unknown[],
+): void {
+  let open: { tool: string; input: unknown } | null = null;
+  for (const raw of content) {
+    const part = raw as ContentPart;
+    if (part.type === 'tool-call') {
+      open = { tool: part.toolName ?? 'tool', input: part.input };
+      continue;
+    }
+    if (!open) continue;
+    const head = subjectOf(open.input);
+    const name = head ? `${open.tool} ${head}` : open.tool;
+    if (part.type === 'tool-result') {
+      const digest = digestOf(open.tool, part.output);
+      if (digest !== undefined) {
+        watch.note({
+          phase,
+          kind: 'tool',
+          label: `${name} — ${digest}`,
+          detail: { tool: open.tool, outcome: digest },
+        });
+      }
+      open = null;
+    } else if (part.type === 'tool-error') {
+      const reason = errorDigest(part.error);
+      watch.note({
+        phase,
+        kind: 'tool',
+        label: `${name} — failed: ${reason}`,
+        detail: { tool: open.tool, failed: true },
+      });
+      open = null;
+    }
+  }
 }
 
 /**

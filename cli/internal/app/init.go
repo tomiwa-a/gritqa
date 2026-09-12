@@ -18,23 +18,26 @@ import (
 // files it finds, and every service in them with a blank verdict. It refuses a
 // project that is already initialized — that is what update is for — and a
 // project with no compose file, because verdicts about nothing boot nothing.
+// The project is where you stand, not what a walk-up finds: init creates, so
+// the current directory is the root. (Find would hand back a parent manifest
+// and scaffold the wrong project.)
 func Init(ctx context.Context, w *term.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	root, hasConfig, err := config.Find(cwd)
+	root, err := filepath.Abs(cwd)
 	if err != nil {
 		return err
 	}
-	if hasConfig {
+	if _, hasConfig, err := config.Find(root); err == nil && hasConfig {
 		return fmt.Errorf("this project is already initialized — run gritqa --update "+
 			"to refresh it")
 	}
 
 	files := sandbox.LocateCompose(root, sandbox.MountRoot(root, ""), nil)
 	if len(files) == 0 {
-		return fmt.Errorf("no compose file found at %s or above it — gritqa boots a project "+
+		return fmt.Errorf("no compose file found in %s — gritqa boots a project "+
 			"the way its own compose file says to", root)
 	}
 	c, err := sandbox.ReadCompose(ctx, files)

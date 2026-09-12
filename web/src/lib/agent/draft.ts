@@ -1,8 +1,8 @@
 import { NoObjectGeneratedError, generateObject, generateText, isStepCount } from 'ai';
 import { resolveModel, type Session } from './model';
-import { openResearch } from './research';
+import { openResearch, requireBootable } from './research';
 import { verifyPlan } from './verify';
-import { unwatched, watching } from './watch';
+import { unwatched, recordOutcomes, watching } from './watch';
 import {
   PlanShapeError,
   draftFromWire,
@@ -327,7 +327,6 @@ export async function refinePlan(input: {
   const watch = input.watch ?? unwatched;
   const { model, label } = await resolveModel(input.session);
   const research = await openResearch();
-
   const context = [
     HOUSE_RULES,
     rulesPrompt(input.rules),
@@ -336,6 +335,9 @@ export async function refinePlan(input: {
   ].join('\n');
 
   try {
+    // Before a single model call: drafting into a project that cannot boot burns
+    // a full research pass to conclude what one status read already knows.
+    await requireBootable(research);
     /* Pass one. No schema, because the job is to go and look -- and a model
        working towards a shape reads less than one working towards an answer.
        Skipped outright when a previous attempt at this same job already did it: its
@@ -365,9 +367,10 @@ export async function refinePlan(input: {
         ...watching(watch, 'research'),
       });
       findings = investigation.text;
-      /* The one `findings` note per job, and it is pass one's rather than the whole
-         return value: verify runs *after* the write, so its findings describe a plan
-         a resume is about to throw away. */
+        recordOutcomes(watch, 'research', investigation.content);
+        /* The one `findings` note per job, and it is pass one's rather than the whole
+           return value: verify runs *after* the write, so its findings describe a plan
+           a resume is about to throw away. */
       watch.note({ phase: 'research', kind: 'findings', label: findings });
     }
 
@@ -483,10 +486,12 @@ export async function draftPlan(input: {
   const watch = input.watch ?? unwatched;
   const { model, label } = await resolveModel(input.session);
   const research = await openResearch();
-
   const context = [HOUSE_RULES, rulesPrompt(input.rules)].join('\n');
 
   try {
+    // Before a single model call: drafting into a project that cannot boot burns
+    // a full research pass to conclude what one status read already knows.
+    await requireBootable(research);
     let findings = watch.resumeFrom;
     if (findings) {
       watch.note({
@@ -527,7 +532,8 @@ export async function draftPlan(input: {
         ...watching(watch, 'research'),
       });
       findings = investigation.text;
-      watch.note({ phase: 'research', kind: 'findings', label: findings });
+        recordOutcomes(watch, 'research', investigation.content);
+        watch.note({ phase: 'research', kind: 'findings', label: findings });
     }
 
     watch.note({

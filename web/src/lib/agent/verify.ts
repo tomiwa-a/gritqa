@@ -1,7 +1,7 @@
 import { generateObject, generateText, isStepCount } from 'ai';
 import type { LanguageModel, ToolSet } from 'ai';
 import { checksFor, checksSchema } from './plan-schema';
-import { unwatched, watching } from './watch';
+import { recordOutcomes, unwatched, watching } from './watch';
 import { observedRoutes } from '@/lib/db/contracts';
 import { currentScope } from '@/lib/db/scope';
 import type { Watcher } from './watch';
@@ -188,6 +188,7 @@ export async function verifyPlan(input: {
       stopWhen: isStepCount(budget(input.steps.length)),
       ...watching(watch, 'verify'),
     });
+    recordOutcomes(watch, 'verify', investigation.content);
 
     const out = await generateObject({
       model: input.model,
@@ -284,6 +285,7 @@ export async function recheckStep(input: {
       stopWhen: isStepCount(12),
       ...watching(watch, 'verify'),
     });
+    recordOutcomes(watch, 'verify', investigation.content);
 
     const out = await generateObject({
       model: input.model,

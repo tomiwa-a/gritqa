@@ -46,6 +46,19 @@ export class NoModelKeyError extends Error {
 }
 
 /**
+ * The project is not bootable: no service verdicts, or a check that fails.
+ * The reason names the fix, in the CLI's own words.
+ */
+export class NeedsConfigError extends Error {
+  readonly code = 'NEEDS_CONFIG';
+
+  constructor(readonly reason: string) {
+    super(`NEEDS_CONFIG: ${reason}`);
+    this.name = 'NeedsConfigError';
+  }
+}
+
+/**
  * A service account, pasted once into `.env.local` and then left alone.
  *
  * This is the answer to re-authenticating every morning. ADC works and needs

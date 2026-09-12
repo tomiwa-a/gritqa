@@ -418,8 +418,15 @@ func (s *Stack) Secrets() []string {
 	return []string{s.creds.Password}
 }
 
-// mapped reads the loopback port compose published a container port on.
+// mapped reads the loopback port compose published a container port on. Empty
+// service or zero port fail here with their cause named, instead of traveling
+// to Docker and coming back as its confusing echo.
 func (s *Stack) mapped(ctx context.Context, service string, container int) (int, error) {
+	if service == "" || container < 1 {
+		return 0, fmt.Errorf("no service resolved to map (service %q, port %d) — the boot "+
+			"environment carries classifications but no tested service survived normalization",
+			service, container)
+	}
 	out, err := s.compose(ctx, "port", service, strconv.Itoa(container))
 	if err != nil {
 		return 0, fmt.Errorf("could not find what port %s published for %d: %s", service, container, out)

@@ -83,7 +83,14 @@ func composeFor(ctx context.Context, cfg *config.Config) (*sandbox.Compose, erro
 func environment(cfg *config.Config, c *sandbox.Compose) (sandbox.Environment, error) {
 	if sb := cfg.Run.SandboxOpts(); sb.Services != nil {
 		out := fromConfig(sb)
-		return out, out.Check(c)
+		if err := out.Check(c); err != nil {
+			return sandbox.Environment{}, err
+		}
+		// Normalize here, once, so every consumer boots exactly what validation
+		// approved. Check normalizes a throwaway copy for itself; without this,
+		// the verdicts would pass validation while the boot still carried empty
+		// App and Port — validated on a phantom, dead on the real thing.
+		return out.Normalize(), nil
 	}
 	return sandbox.Environment{}, fmt.Errorf("no service verdicts in %s — run `gritqa --init` "+
 		"to scaffold them from %s, judge each service, and run again",

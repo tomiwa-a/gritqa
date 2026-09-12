@@ -57,3 +57,34 @@ func TestServiceVerdictsBecomeTheBootEnvironment(t *testing.T) {
 		t.Errorf("a config of only live keys reports %v as retired", loaded.Retired())
 	}
 }
+
+// The regression that bit: Check normalizes a throwaway copy for itself, so
+// validating without normalizing the boot path approves on a phantom while the
+// launch maps ports for an empty app. environment() must return verdicts AND
+// the derived flat fields, together.
+func TestEnvironmentReturnsWhatValidationApproved(t *testing.T) {
+	cfg := config.New(t.TempDir(), "main")
+	cfg.Run = &config.Run{
+		Sandbox: &config.Sandbox{
+			Services: map[string]config.Service{
+				"api": {Role: "tested", Port: 80},
+				"db":  {Role: "support"},
+			},
+		},
+	}
+	comp := &sandbox.Compose{
+		Files: []string{"compose.yaml"},
+		Services: []sandbox.Service{
+			{Name: "api"},
+			{Name: "db"},
+		},
+	}
+
+	env, err := environment(cfg, comp)
+	if err != nil {
+		t.Fatalf("valid verdicts refused: %v", err)
+	}
+	if env.App != "api" || env.Port != 80 {
+		t.Errorf("boot would map %q on %d — validation approved api on 80", env.App, env.Port)
+	}
+}

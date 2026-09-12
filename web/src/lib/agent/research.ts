@@ -10,6 +10,7 @@ import { currentScope } from '@/lib/db/scope';
 import { newestDial } from '@/lib/agent/relay';
 import type { Held } from '@/lib/agent/relay';
 import { DialTransport } from '@/lib/agent/dial-transport';
+import { NeedsConfigError } from './model';
 
 /**
  * The agent's read access to the codebase, over the CLI's MCP server.
@@ -283,4 +284,70 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
       },
     );
   });
+}
+
+/**
+ * Boot readiness, checked with one tool call and no model.
+ *
+ * Drafting into an unconfigured project burns a full research pass to conclude
+ * what one status read already knows, so draft and refine flows ask first and
+ * throw `NeedsConfigError` instead of investigating. The caller closes the
+ * research session — this runs inside the same try/finally that guarantees it.
+ *
+ * Fail-open everywhere except an explicit unbootable: a missing tool (an older
+ * CLI), an uncallable tool, a failed read, or an unparseable answer all proceed.
+ * Only `bootable: false` stops the job, because only that is proof.
+ */
+export async function requireBootable(research: Research): Promise<void> {
+  const tool = (research.tools as Record<string, unknown>).environment_status;
+  if (!tool || typeof tool !== 'object') return;
+  const execute = (tool as { execute?: unknown }).execute;
+  if (typeof execute !== 'function') return;
+
+  let answer: unknown;
+  try {
+    answer = await (execute as (args: unknown, options: unknown) => Promise<unknown>)(
+      {},
+      { toolCallId: 'boot-check', messages: [] },
+    );
+  } catch (error) {
+    console.warn('research: boot check failed, proceeding:', error instanceof Error ? error.message : error);
+    return;
+  }
+
+  const status = parseStatus(answer);
+  if (status.bootable) return;
+  throw new NeedsConfigError(status.reason);
+}
+
+function parseStatus(answer: unknown): { bootable: boolean; reason: string } {
+  const fallback = 'This project cannot boot yet. Judge every service in .gritqa/config.yaml (gritqa --init scaffolds it) and try again.';
+  let value = answer;
+  if (value && typeof value === 'object') {
+    const result = value as { structuredContent?: unknown; content?: unknown };
+    if (result.structuredContent) {
+      value = result.structuredContent;
+    } else if (Array.isArray(result.content)) {
+      const first = result.content.find(
+        (part): part is { type: string; text: string } =>
+          !!part && typeof part === 'object' && (part as { type?: string }).type === 'text',
+      );
+      if (first) {
+        try {
+          value = JSON.parse(first.text);
+        } catch {
+          return { bootable: true, reason: '' };
+        }
+      }
+    }
+  }
+  if (!value || typeof value !== 'object') return { bootable: true, reason: '' };
+  const out = value as Record<string, unknown>;
+  if (out.bootable === false) {
+    return {
+      bootable: false,
+      reason: typeof out.reason === 'string' && out.reason.trim() ? out.reason.trim() : fallback,
+    };
+  }
+  return { bootable: true, reason: '' };
 }

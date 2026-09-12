@@ -7,6 +7,7 @@ import { listRules, toTestingRule } from '@/lib/db/rules';
 import { failWork, holdWork, recorder, settleWork } from '@/lib/db/work';
 import {
   CliUnavailableError,
+  NeedsConfigError,
   NoModelKeyError,
   askAgent,
   draftPlan,
@@ -14,6 +15,7 @@ import {
   priorFindingsOf,
   recheckStep,
   refinePlan,
+  requireBootable,
   resolveModel,
 } from '@/lib/agent';
 import { trialsOf } from '@/lib/agent/plan-schema';
@@ -64,6 +66,14 @@ export async function runWork(jobPublicId: string, session?: Session | null): Pr
     await settleWork(job, { href: done.href, note: done.note });
     refresh(done.revalidate);
   } catch (error) {
+    // Not a failure: the project cannot boot, so there was nothing to draft
+    // with. The job settles with the fix attached instead of going red.
+    if (error instanceof NeedsConfigError) {
+      watch.note({ phase: 'save', kind: 'note', label: error.reason });
+      await settleWork(job, { href: '/onboarding', note: error.reason });
+      refresh(['/dashboard/work', '/dashboard/queue']);
+      return;
+    }
     const why = readable(error);
     watch.note({ phase: 'save', kind: 'failed', label: why });
     await failWork(job, why).catch((second: unknown) => {
@@ -326,6 +336,7 @@ async function recheckJob(
   const research = await openResearch();
   let check;
   try {
+    await requireBootable(research);
     ({ check } = await recheckStep({
       model,
       tools: research.tools,
