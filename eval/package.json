@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "eval": "tsx run.ts",
-    "eval:all": "tsx run.ts --all"
+    "eval:all": "tsx run.ts --all",
+    "check-sync": "node check-sync.mjs",
+    "check-wire": "node check-wire.mjs"
   },
   "dependencies": {
     "ai": "^7.0.71",

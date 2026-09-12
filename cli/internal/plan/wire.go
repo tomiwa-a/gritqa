@@ -14,6 +14,7 @@ type Stored struct {
 	Assumptions []string          `json:"assumptions"`
 	Covers      []Covered         `json:"covers"`
 	Steps       []Step            `json:"steps"`
+	Checks      []Check           `json:"checks"`
 }
 
 // Covered is an endpoint the plan claims to exercise: bookkeeping the runner has
@@ -21,6 +22,24 @@ type Stored struct {
 type Covered struct {
 	Method string `json:"method"`
 	Path   string `json:"path"`
+}
+
+// Check is one step's verdict from the dashboard's verification pass: same
+// standing as Covered. The runner owns pass and fail and never consults these;
+// they are declared so the shape they travel in stays an error when it drifts.
+type Check struct {
+	StepID  string `json:"stepId"`
+	Verdict string `json:"verdict"`
+	Note    string `json:"note"`
+	Trial   *Trial `json:"trial,omitempty"`
+}
+
+// Trial is what a trial_call answered for the step, when one was made. Evidence
+// the grid reads as proof; the runner does not act on it.
+type Trial struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Code   int    `json:"code"`
 }
 
 // Assemble joins stored text to the columns beside it, and holds the result to the

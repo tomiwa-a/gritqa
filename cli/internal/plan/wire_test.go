@@ -46,3 +46,19 @@ func TestAssembleRefusesAnUnknownField(t *testing.T) {
 		t.Fatal("an unknown key in plan_json passed unnoticed")
 	}
 }
+
+// Checks travel in plan_json as review metadata: parsed, never consulted. A
+// plan carrying verdicts — including trial evidence — must load exactly like
+// one without, or every verified plan dies before its first step.
+func TestAssembleAcceptsChecks(t *testing.T) {
+	body := []byte(`{"variables":{},"assumptions":[],"covers":[],"steps":[` + step("a") + `],` +
+		`"checks":[{"stepId":"a","verdict":"wrong","note":"no such route",` +
+		`"trial":{"method":"GET","path":"/nope","code":404}}]}`)
+	p, err := Assemble(body, "p", 1, "http://x")
+	if err != nil {
+		t.Fatalf("a plan carrying checks was refused: %v", err)
+	}
+	if len(p.Steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(p.Steps))
+	}
+}
