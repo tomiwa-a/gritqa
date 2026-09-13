@@ -315,6 +315,54 @@ export const checksSchema = z.object({
 export type ChecksDraft = z.infer<typeof checksSchema>;
 
 /**
+ * What a research round established, as a record rather than prose.
+ *
+ * Prose is what the writer has to trust; a record is what it can check. Every
+ * entry names where it came from -- a file with a line, a query that ran -- so
+ * a later round can re-read the source instead of re-trusting the sentence. The
+ * writer and the verifier consume the same record, which is what stops the two
+ * of them disagreeing about what was ever established.
+ */
+export const findingsSchema = z.object({
+  routes: z
+    .array(
+      z.object({
+        method: z.string().min(1),
+        path: z.string().min(1).describe('As served, character for character'),
+        file: z.string().min(1).describe('Repo-relative path where it is registered'),
+        line: z.number().int().nonnegative().optional(),
+        handler: z.string().describe('What handles it, in the code\u2019s own terms'),
+      }),
+    )
+    .describe('Every route the round confirmed exists. Empty when none was confirmed.'),
+  tables: z
+    .array(
+      z.object({
+        table: z.string().min(1),
+        columns: z.array(z.string().min(1)).describe('Column names, exactly as described'),
+        via: z.string().min(1).describe('The query that established them'),
+      }),
+    )
+    .describe('Every table the round described. Empty when none was described.'),
+  shapes: z
+    .array(
+      z.object({
+        about: z.string().min(1).describe('Which endpoint or step this shape belongs to'),
+        reads: z.string().describe('The fields it reads off the request, or empty'),
+        returns: z.string().describe('The fields it returns, or empty'),
+      }),
+    )
+    .describe('Request and response shapes confirmed from handlers.'),
+  openQuestions: z
+    .array(z.string().min(1))
+    .describe(
+      'Anything the round looked for and could not establish. One line each. Empty when everything was established.',
+    ),
+});
+
+export type Findings = z.infer<typeof findingsSchema>;
+
+/**
  * The checks, keyed to steps that exist.
  *
  * A verdict about a step id the plan does not have is dropped rather than repaired:

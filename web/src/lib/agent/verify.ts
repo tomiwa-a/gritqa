@@ -82,6 +82,18 @@ function evidencePrompt(routes: ObservedRoute[]): string {
   ].join('\n');
 }
 
+/** Prior verdicts as the checker reads them: memory, not instruction. */
+function priorText(prior: StepCheck[]): string {
+  const lines = prior.map((c) => {
+    const trial = c.trial ? ` trial ${c.trial.method} ${c.trial.path} -> ${c.trial.code}` : '';
+    return `- ${c.stepId}: ${c.verdict}${c.note ? ` -- ${c.note}` : ''}${trial}`;
+  });
+  return [
+    ...lines,
+    'A step the plan did not change keeps the verdict it earned: re-confirm it from what you already read rather than relitigating it. Judge changed and unconfirmed steps on their own evidence, and say explicitly when a verdict flips and what changed.',
+  ].join('\n');
+}
+
 /** The plan as the checker reads it: every field a claim, nothing summarised away. */
 function stepsPrompt(steps: PlanStepSpec[]): string {
   return steps
@@ -155,6 +167,10 @@ export async function verifyPlan(input: {
   steps: PlanStepSpec[];
   variables: Record<string, string>;
   baseUrl: string;
+  /** The last round's verdicts, when this is a re-check. A confirmed step the
+      plan did not change should stay confirmed without relitigation; a flipped
+      verdict names what changed. */
+  prior?: StepCheck[];
   /** Where to narrate the reading, when this is queued work. */
   watch?: Watcher;
 }): Promise<Verification> {
@@ -170,6 +186,9 @@ export async function verifyPlan(input: {
     stepsPrompt(input.steps),
     '',
     evidencePrompt(routes),
+    ...(input.prior && input.prior.length > 0
+      ? ['', 'The last round judged these steps:', priorText(input.prior)]
+      : []),
   ].join('\n');
 
   try {

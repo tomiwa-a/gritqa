@@ -7,9 +7,11 @@ import { unwatched, recordOutcomes, watching } from './watch';
 import {
   PlanShapeError,
   draftFromWire,
+  findingsSchema,
   revisionFromWire,
   wireDraftSchema,
   wireRevisionSchema,
+  type Findings,
   type PlanDraft,
   type RevisionDraft,
 } from './plan-schema';
@@ -70,13 +72,12 @@ type SubmittedPlan = {
 /**
  * One loop for both entry points: research, submit, fix, resubmit.
  *
- * Returns the last submitted plan with the checks from its verification, so a
- * loop that ran out of submits lands with red rows rather than nothing. A loop
- * that never submits gets nudged, then written once directly and checked -- the
- * old constrained path, kept as the fallback for a model that will not emit the
- * whole plan as a tool call. Only a fallback that also fails throws, because
- * research with no plan is a failure, and failing loudly is what keeps it
- * visible.
+ * Returns the last submitted plan with the checks from its verification. The
+ * loop continues while any step is not confirmed, up to MAX_SUBMITS rounds, so
+ * a loop that runs out lands with red rows rather than nothing. State between
+ * rounds is a structured record, not a prose blob: the writer and the verifier
+ * consume the same evidence, which is what makes rounds converge instead of
+ * re-rolling the same mistakes.
  */
 async function runLoop<P extends SubmittedPlan>(input: {
   model: LanguageModel;
@@ -100,10 +101,17 @@ async function runLoop<P extends SubmittedPlan>(input: {
     if (event.toolCall.toolName === 'teardown') tornDown = true;
     return callbacks.onToolExecutionStart(event);
   };
-  const findings: string[] = [];
+  /* State between rounds. `record` is the structured evidence every consumer
+     reads -- writer, verifier, top-ups -- and `roundLogs` is the prose behind
+     it, kept for the transcript and the resume. */
+  let record: Findings | null = null;
+  const roundLogs: string[] = [];
+  const verifyLogs: string[] = [];
 
   /* One research round, first or top-up: tools on, no schema, because a model
-     working towards a shape reads less than one working towards an answer. */
+     working towards a shape reads less than one working towards an answer.
+     The round's prose is then extracted into the record, so the next consumer
+     reads evidence rather than a retelling. */
   const researchRound = async (extra: string | null, budget: number): Promise<void> => {
     const loop = await generateText({
       model: input.model,
@@ -120,7 +128,11 @@ async function runLoop<P extends SubmittedPlan>(input: {
       onToolExecutionStart,
     });
     recordOutcomes(watch, 'research', loop.content);
-    if (loop.text.trim()) findings.push(loop.text);
+    const prose = loop.text.trim();
+    if (!prose) return;
+    roundLogs.push(prose);
+    const extracted = await extractFindings(input.model, prose);
+    record = extracted ? mergeFindings(record, extracted) : record;
   };
 
   /* One submit: the constrained call, with one correction turn on a shape
@@ -128,7 +140,7 @@ async function runLoop<P extends SubmittedPlan>(input: {
      a tool call errors instead -- measured, not theorised -- and the schema is
      what makes the answer a plan rather than prose about one. */
   const submitRound = async (correction: string): Promise<P> => {
-    const prompt = input.writePrompt(findings.join('\n\n'), correction);
+    const prompt = input.writePrompt(recordText(record), correction);
     try {
       const out = await generateObject({
         model: input.model,
@@ -145,7 +157,7 @@ async function runLoop<P extends SubmittedPlan>(input: {
         schema: input.wireSchema,
         system: input.system,
         prompt: input.writePrompt(
-          findings.join('\n\n'),
+          recordText(record),
           [
             'Your last answer did not load:',
             error.message,
@@ -158,26 +170,31 @@ async function runLoop<P extends SubmittedPlan>(input: {
   };
 
   try {
-    /* Skipped outright when a previous attempt at this same job already did it:
-       its findings are in the record, and the reading is the expensive part. */
+    /* A resume seeds the transcript; the record is extracted from it below so
+       the loop still reads evidence rather than prose. The first research
+       round is still skipped: the reading is the expensive part. */
     if (watch.resumeFrom) {
       watch.note({
         phase: 'research',
         kind: 'note',
         label: 'Picked up where the last attempt got to, reusing what it read.',
       });
-      findings.push(watch.resumeFrom);
+      roundLogs.push(watch.resumeFrom);
+      const extracted = await extractFindings(input.model, watch.resumeFrom);
+      record = extracted ? mergeFindings(record, extracted) : record;
     } else {
       watch.note({ phase: 'research', kind: 'note', label: 'Reading the code.' });
       await researchRound(null, RESEARCH_BUDGET);
       /* The one `findings` note per job: a resume reads it back rather than
          paying for the reading twice. */
-      if (findings.length > 0) {
-        watch.note({ phase: 'research', kind: 'findings', label: findings.join('\n\n') });
+      const logged = [...roundLogs, recordText(record)].filter((t) => t.trim());
+      if (logged.length > 0) {
+        watch.note({ phase: 'research', kind: 'findings', label: logged.join('\n\n') });
       }
     }
 
     let correction = '';
+    let prior: StepCheck[] = [];
     for (let round = 1; ; round++) {
       const plan = await submitRound(correction);
       watch.note({
@@ -201,45 +218,55 @@ async function runLoop<P extends SubmittedPlan>(input: {
         variables: plan.variables,
         baseUrl: input.baseUrl,
         watch,
+        prior,
       });
+      verifyLogs.push(verified.findings);
 
-      const wrong = verified.checks.filter((c) => c.verdict === 'wrong');
-      const confirmed = verified.checks.filter((c) => c.verdict === 'confirmed').length;
-      const unsupported = verified.checks.length - wrong.length - confirmed;
+      /* Strict: anything not confirmed continues the loop -- a wrong step and
+         an unsupported one are both claims without evidence. The cap is what
+         keeps a genuinely unsettlable step from looping forever. */
+      const unconfirmed = verified.checks.filter((c) => c.verdict !== 'confirmed');
+      const confirmed = verified.checks.length - unconfirmed.length;
       watch.note({
         phase: 'write',
         kind: 'note',
         label:
-          wrong.length === 0
-            ? `Checking came back clean: ${confirmed} confirmed, ${unsupported} unsupported.`
-            : `Checking marked ${wrong.length} wrong, ${confirmed} confirmed, ${unsupported} unsupported.`,
+          unconfirmed.length === 0
+            ? `Checking confirmed all ${confirmed} steps.`
+            : `Checking left ${unconfirmed.length} unconfirmed, ${confirmed} confirmed.`,
       });
 
-      if (wrong.length === 0 || round >= MAX_SUBMITS) {
+      if (unconfirmed.length === 0 || round >= MAX_SUBMITS) {
         return {
           plan,
           checks: verified.checks,
-          findings: [...findings, verified.findings].filter(Boolean).join('\n\n'),
+          findings: [recordText(record), ...roundLogs, ...verifyLogs]
+            .filter((t) => t.trim())
+            .join('\n\n'),
         };
       }
+      prior = verified.checks;
 
-      /* The verdicts name what the code has instead, so the next submit fixes
-         from evidence rather than memory -- with a top-up round first, because
-         a verdict can point at a file the loop has not read yet. */
+      /* The full verdicts go back, not just the wrong rows: trials and
+         confirmed notes are evidence for their steps too. Then a top-up round,
+         because an unconfirmed step can point at a file the loop has not read
+         yet -- driven by the open questions first, which is what they are for. */
       correction = [
-        report(verified.checks),
+        checksText(verified.checks),
         '',
-        'Fix every step marked wrong and return the whole plan again, corrected and complete.',
+        'Fix every step that is not confirmed and return the whole plan again, corrected and complete.',
       ].join('\n');
       watch.note({
         phase: 'write',
         kind: 'note',
-        label: 'Reading again for what the checking marked wrong.',
+        label: 'Reading again for what the checking left unconfirmed.',
       });
+      const open = record?.openQuestions ?? [];
       await researchRound(
         [
-          'The checker marked steps of the last draft wrong:',
-          report(verified.checks),
+          'The checker left steps of the last draft unconfirmed:',
+          checksText(verified.checks),
+          ...(open.length > 0 ? ['', 'Still open from earlier rounds:', ...open.map((q) => `- ${q}`)] : []),
           '',
           'Read what settles each one: the route in the index, the handler, the columns in information_schema.',
         ].join('\n'),
@@ -255,16 +282,101 @@ async function runLoop<P extends SubmittedPlan>(input: {
 }
 
 
-/** The verdicts back as the fix list the next submit answers. */
-function report(checks: StepCheck[]): string {
-  const wrong = checks.filter((c) => c.verdict === 'wrong');
-  const confirmed = checks.filter((c) => c.verdict === 'confirmed').length;
-  const unsupported = checks.length - wrong.length - confirmed;
-  const lines = [
-    `Verdicts: ${confirmed} confirmed, ${unsupported} unsupported, ${wrong.length} wrong.`,
-  ];
-  for (const c of wrong) lines.push(`- ${c.stepId}: WRONG -- ${c.note || 'no detail recorded'}`);
-  return lines.join('\n');
+/**
+ * The record as the writer reads it: every entry with its source, open
+ * questions last so they are read as instructions for what is still missing.
+ */
+function recordText(record: Findings | null): string {
+  if (!record) return 'Nothing was established yet.';
+  const lines: string[] = [];
+  if (record.routes.length > 0) {
+    lines.push('Routes confirmed:');
+    for (const r of record.routes) {
+      lines.push(`- ${r.method} ${r.path} (${r.file}${r.line !== undefined ? `:${r.line}` : ''}, ${r.handler})`);
+    }
+  }
+  if (record.tables.length > 0) {
+    lines.push('Tables described:');
+    for (const t of record.tables) {
+      lines.push(`- ${t.table}: ${t.columns.join(', ')} (via ${t.via})`);
+    }
+  }
+  if (record.shapes.length > 0) {
+    lines.push('Shapes confirmed:');
+    for (const s of record.shapes) {
+      lines.push(`- ${s.about}: reads ${s.reads || 'nothing'}; returns ${s.returns || 'nothing'}`);
+    }
+  }
+  if (record.openQuestions.length > 0) {
+    lines.push('Open questions:');
+    for (const q of record.openQuestions) lines.push(`- ${q}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : 'Nothing was established yet.';
+}
+
+/**
+ * One round's prose into the record, through the constrained call.
+ *
+ * Null on any failure: a round that cannot be structured still leaves its
+ * prose in the transcript, and the previous record stands rather than being
+ * replaced by nothing.
+ */
+async function extractFindings(model: LanguageModel, prose: string): Promise<Findings | null> {
+  try {
+    const out = await generateObject({
+      model,
+      schema: findingsSchema,
+      system:
+        'Extract what the research round established into the record. Copy routes, columns and shapes exactly as written; never invent an entry the prose does not contain. Anything the round looked for and could not establish goes in openQuestions, one line each.',
+      prompt: prose,
+    });
+    return out.object;
+  } catch (error) {
+    console.warn(
+      'draft: could not structure the round',
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+/** A round's record merged into the rolling one, deduplicated by identity. */
+function mergeFindings(into: Findings | null, round: Findings): Findings {
+  if (!into) return round;
+  const routes = [...into.routes];
+  for (const r of round.routes) {
+    if (!routes.some((e) => e.method === r.method && e.path === r.path)) routes.push(r);
+  }
+  const tables = [...into.tables];
+  for (const t of round.tables) {
+    const known = tables.find((e) => e.table === t.table);
+    if (!known) tables.push(t);
+    else known.columns = [...new Set([...known.columns, ...t.columns])];
+  }
+  const shapes = [...into.shapes];
+  for (const s of round.shapes) {
+    if (!shapes.some((e) => e.about === s.about)) shapes.push(s);
+  }
+  return {
+    routes,
+    tables,
+    shapes,
+    openQuestions: [...new Set([...into.openQuestions, ...round.openQuestions])],
+  };
+}
+
+/**
+ * Every check, kept whole: the next submit and the next verification read the
+ * trials and the confirmed notes too, not just the wrong rows. A verdict about
+ * a step is evidence for that step whatever it says.
+ */
+function checksText(checks: StepCheck[]): string {
+  return checks
+    .map((c) => {
+      const trial = c.trial ? ` trial ${c.trial.method} ${c.trial.path} -> ${c.trial.code}` : '';
+      return `- ${c.stepId}: ${c.verdict}${c.note ? ` -- ${c.note}` : ''}${trial}`;
+    })
+    .join('\n');
 }
 
 /**
