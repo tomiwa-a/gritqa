@@ -119,6 +119,10 @@ Check what the plan asserts about the code, not whether it is a good test:
   return the ones the assertions read? \`read_file\` on the handler settles it. For a
   \`sql\` step, do those columns exist -- \`start_sandbox\` then \`db\` against
   information_schema is how you find out, and it is worth the two calls.
+- the extract paths. Are they relative to the payload -- \`data.token\`, never
+  \`body.data.token\`? The source already says where to look, so a path repeating
+  it reads a key that does not exist and the run dies on step one. An assertion
+  target and an extraction path for the same value must read identically.
  - the status codes. Does the handler have a path that returns what the step expects?
    A step asserting 401 against a handler that answers 400 for a bad credential is a
    step that will fail for the wrong reason.
