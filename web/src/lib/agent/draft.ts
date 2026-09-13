@@ -1,4 +1,4 @@
-import { generateText, stepCountIs, tool } from 'ai';
+import { generateObject, generateText, stepCountIs, tool } from 'ai';
 import type { LanguageModel } from 'ai';
 import { resolveModel, type Session } from './model';
 import { openResearch, requireBootable, type Research } from './research';
@@ -79,6 +79,17 @@ const LOOP_STEPS = 150;
 const MAX_SUBMITS = 3;
 
 /**
+ * How many times a loop that stopped without submitting is asked, plainly, to
+ * submit before the runner stops asking and writes the plan itself.
+ *
+ * The loop ending with no submit is a small model declining to emit the whole
+ * plan as one tool call -- it researched, then stopped rather than produce the
+ * giant argument. A direct instruction in a continued conversation fixes the
+ * common case; the fallback below fixes the rest.
+ */
+const MAX_NUDGES = 2;
+
+/**
  * The loop contract, stated once for both entry points.
  *
  * The submit tool is the only way to finish: no submit, no plan, and the job
@@ -108,9 +119,12 @@ type SubmittedPlan = {
  * One loop for both entry points: research, submit, fix, resubmit.
  *
  * Returns the last submitted plan with the checks from its verification, so a
- * loop that ran out of submits lands with red rows rather than nothing. Throws
- * when the loop ends without a single submit -- research with no plan is a
- * failure, and failing loudly is what keeps it visible.
+ * loop that ran out of submits lands with red rows rather than nothing. A loop
+ * that never submits gets nudged, then written once directly and checked -- the
+ * old constrained path, kept as the fallback for a model that will not emit the
+ * whole plan as a tool call. Only a fallback that also fails throws, because
+ * research with no plan is a failure, and failing loudly is what keeps it
+ * visible.
  */
 async function runLoop<P extends SubmittedPlan>(input: {
   model: LanguageModel;
@@ -207,29 +221,150 @@ async function runLoop<P extends SubmittedPlan>(input: {
   });
 
   const callbacks = watching(watch, 'research');
+  const tools = { ...input.research.tools, submit_plan: submit };
+  const system = [input.system, LOOP_RULES].join('\n');
+  const stops = [stepCountIs(LOOP_STEPS), () => finished];
+  const onToolExecutionStart: typeof callbacks.onToolExecutionStart = (event) => {
+    if (event.toolCall.toolName === 'teardown') tornDown = true;
+    return callbacks.onToolExecutionStart(event);
+  };
+  const texts: string[] = [];
   try {
-    const loop = await generateText({
-      model: input.model,
-      system: [input.system, LOOP_RULES].join('\n'),
-      prompt: input.prompt,
-      tools: { ...input.research.tools, submit_plan: submit },
-      stopWhen: [stepCountIs(LOOP_STEPS), () => finished],
-      ...callbacks,
-      onToolExecutionStart: (event) => {
-        if (event.toolCall.toolName === 'teardown') tornDown = true;
-        return callbacks.onToolExecutionStart(event);
-      },
-    });
-    recordOutcomes(watch, 'research', loop.content);
+    let messages:
+      | Parameters<typeof generateText>[0]['messages']
+      | undefined;
+    for (let round = 0; ; round++) {
+      const loop = messages
+        ? await generateText({
+            model: input.model,
+            system,
+            messages,
+            tools,
+            stopWhen: stops,
+            onStepEnd: callbacks.onStepEnd,
+            onToolExecutionStart,
+          })
+        : await generateText({
+            model: input.model,
+            system,
+            prompt: input.prompt,
+            tools,
+            stopWhen: stops,
+            onStepEnd: callbacks.onStepEnd,
+            onToolExecutionStart,
+          });
+      recordOutcomes(watch, 'research', loop.content);
+      texts.push(loop.text);
+      if (outcome.current) break;
+      if (round >= MAX_NUDGES) break;
+      watch.note({
+        phase: 'write',
+        kind: 'note',
+        label: 'The loop stopped without submitting -- asking it to submit.',
+      });
+      messages = [
+        ...loop.response.messages,
+        {
+          role: 'user' as const,
+          content:
+            'You stopped without submitting. Call submit_plan now with the complete plan -- every step, the variables, everything the schema asks for. Do not write the plan as text; the tool call is the only way it lands.',
+        },
+      ];
+    }
     const last = outcome.current;
-    if (!last) throw new Error('the loop ended without submitting a plan');
-    return { ...last, findings: [loop.text, last.findings].filter(Boolean).join('\n\n') };
+    if (last) {
+      return { ...last, findings: [...texts, last.findings].filter(Boolean).join('\n\n') };
+    }
+    return await fallbackPlan(input, texts, watch);
   } finally {
     /* Always. The agent is told never to call teardown itself, so an exit
        without one is the normal path rather than a lapse -- and a thrown error
        is exactly when nothing else is going to clean the sandbox up. */
     if (!tornDown) await teardownSandbox(input.research, watch);
   }
+}
+
+/**
+ * The constrained write, kept as the fallback for a model that researched and
+ * then would not emit the whole plan as a tool call.
+ *
+ * One structured call over the loop's own findings, one correction turn on a
+ * shape refusal, then a single verification -- the old pipeline, run once, with
+ * no fixing loop after it. What lands carries whatever checks that one
+ * verification returned, red rows included.
+ */
+async function fallbackPlan<P extends SubmittedPlan>(
+  input: {
+    model: LanguageModel;
+    research: Research;
+    system: string;
+    prompt: string;
+    baseUrl: string;
+    watch: Watcher;
+    wireSchema: typeof wireDraftSchema | typeof wireRevisionSchema;
+    fromWire: (value: never) => P;
+  },
+  texts: string[],
+  watch: Watcher,
+): Promise<{ plan: P; checks: StepCheck[]; findings: string }> {
+  watch.note({
+    phase: 'write',
+    kind: 'note',
+    label: 'No submit came back, so writing the plan once directly and checking it.',
+  });
+  const prompt = [
+    input.prompt,
+    '',
+    'What you found when you looked:',
+    texts.filter(Boolean).join('\n\n'),
+    '',
+    'submit_plan is unavailable: return the plan itself as the answer, in full.',
+  ].join('\n');
+
+  const attempt = async (correction: string): Promise<P> => {
+    const out = await generateObject({
+      model: input.model,
+      schema: input.wireSchema,
+      system: input.system,
+      prompt: correction ? `${prompt}\n${correction}` : prompt,
+    });
+    return input.fromWire(out.object as never);
+  };
+
+  let plan: P;
+  try {
+    plan = await attempt('');
+  } catch (error) {
+    if (!(error instanceof PlanShapeError)) throw error;
+    console.warn(`draft: fallback refused (${error.message}) -- asking once for a correction`);
+    plan = await attempt(
+      [
+        '',
+        'Your last answer did not load:',
+        error.message,
+        'Send the whole plan again with that fixed, and change nothing else about it.',
+      ].join('\n'),
+    );
+  }
+
+  watch.note({
+    phase: 'verify',
+    kind: 'note',
+    label: `Checking ${plan.steps.length} steps against the code.`,
+  });
+  const verified = await verifyPlan({
+    model: input.model,
+    tools: input.research.tools,
+    steps: plan.steps,
+    variables: plan.variables,
+    baseUrl: input.baseUrl,
+    watch,
+  });
+  return {
+    plan,
+    checks: verified.checks,
+    findings: [...texts, verified.findings].filter(Boolean).join('\n\n'),
+  };
 }
 
 /** The verdicts back as the fix list the next submit answers. */
