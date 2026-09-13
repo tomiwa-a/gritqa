@@ -142,8 +142,6 @@ function reading(tool: string, input: unknown): string {
       return 'Looked over the project index';
     case 'start_sandbox':
       return 'Brought the sandbox up';
-    case 'submit_plan':
-      return 'Submitted the plan for checking';
     case 'db':
       return `Queried the database: ${clipped(arg('sql') ?? '')}`;
     case 'teardown':

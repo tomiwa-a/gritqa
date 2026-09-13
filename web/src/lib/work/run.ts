@@ -74,8 +74,12 @@ export async function runWork(jobPublicId: string, session?: Session | null): Pr
       refresh(['/dashboard/work', '/dashboard/queue']);
       return;
     }
-    const why = readable(error);
-    watch.note({ phase: 'save', kind: 'failed', label: why });
+      const why = readable(error);
+      /* The raw message rides along in detail: the label is the sentence a
+         developer reads, but the next debugging session starts from what the
+         provider actually said rather than from a probe. */
+      const raw = error instanceof Error ? error.message : String(error);
+      watch.note({ phase: 'save', kind: 'failed', label: why, detail: { error: raw.slice(0, 500) } });
     await failWork(job, why).catch((second: unknown) => {
       console.error('work: could not record a failure', second);
     });
