@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tomiwa-a/gritqa/cli/internal/agent"
 	"github.com/tomiwa-a/gritqa/cli/internal/config"
@@ -31,7 +32,21 @@ type session struct {
 	store *index.Store
 	snap  *index.Snapshot
 	st    *sandbox.Stack
+
+	// Idle tracking for a sandbox the MCP surface brought up. The web side
+	// tears the sandbox down when its draft loop ends, so this is the backstop
+	// for the paths that never get there -- a crashed web process, a killed
+	// dashboard. mcpOwned says the sandbox is research's to reap: the attach
+	// loop keeps its own warm by design and claims it back in prepare.
+	mcpOwned bool
+	busy     int
+	idle     *time.Timer
 }
+
+// sandboxIdleFor is how long a research sandbox may sit unused before the
+// reaper takes it down. Long enough that thinking between tool calls never
+// trips it; short enough that a forgotten container does not outlive lunch.
+const sandboxIdleFor = 10 * time.Minute
 
 func newSession(cfg *config.Config, opts Options, w *term.Writer) *session {
 	return &session{cfg: cfg, opts: opts, w: w}
@@ -86,12 +101,55 @@ func (s *session) close(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.calmIdle()
 	s.st.Down(ctx)
 	s.st = nil
+	s.mcpOwned = false
 	if s.store != nil {
 		s.store.Close()
 		s.store = nil
 	}
+}
+
+// armIdle (re)starts the reaper countdown. Callers hold mu.
+func (s *session) armIdle() {
+	if s.idle != nil {
+		s.idle.Stop()
+	}
+	s.idle = time.AfterFunc(sandboxIdleFor, s.reapIdle)
+}
+
+// calmIdle stops the countdown. Callers hold mu.
+func (s *session) calmIdle() {
+	if s.idle != nil {
+		s.idle.Stop()
+		s.idle = nil
+	}
+}
+
+// reapIdle takes down a research sandbox nobody has touched in a while. It
+// runs on the timer's goroutine, so it takes mu like everyone else. A sandbox
+// in use is not idle -- the countdown restarts instead -- and one the attach
+// loop claimed is not research's to reap.
+func (s *session) reapIdle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.st == nil || !s.mcpOwned {
+		s.calmIdle()
+		return
+	}
+	if s.busy > 0 {
+		s.armIdle()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	s.w.Write(term.Line{Kind: term.Info, Text: "sandbox idle, tearing it down"})
+	s.st.Down(ctx)
+	s.st = nil
+	s.mcpOwned = false
+	s.idle = nil
 }
 
 // prepared is where a plan is about to run: a sandbox restored to its baseline, or
@@ -158,6 +216,10 @@ func (s *session) prepare(ctx context.Context, p *plan.Plan) (prepared, error) {
 	if err != nil {
 		return prepared{}, err
 	}
+	// The attach loop keeps its sandbox warm by design: claiming it back stops
+	// the research reaper, and the process teardown is what takes it down.
+	s.mcpOwned = false
+	s.calmIdle()
 	if err := reset(ctx, s.w, st); err != nil {
 		return prepared{}, err
 	}

@@ -134,6 +134,11 @@ func (b *serve) StartSandbox(ctx context.Context) (mcp.Boot, error) {
 	if err != nil {
 		return mcp.Boot{}, err
 	}
+	// Research's sandbox, research's countdown: the web side tears it down
+	// when its loop ends, and the reaper covers the paths that never get
+	// there. Activity restarts the countdown either way.
+	b.mcpOwned = true
+	b.armIdle()
 	return mcp.Boot{
 		Database: st.Database(), BaseURL: st.BaseURL(),
 		Tables: st.Tables(), Already: already,
@@ -163,6 +168,9 @@ func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) 
 		b.mu.Unlock()
 		return nil, err
 	}
+	// The engine runs unlocked, so the reaper must know not to read idleness
+	// as abandonment while a plan is in flight.
+	b.busy++
 	b.mu.Unlock()
 
 	engine := &run.Engine{
@@ -175,7 +183,14 @@ func (b *serve) RunPlan(ctx context.Context, p *plan.Plan) (*run.Result, error) 
 	}
 	b.w.Write(term.Line{Kind: term.Info,
 		Text: fmt.Sprintf("running %s against %s", p.Name, st.BaseURL())})
-	return engine.Run(ctx, p)
+	res, runErr := engine.Run(ctx, p)
+	b.mu.Lock()
+	b.busy--
+	if b.st != nil {
+		b.armIdle()
+	}
+	b.mu.Unlock()
+	return res, runErr
 }
 
 // TrialCall answers whether one endpoint is real: a single request against the
@@ -216,13 +231,20 @@ func (b *serve) TrialCall(ctx context.Context, method, path string, headers, que
 		State:     st,
 		SandboxDB: st.DB(),
 	}
+	b.busy++
 	b.mu.Unlock()
 
 	b.w.Write(term.Line{Kind: term.Info,
 		Text: fmt.Sprintf("probing %s %s against %s", method, path, base)})
-	res, err := engine.Run(ctx, p)
-	if err != nil {
-		return nil, err
+	res, runErr := engine.Run(ctx, p)
+	b.mu.Lock()
+	b.busy--
+	if b.st != nil {
+		b.armIdle()
+	}
+	b.mu.Unlock()
+	if runErr != nil {
+		return nil, runErr
 	}
 	if len(res.Steps) == 0 {
 		return nil, errors.New("the probe ran nothing, so there is no answer")
@@ -239,5 +261,7 @@ func (b *serve) Teardown(ctx context.Context) error {
 	}
 	err := b.st.Down(ctx)
 	b.st = nil
+	b.mcpOwned = false
+	b.calmIdle()
 	return err
 }
